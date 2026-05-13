@@ -32,6 +32,14 @@ set_source_files_properties(
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
+qt_add_translations(qumesh
+    TS_FILES
+        translations/qumesh_en.ts
+    QM_FILES_OUTPUT_VARIABLE qm_files
+    LUPDATE_OPTIONS
+        -no-obsolete
+)
+
 qt_add_qml_module(qumesh
     URI QuMesh
     VERSION 1.0

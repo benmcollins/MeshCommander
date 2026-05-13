@@ -76,6 +76,31 @@ SHA-256 file digest and a DigiCert timestamp.
 For EV certificates that require a USB token, the runner must be
 self-hosted (the token can't be plugged into a GitHub-hosted VM).
 
+## Translations
+
+User-facing strings are wrapped in `qsTr(...)` and extracted by
+`lupdate` into `qt/app/translations/qumesh_<locale>.ts`. The `app/`
+CMake target calls `qt_add_translations()` to wire this up:
+
+- `cmake --build build --target update_translations` runs `lupdate`
+  to refresh the `.ts` files with any new strings. Edit the `.ts`
+  files (manually or in Qt Linguist) to add translations.
+- `cmake --build build --target release_translations` compiles the
+  `.ts` files into `.qm` and embeds them under `qrc:/i18n/` in the
+  app's QML resource module. The release target runs automatically
+  as part of the normal build.
+- At launch, `main.cpp` installs a `QTranslator` that loads
+  `qumesh_<system locale>.qm` if present, falling back to the
+  un-translated English source baked into the `qsTr()` calls.
+
+To add a new language:
+
+1. Append `translations/qumesh_<locale>.ts` to the `TS_FILES` list
+   in `qt/app/CMakeLists.txt`.
+2. Run the `update_translations` target — it will create the file
+   and seed it from the source strings.
+3. Translate; rebuild.
+
 ## What the bundle contains
 
 - `QuMesh.app/Contents/MacOS/QuMesh` (or `QuMesh.exe`).
