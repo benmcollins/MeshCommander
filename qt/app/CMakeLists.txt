@@ -8,6 +8,13 @@ qt_add_executable(meshcommander
     src/migrationcontroller.h
 )
 
+set_source_files_properties(
+    qml/Theme/Colors.qml
+    qml/Theme/Type.qml
+    qml/Theme/Motion.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE
+)
+
 qt_add_qml_module(meshcommander
     URI MeshCommander
     VERSION 1.0
@@ -16,6 +23,17 @@ qt_add_qml_module(meshcommander
         qml/ComputerListView.qml
         qml/ComputerEditPane.qml
         qml/MigrationBanner.qml
+        qml/TitleBar.qml
+        qml/StatusBar.qml
+        qml/StatusLed.qml
+        qml/Section.qml
+        qml/Theme/Colors.qml
+        qml/Theme/Type.qml
+        qml/Theme/Motion.qml
+    RESOURCES
+        qml/fonts/IBMPlexSans-Regular.ttf
+        qml/fonts/IBMPlexSans-Medium.ttf
+        qml/fonts/JetBrainsMono-Regular.ttf
 )
 
 target_include_directories(meshcommander PRIVATE

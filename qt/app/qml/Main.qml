@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import MeshCommander
 
@@ -10,18 +10,23 @@ ApplicationWindow {
 
     property int selectedRow: -1
 
-    width: 970
+    width: 1100
     height: 760
-    minimumWidth: 970
-    minimumHeight: 640
+    minimumWidth: 920
+    minimumHeight: 600
     visible: true
     title: qsTr("MeshCommander")
+    color: Colors.bg
 
     Component.onCompleted: MigrationController.checkAndMaybeMigrate()
 
     ColumnLayout {
         spacing: 0
         anchors.fill: parent
+
+        TitleBar {
+            Layout.fillWidth: true
+        }
 
         MigrationBanner {
             Layout.fillWidth: true
@@ -32,10 +37,15 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
+            handle: Rectangle {
+                implicitWidth: 1
+                color: Colors.border
+            }
+
             ComputerListView {
                 id: listView
-                SplitView.preferredWidth: 320
-                SplitView.minimumWidth: 240
+                SplitView.preferredWidth: 360
+                SplitView.minimumWidth: 280
                 onCurrentRowChanged: root.selectedRow = listView.currentRow
                 onAddRequested: editPane.startNewComputer()
             }
@@ -44,8 +54,12 @@ ApplicationWindow {
                 id: editPane
                 row: root.selectedRow
                 SplitView.fillWidth: true
-                SplitView.minimumWidth: 360
+                SplitView.minimumWidth: 420
             }
+        }
+
+        StatusBar {
+            Layout.fillWidth: true
         }
     }
 }
