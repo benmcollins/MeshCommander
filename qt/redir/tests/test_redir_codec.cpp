@@ -29,6 +29,13 @@ private slots:
     void parseAuthSuccess();
     void computeDigestKnownVector();
     void makeClientNonceIs32HexChars();
+
+    void solOpenBytes();
+    void solOpenReplyStatusExtracted();
+    void solSettingsBytes();
+    void solDataToHostRoundTrip();
+    void solDisplayDataNeedsFullPayload();
+    void solKeepaliveBytes();
 };
 
 void TestRedirCodec::solSelectorBytes()
@@ -262,6 +269,81 @@ void TestRedirCodec::makeClientNonceIs32HexChars()
     QVERIFY(a != b); // overwhelmingly likely to differ — flakes only at 2^-128
     QRegularExpression hex("^[0-9a-f]{32}$");
     QVERIFY(hex.match(a).hasMatch());
+}
+
+void TestRedirCodec::solOpenBytes()
+{
+    const QByteArray f = buildSolOpen(/*sequence=*/0x01020304);
+    QCOMPARE(f.size(), 24);
+    QCOMPARE(static_cast<unsigned char>(f.at(0)), 0x20);
+    QCOMPARE(static_cast<unsigned char>(f.at(4)), 0x04);
+    QCOMPARE(static_cast<unsigned char>(f.at(5)), 0x03);
+    QCOMPARE(static_cast<unsigned char>(f.at(6)), 0x02);
+    QCOMPARE(static_cast<unsigned char>(f.at(7)), 0x01);
+    // MaxTxBuffer default 10000 = 0x2710, LE bytes 10 27 at offset 8
+    QCOMPARE(static_cast<unsigned char>(f.at(8)), 0x10);
+    QCOMPARE(static_cast<unsigned char>(f.at(9)), 0x27);
+}
+
+void TestRedirCodec::solOpenReplyStatusExtracted()
+{
+    QByteArray buf(23, '\0');
+    buf[0] = 0x21;
+    buf[9] = 0x00;
+    SolOpenReply r;
+    int consumed = 0;
+    QVERIFY(tryParseSolOpenReply(buf, &r, &consumed));
+    QCOMPARE(r.status, quint8(0));
+    QCOMPARE(consumed, 23);
+
+    buf[9] = 0x07;
+    QVERIFY(tryParseSolOpenReply(buf, &r, &consumed));
+    QCOMPARE(r.status, quint8(7));
+}
+
+void TestRedirCodec::solSettingsBytes()
+{
+    const QByteArray f = buildSolSettings(0xDEADBEEF);
+    QCOMPARE(f.size(), 14);
+    QCOMPARE(static_cast<unsigned char>(f.at(0)), 0x27);
+    QCOMPARE(static_cast<unsigned char>(f.at(10)), 0x1B);
+}
+
+void TestRedirCodec::solDataToHostRoundTrip()
+{
+    const QByteArray payload = "hello\n";
+    const QByteArray frame = buildSolDataToHost(payload);
+    QCOMPARE(static_cast<unsigned char>(frame.at(0)), 0x28);
+    QCOMPARE(static_cast<unsigned char>(frame.at(8)), 6);
+    QCOMPARE(static_cast<unsigned char>(frame.at(9)), 0);
+    QCOMPARE(frame.mid(10), payload);
+}
+
+void TestRedirCodec::solDisplayDataNeedsFullPayload()
+{
+    QByteArray buf;
+    buf.append(char(0x2A));
+    buf.append(7, '\0');
+    buf.append(char(0x05));
+    buf.append(char(0x00));
+    buf.append("hello", 5);
+
+    QByteArray data;
+    int consumed = 0;
+    QVERIFY(tryParseSolDisplayData(buf, &data, &consumed));
+    QCOMPARE(data, QByteArray("hello"));
+    QCOMPARE(consumed, 15);
+
+    QByteArray trunc = buf.left(12);
+    QVERIFY(!tryParseSolDisplayData(trunc, &data, &consumed));
+    QCOMPARE(consumed, 0);
+}
+
+void TestRedirCodec::solKeepaliveBytes()
+{
+    const QByteArray f = buildSolKeepalive();
+    QCOMPARE(f.size(), 8);
+    QCOMPARE(static_cast<unsigned char>(f.at(0)), 0x2B);
 }
 
 QTEST_GUILESS_MAIN(TestRedirCodec)

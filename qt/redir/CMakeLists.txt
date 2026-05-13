@@ -4,8 +4,10 @@
 qt_add_library(meshcommander_redir STATIC
     src/redir_codec.cpp
     src/redir_client.cpp
+    src/sol_session.cpp
     include/redir/redir_codec.h
     include/redir/redir_client.h
+    include/redir/sol_session.h
 )
 
 target_include_directories(meshcommander_redir

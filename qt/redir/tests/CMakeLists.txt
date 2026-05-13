@@ -14,3 +14,4 @@ endfunction()
 
 meshcommander_redir_test(test_redir_codec)
 meshcommander_redir_test(test_redir_client)
+meshcommander_redir_test(test_sol_session)

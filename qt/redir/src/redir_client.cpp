@@ -70,8 +70,19 @@ void RedirectionClient::handleConnected()
 
 void RedirectionClient::handleReadyRead()
 {
-    m_inbox.append(m_socket->readAll());
+    const QByteArray chunk = m_socket->readAll();
+    if (m_state == State::Authenticated) {
+        emit rawBytes(chunk);
+        return;
+    }
+    m_inbox.append(chunk);
     drainInbox();
+}
+
+qint64 RedirectionClient::writeRaw(const QByteArray &bytes)
+{
+    if (m_socket == nullptr) return -1;
+    return m_socket->write(bytes);
 }
 
 void RedirectionClient::drainInbox()
