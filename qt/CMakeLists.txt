@@ -50,3 +50,42 @@ add_subdirectory(wsman)
 add_subdirectory(redir)
 add_subdirectory(ider)
 add_subdirectory(kvm)
+
+# --- Packaging ---------------------------------------------------------
+#
+# `cpack` produces a .dmg on macOS (CPack DragNDrop) and an NSIS-based
+# .exe installer on Windows. Both bundle Qt + plugins (via macdeployqt /
+# windeployqt) plus OpenSSL.
+#
+# Cut a release: bump PROJECT_VERSION above, push a `vX.Y.Z` tag, and
+# the GitHub Actions release workflow handles the rest.
+
+set(CPACK_PACKAGE_NAME "QuMesh")
+set(CPACK_PACKAGE_VENDOR "Insynergy")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/benmcollins/QuMesh")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "Native Qt6 console for Intel AMT (vPro) devices")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "QuMesh")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.md")
+set(CPACK_VERBATIM_VARIABLES TRUE)
+set(CPACK_STRIP_FILES TRUE)
+
+if(APPLE)
+    set(CPACK_GENERATOR "DragNDrop")
+    set(CPACK_DMG_VOLUME_NAME "QuMesh-${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_FILE_NAME "QuMesh-${PROJECT_VERSION}-macos")
+elseif(WIN32)
+    set(CPACK_GENERATOR "NSIS")
+    set(CPACK_NSIS_DISPLAY_NAME "QuMesh")
+    set(CPACK_NSIS_PACKAGE_NAME "QuMesh")
+    set(CPACK_NSIS_HELP_LINK "https://github.com/benmcollins/QuMesh")
+    set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/benmcollins/QuMesh")
+    set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
+    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+    set(CPACK_NSIS_MODIFY_PATH OFF)
+    set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "QuMesh-${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_FILE_NAME "QuMesh-${PROJECT_VERSION}-windows-x64")
+endif()
+
+include(CPack)
