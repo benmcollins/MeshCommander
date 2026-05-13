@@ -64,8 +64,8 @@ Each phase is one or more issues. The workflow per logical unit is: issue → br
 
 ### Phase 8 — Certificate store
 
-- Import/export from the legacy migrated state.
-- Mutual-TLS configuration for AMT TLS.
+- Import/export from the legacy migrated state. ✅ (#25)
+- Mutual-TLS configuration for AMT TLS. (Deferred — lands with the TLS-on-16995 follow-up.)
 
 ### Phase 9 — Packaging
 

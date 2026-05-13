@@ -19,6 +19,8 @@ qt_add_executable(qumesh
     src/kvmframebuffer.h
     src/kvmviewer.cpp
     src/kvmviewer.h
+    src/certmodel.cpp
+    src/certmodel.h
 )
 
 set_source_files_properties(
@@ -44,6 +46,7 @@ qt_add_qml_module(qumesh
         qml/SolWindow.qml
         qml/IderWindow.qml
         qml/KvmWindow.qml
+        qml/CertificatesWindow.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
@@ -68,6 +71,7 @@ target_link_libraries(qumesh PRIVATE
     meshcommander_terminal
     meshcommander_ider
     meshcommander_kvm
+    meshcommander_certs
 )
 
 set_target_properties(qumesh PROPERTIES

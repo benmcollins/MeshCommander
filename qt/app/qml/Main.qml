@@ -29,6 +29,7 @@ ApplicationWindow {
 
         TitleBar {
             Layout.fillWidth: true
+            onOpenCertificates: certificatesLoader.launch()
         }
 
         MigrationBanner {
@@ -63,6 +64,23 @@ ApplicationWindow {
 
         StatusBar {
             Layout.fillWidth: true
+        }
+    }
+
+    Loader {
+        id: certificatesLoader
+        active: false
+        asynchronous: true
+
+        function launch() {
+            active = false;
+            active = true;
+        }
+
+        onStatusChanged: if (status === Loader.Ready && item !== null) item.visible = true
+
+        sourceComponent: CertificatesWindow {
+            onClosing: certificatesLoader.active = false
         }
     }
 }

@@ -37,14 +37,16 @@ public:
     /// Read JSON arrays/objects from disk. Returns an empty value when the
     /// file does not exist; populates `lastError()` and returns an empty
     /// value when it exists but is malformed.
+    ///
+    /// Note: certificate storage lives in a parallel `certs::CertStore`
+    /// rather than going through here — keeping the two file owners
+    /// separate avoids a "two writers / one file" hazard.
     [[nodiscard]] QJsonArray loadComputers();
-    [[nodiscard]] QJsonArray loadCertificates();
     [[nodiscard]] QJsonObject loadSettings();
 
     /// Atomic write via `QSaveFile`. Returns false (and sets `lastError`)
     /// on any I/O failure; the on-disk file is left untouched in that case.
     [[nodiscard]] bool saveComputers(const QJsonArray &arr);
-    [[nodiscard]] bool saveCertificates(const QJsonArray &arr);
     [[nodiscard]] bool saveSettings(const QJsonObject &obj);
 
 private:
