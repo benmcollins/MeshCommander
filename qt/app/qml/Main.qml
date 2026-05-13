@@ -1,9 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import MeshCommander
+import QuMesh
 
 ApplicationWindow {
     id: root
@@ -15,7 +18,7 @@ ApplicationWindow {
     minimumWidth: 920
     minimumHeight: 600
     visible: true
-    title: qsTr("MeshCommander")
+    title: qsTr("QuMesh")
     color: Colors.bg
 
     Component.onCompleted: MigrationController.checkAndMaybeMigrate()

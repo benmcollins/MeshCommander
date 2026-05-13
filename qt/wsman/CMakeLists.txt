@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 qt_add_library(meshcommander_wsman STATIC
     src/soap_envelope.cpp
     src/wsman_client.cpp
@@ -23,10 +26,10 @@ else()
     target_compile_options(meshcommander_wsman PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-qt_add_executable(meshcommander-wsman
+qt_add_executable(qumesh-wsman
     cli/main.cpp
 )
-target_link_libraries(meshcommander-wsman PRIVATE
+target_link_libraries(qumesh-wsman PRIVATE
     Qt6::Core
     meshcommander_wsman
 )

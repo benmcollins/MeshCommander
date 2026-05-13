@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 qt_add_library(meshcommander_redir STATIC
     src/redir_codec.cpp
     src/redir_client.cpp
@@ -21,8 +24,8 @@ else()
     target_compile_options(meshcommander_redir PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-qt_add_executable(meshcommander-redir cli/main.cpp)
-target_link_libraries(meshcommander-redir PRIVATE
+qt_add_executable(qumesh-redir cli/main.cpp)
+target_link_libraries(qumesh-redir PRIVATE
     Qt6::Core
     meshcommander_redir
 )

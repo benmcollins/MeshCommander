@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 #include "wsman/operations.h"
 
 #include "wsman/soap_envelope.h"

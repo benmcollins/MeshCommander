@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 #include "redir/redir_client.h"
 
 #include <QCommandLineOption>
@@ -10,7 +13,7 @@ using namespace meshcommander::redir;
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("meshcommander-redir"));
+    QCoreApplication::setApplicationName(QStringLiteral("qumesh-redir"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1"));
 
     QCommandLineParser parser;

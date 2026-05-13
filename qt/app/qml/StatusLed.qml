@@ -1,7 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import MeshCommander
+import QuMesh
 
 Item {
     id: root

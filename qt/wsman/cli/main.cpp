@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 #include "wsman/operations.h"
 #include "wsman/wsman_client.h"
 
@@ -12,7 +15,7 @@ using namespace meshcommander::wsman;
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("meshcommander-wsman"));
+    QCoreApplication::setApplicationName(QStringLiteral("qumesh-wsman"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1"));
 
     QCommandLineParser parser;
