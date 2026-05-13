@@ -42,6 +42,7 @@ FetchContent_MakeAvailable(leveldb)
 
 include(CTest)
 
+add_subdirectory(terminal)
 add_subdirectory(app)
 add_subdirectory(migrate)
 add_subdirectory(wsman)

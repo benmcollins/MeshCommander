@@ -237,6 +237,16 @@ Rectangle {
             Layout.fillWidth: true
             Layout.margins: 12
 
+            Button {
+                visible: root.hasSelection && !root.isNew
+                text: qsTr("Open SOL")
+                flat: true
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                enabled: root.draftHost.length > 0 && root.draftUser.length > 0
+                onClicked: solLoader.launch()
+            }
+
             Item { Layout.fillWidth: true }
 
             Button {
@@ -276,6 +286,36 @@ Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    Loader {
+        id: solLoader
+        active: false
+        asynchronous: true
+
+        function launch() {
+            // Reset so the next load always fires onStatusChanged → openWindow,
+            // even if we were previously active.
+            active = false;
+            active = true;
+        }
+
+        function openWindow() {
+            if (item === null) return;
+            item.targetHost = root.draftHost;
+            item.targetPort = 16994;
+            item.user = root.draftUser;
+            item.password = root.draftPass;
+            item.label = root.draftName.length > 0 ? root.draftName : root.draftHost;
+            item.visible = true;
+            item.start();
+        }
+
+        onStatusChanged: if (status === Loader.Ready) openWindow()
+
+        sourceComponent: SolWindow {
+            onClosing: solLoader.active = false
         }
     }
 

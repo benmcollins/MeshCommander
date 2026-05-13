@@ -49,8 +49,8 @@ Each phase is one or more issues. The workflow per logical unit is: issue → br
 
 ### Phase 5 — SOL terminal
 
-- VT100 terminal widget (QML, with C++ ANSI parser).
-- SOL channel on top of the redirection transport.
+- VT100 terminal widget (QML, with C++ ANSI parser). ✅ (#19)
+- SOL channel on top of the redirection transport. ✅ (#17)
 
 ### Phase 6 — IDE-R
 

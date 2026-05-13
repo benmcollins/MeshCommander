@@ -4,6 +4,8 @@
 #include "computermodel.h"
 #include "configstore.h"
 #include "migrationcontroller.h"
+#include "solcontroller.h"
+#include "terminal/terminalscreen.h"
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -29,6 +31,10 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "ComputerModel", &computerModel);
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "MigrationController",
                                  &migrationController);
+    qmlRegisterType<meshcommander::app::SolController>("QuMesh", 1, 0, "SolController");
+    qmlRegisterUncreatableType<meshcommander::terminal::TerminalScreen>(
+        "QuMesh", 1, 0, "TerminalScreen",
+        QStringLiteral("Owned by SolController"));
 
     QQmlApplicationEngine engine;
 
