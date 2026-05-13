@@ -1,9 +1,15 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import MeshCommander
 
 ApplicationWindow {
     id: root
+
+    property int selectedRow: -1
+
     width: 970
     height: 760
     minimumWidth: 970
@@ -11,21 +17,35 @@ ApplicationWindow {
     visible: true
     title: qsTr("MeshCommander")
 
-    ColumnLayout {
-        anchors.centerIn: parent
-        spacing: 8
+    Component.onCompleted: MigrationController.checkAndMaybeMigrate()
 
-        Label {
-            text: qsTr("MeshCommander")
-            font.pointSize: 24
-            font.bold: true
-            Layout.alignment: Qt.AlignHCenter
+    ColumnLayout {
+        spacing: 0
+        anchors.fill: parent
+
+        MigrationBanner {
+            Layout.fillWidth: true
         }
 
-        Label {
-            text: qsTr("Qt rewrite — scaffolding only")
-            opacity: 0.6
-            Layout.alignment: Qt.AlignHCenter
+        SplitView {
+            orientation: Qt.Horizontal
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            ComputerListView {
+                id: listView
+                SplitView.preferredWidth: 320
+                SplitView.minimumWidth: 240
+                onCurrentRowChanged: root.selectedRow = listView.currentRow
+                onAddRequested: editPane.startNewComputer()
+            }
+
+            ComputerEditPane {
+                id: editPane
+                row: root.selectedRow
+                SplitView.fillWidth: true
+                SplitView.minimumWidth: 360
+            }
         }
     }
 }

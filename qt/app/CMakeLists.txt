@@ -1,5 +1,11 @@
 qt_add_executable(meshcommander
     src/main.cpp
+    src/configstore.cpp
+    src/configstore.h
+    src/computermodel.cpp
+    src/computermodel.h
+    src/migrationcontroller.cpp
+    src/migrationcontroller.h
 )
 
 qt_add_qml_module(meshcommander
@@ -7,6 +13,13 @@ qt_add_qml_module(meshcommander
     VERSION 1.0
     QML_FILES
         qml/Main.qml
+        qml/ComputerListView.qml
+        qml/ComputerEditPane.qml
+        qml/MigrationBanner.qml
+)
+
+target_include_directories(meshcommander PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(meshcommander PRIVATE
@@ -14,6 +27,7 @@ target_link_libraries(meshcommander PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Network
+    meshcommander_migrate
 )
 
 set_target_properties(meshcommander PROPERTIES
