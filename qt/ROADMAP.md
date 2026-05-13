@@ -59,9 +59,8 @@ Each phase is one or more issues. The workflow per logical unit is: issue → br
 
 ### Phase 7 — KVM
 
-- KVM channel decoder (Intel's RFB-variant — port from `source/amt-desktop-*.js`).
-- QML viewer with input forwarding.
-- Hardest phase.
+- KVM channel decoder (Intel's RFB-variant — port from `source/amt-desktop-*.js`). ✅ (#23)
+- QML viewer with input forwarding. ✅ (#23)
 
 ### Phase 8 — Certificate store
 

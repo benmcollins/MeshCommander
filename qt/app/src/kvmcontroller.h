@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
+#pragma once
+
+#include <QImage>
+#include <QObject>
+#include <QPointer>
+#include <QString>
+
+#include "kvmframebuffer.h"
+
+namespace meshcommander::redir {
+class RedirectionClient;
+}
+
+namespace meshcommander::kvm {
+class KvmSession;
+}
+
+namespace meshcommander::app {
+
+/// QML-creatable controller for one KVM session. Owns the redirection
+/// client, the KVM session driver, and the framebuffer the QML viewer
+/// renders.
+class KvmController : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString host READ host WRITE setHost NOTIFY hostChanged)
+    Q_PROPERTY(quint16 port READ port WRITE setPort NOTIFY portChanged)
+    Q_PROPERTY(QString user READ user WRITE setUser NOTIFY userChanged)
+    Q_PROPERTY(QString password READ password WRITE setPassword NOTIFY passwordChanged)
+    Q_PROPERTY(State state READ state NOTIFY stateChanged)
+    Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
+    Q_PROPERTY(int desktopWidth READ desktopWidth NOTIFY desktopResized)
+    Q_PROPERTY(int desktopHeight READ desktopHeight NOTIFY desktopResized)
+    Q_PROPERTY(KvmFramebuffer *framebuffer READ framebuffer CONSTANT)
+
+public:
+    enum class State {
+        Disconnected,
+        Connecting,
+        Authenticating,
+        Negotiating,
+        Connected,
+        Failed,
+    };
+    Q_ENUM(State)
+
+    explicit KvmController(QObject *parent = nullptr);
+    ~KvmController() override;
+
+    [[nodiscard]] QString host() const { return m_host; }
+    [[nodiscard]] quint16 port() const { return m_port; }
+    [[nodiscard]] QString user() const { return m_user; }
+    [[nodiscard]] QString password() const { return m_password; }
+    [[nodiscard]] State state() const { return m_state; }
+    [[nodiscard]] QString lastError() const { return m_lastError; }
+    [[nodiscard]] int desktopWidth() const { return m_width; }
+    [[nodiscard]] int desktopHeight() const { return m_height; }
+    [[nodiscard]] KvmFramebuffer *framebuffer() const { return m_framebuffer; }
+
+    void setHost(const QString &v);
+    void setPort(quint16 v);
+    void setUser(const QString &v);
+    void setPassword(const QString &v);
+
+    Q_INVOKABLE void open();
+    Q_INVOKABLE void close();
+    Q_INVOKABLE void sendCtrlAltDel();
+    /// Send a single key tap (down → up) by X11 keysym.
+    Q_INVOKABLE void sendKeyTap(quint32 keysym);
+    /// Press/release one key. `down=true` for press.
+    Q_INVOKABLE void sendKey(quint32 keysym, bool down);
+    /// Mouse pointer event in framebuffer coordinates.
+    Q_INVOKABLE void sendPointer(int buttonMask, int x, int y);
+
+signals:
+    void hostChanged();
+    void portChanged();
+    void userChanged();
+    void passwordChanged();
+    void stateChanged();
+    void lastErrorChanged();
+    void desktopResized();
+
+private:
+    void setState(State s);
+    void setLastError(const QString &e);
+    void teardown();
+
+    QString m_host;
+    quint16 m_port = 16994;
+    QString m_user;
+    QString m_password;
+    State m_state = State::Disconnected;
+    QString m_lastError;
+    int m_width = 0;
+    int m_height = 0;
+
+    KvmFramebuffer *m_framebuffer;
+    QPointer<meshcommander::redir::RedirectionClient> m_client;
+    QPointer<meshcommander::kvm::KvmSession> m_session;
+};
+
+} // namespace meshcommander::app

@@ -13,6 +13,12 @@ qt_add_executable(qumesh
     src/solcontroller.h
     src/idercontroller.cpp
     src/idercontroller.h
+    src/kvmcontroller.cpp
+    src/kvmcontroller.h
+    src/kvmframebuffer.cpp
+    src/kvmframebuffer.h
+    src/kvmviewer.cpp
+    src/kvmviewer.h
 )
 
 set_source_files_properties(
@@ -37,6 +43,7 @@ qt_add_qml_module(qumesh
         qml/Terminal.qml
         qml/SolWindow.qml
         qml/IderWindow.qml
+        qml/KvmWindow.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
@@ -52,6 +59,7 @@ target_include_directories(qumesh PRIVATE
 
 target_link_libraries(qumesh PRIVATE
     Qt6::Core
+    Qt6::Gui
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Network
@@ -59,6 +67,7 @@ target_link_libraries(qumesh PRIVATE
     meshcommander_redir
     meshcommander_terminal
     meshcommander_ider
+    meshcommander_kvm
 )
 
 set_target_properties(qumesh PROPERTIES
