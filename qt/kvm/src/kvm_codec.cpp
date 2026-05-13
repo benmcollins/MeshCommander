@@ -3,7 +3,56 @@
 
 #include "kvm/kvm_codec.h"
 
+#include <zlib.h>
+
 namespace qumesh::kvm {
+
+struct InflateStream::Impl {
+    z_stream zs{};
+    bool initialized = false;
+
+    Impl()
+    {
+        zs.zalloc = Z_NULL;
+        zs.zfree  = Z_NULL;
+        zs.opaque = Z_NULL;
+        if (inflateInit2(&zs, -15) == Z_OK) initialized = true;
+    }
+    ~Impl() { if (initialized) inflateEnd(&zs); }
+    void reset() { if (initialized) inflateReset(&zs); }
+};
+
+InflateStream::InflateStream() : m_impl(new Impl) {}
+InflateStream::~InflateStream() { delete m_impl; }
+
+void InflateStream::reset() { m_impl->reset(); }
+
+bool InflateStream::inflate(QByteArrayView in, QByteArray *out)
+{
+    if (!m_impl->initialized || out == nullptr) return false;
+    out->clear();
+    m_impl->zs.next_in = const_cast<Bytef *>(
+        reinterpret_cast<const Bytef *>(in.data()));
+    m_impl->zs.avail_in = static_cast<uInt>(in.size());
+
+    // A single rect's inflated tile is bounded by 64×64 × 2 bytes (8 KB)
+    // plus the subencoding byte; 16 KB chunks are more than enough.
+    constexpr int kChunk = 16 * 1024;
+    QByteArray buf(kChunk, '\0');
+    for (;;) {
+        m_impl->zs.next_out = reinterpret_cast<Bytef *>(buf.data());
+        m_impl->zs.avail_out = static_cast<uInt>(buf.size());
+        const int rc = ::inflate(&m_impl->zs, Z_SYNC_FLUSH);
+        const int produced = static_cast<int>(buf.size() - m_impl->zs.avail_out);
+        if (produced > 0) out->append(buf.constData(), produced);
+        if (rc == Z_STREAM_END) break;
+        if (rc != Z_OK && rc != Z_BUF_ERROR) return false;
+        // Stop once we've consumed all input AND produced less than a
+        // full chunk — the stream has nothing more to emit for now.
+        if (m_impl->zs.avail_in == 0 && produced < buf.size()) break;
+    }
+    return true;
+}
 
 namespace {
 
@@ -289,11 +338,13 @@ bool decodeRleInner(QByteArrayView data, quint8 subenc,
 }
 
 DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
-                        QImage *out, int *consumed)
+                        QImage *out, int *consumed,
+                        InflateStream *inflate)
 {
     // Encoding layout: u32 dataLen, then dataLen bytes which begin with
-    // a ZLib uncompressed marker [byte0=0, u16 len=dataLen-5] and then
-    // the actual tile data starting with the subencoding byte.
+    // either a "ZLib uncompressed" marker [0x00, u16 len, padding] or a
+    // standard raw-deflate stream. Either way the inner payload starts
+    // with the subencoding byte once decompressed.
     if (payload.size() < 4) return DecodeStatus::NeedMore;
     const qint32 dataLen = (static_cast<qint32>(static_cast<unsigned char>(payload[0])) << 24)
                           | (static_cast<qint32>(static_cast<unsigned char>(payload[1])) << 16)
@@ -301,18 +352,20 @@ DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
                           | static_cast<qint32>(static_cast<unsigned char>(payload[3]));
     if (dataLen < 0) return DecodeStatus::Malformed;
     if (payload.size() < 4 + dataLen) return DecodeStatus::NeedMore;
-    // Need at least the 5-byte uncompressed marker + 1-byte subencoding.
-    if (dataLen < 6) return DecodeStatus::Malformed;
+    if (dataLen < 1) return DecodeStatus::Malformed;
 
     const QByteArrayView block = payload.sliced(4, dataLen);
 
-    // Look for the ZLib-uncompressed marker so we can stay on the
-    // simple path. A compressed block sets the first byte != 0 and
-    // would require inflate(); we don't enable that in v1.
-    if (static_cast<unsigned char>(block[0]) == 0x00
+    // Look for the uncompressed marker first — that path requires no
+    // inflate state and matches what AMT BIOS firmware tends to emit.
+    const bool uncompressedMarker =
+        dataLen >= 6
+        && static_cast<unsigned char>(block[0]) == 0x00
         && (static_cast<quint16>(static_cast<unsigned char>(block[1]))
             | (static_cast<quint16>(static_cast<unsigned char>(block[2])) << 8))
-                == static_cast<quint16>(dataLen - 5)) {
+                == static_cast<quint16>(dataLen - 5);
+
+    if (uncompressedMarker) {
         const quint8 sub = static_cast<unsigned char>(block[5]);
         QByteArrayView inner = block.sliced(6, dataLen - 6);
         QVector<quint32> argb;
@@ -324,15 +377,32 @@ DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
         return DecodeStatus::Ok;
     }
 
-    // Compressed RLE data — distinct from "need more bytes". The caller
-    // tears the connection down so the user gets a clear error.
-    return DecodeStatus::UnsupportedSubencoding;
+    if (inflate == nullptr) {
+        // Caller can't decompress — surface as unsupported so the
+        // session tears down rather than spinning on "need more".
+        return DecodeStatus::UnsupportedSubencoding;
+    }
+
+    QByteArray inflated;
+    if (!inflate->inflate(block, &inflated) || inflated.isEmpty()) {
+        return DecodeStatus::Malformed;
+    }
+    const quint8 sub = static_cast<unsigned char>(inflated.at(0));
+    QByteArrayView inner(inflated.constData() + 1, inflated.size() - 1);
+    QVector<quint32> argb;
+    if (!decodeRleInner(inner, sub, rect, &argb)) {
+        return DecodeStatus::UnsupportedSubencoding;
+    }
+    *out = makeArgbImage(rect.w, rect.h, argb.constData());
+    *consumed = 4 + dataLen;
+    return DecodeStatus::Ok;
 }
 
 } // namespace
 
 DecodeStatus tryDecodeRect(QByteArrayView payload, const RectHeader &rect,
-                            DecodedRect *out, int *consumed)
+                            DecodedRect *out, int *consumed,
+                            InflateStream *inflate)
 {
     if (consumed != nullptr) *consumed = 0;
     if (out == nullptr) return DecodeStatus::Malformed;
@@ -356,7 +426,7 @@ DecodeStatus tryDecodeRect(QByteArrayView payload, const RectHeader &rect,
     }
     if (rect.encoding == EncRle) {
         int n = 0;
-        const DecodeStatus s = decodeRle(payload, rect, &out->image, &n);
+        const DecodeStatus s = decodeRle(payload, rect, &out->image, &n, inflate);
         if (s == DecodeStatus::Ok && consumed != nullptr) *consumed = n;
         return s;
     }

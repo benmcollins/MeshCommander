@@ -5,6 +5,8 @@
 
 #include <QtTest>
 
+#include <zlib.h>
+
 using namespace qumesh::kvm;
 
 namespace {
@@ -35,6 +37,33 @@ QByteArray le16(quint16 v)
     return b;
 }
 
+/// Raw-deflate the bytes in `in` using a fresh stream with the same
+/// window-bits the inflate side uses (-15). Returns the compressed
+/// stream that, when fed to InflateStream::inflate, recovers `in`.
+QByteArray rawDeflate(const QByteArray &in)
+{
+    z_stream zs{};
+    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+                       -15, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        return {};
+    }
+    zs.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(in.constData()));
+    zs.avail_in = static_cast<uInt>(in.size());
+
+    QByteArray out;
+    QByteArray buf(4096, '\0');
+    int rc;
+    do {
+        zs.next_out = reinterpret_cast<Bytef *>(buf.data());
+        zs.avail_out = static_cast<uInt>(buf.size());
+        rc = deflate(&zs, Z_FINISH);
+        const int produced = static_cast<int>(buf.size() - zs.avail_out);
+        if (produced > 0) out.append(buf.constData(), produced);
+    } while (rc == Z_OK);
+    deflateEnd(&zs);
+    return out;
+}
+
 } // namespace
 
 class TestKvmCodec : public QObject
@@ -54,6 +83,8 @@ private slots:
     void decodeDesktopSizeFlag();
     void decodeRleCompressedReportsUnsupported();
     void decodeRleNeedsMoreOnShortBuffer();
+    void decodeRleCompressedWithInflate();
+    void inflateStreamPreservesWindowAcrossBlocks();
 };
 
 void TestKvmCodec::rgb565ToArgbBoundaries()
@@ -305,6 +336,98 @@ void TestKvmCodec::decodeRleNeedsMoreOnShortBuffer()
     DecodedRect dr;
     int consumed = -1;
     QCOMPARE(tryDecodeRect(payload, rect, &dr, &consumed), DecodeStatus::NeedMore);
+}
+
+void TestKvmCodec::decodeRleCompressedWithInflate()
+{
+    RectHeader rect;
+    rect.w = 4; rect.h = 4;
+    rect.encoding = EncRle;
+
+    // Reference inner payload (no marker): subencoding 1 (solid) +
+    // RGB565 red. Compress with raw-deflate and wrap as a RLE rect.
+    QByteArray inner;
+    inner.append(char(0x01));
+    inner.append(le16(0xF800));
+
+    const QByteArray deflated = rawDeflate(inner);
+    QVERIFY(!deflated.isEmpty());
+    // First byte of a raw deflate stream is almost never 0x00, but we
+    // assert anyway because if it ever is, we'd accidentally hit the
+    // uncompressed-marker path.
+    QVERIFY(static_cast<unsigned char>(deflated.at(0)) != 0x00);
+
+    QByteArray payload;
+    payload.append(be32(static_cast<quint32>(deflated.size())));
+    payload.append(deflated);
+
+    InflateStream stream;
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(payload, rect, &dr, &consumed, &stream),
+              DecodeStatus::Ok);
+    QCOMPARE(consumed, 4 + deflated.size());
+    QCOMPARE(dr.image.width(), 4);
+    QCOMPARE(dr.image.height(), 4);
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x)
+            QCOMPARE(dr.image.pixel(x, y), QRgb(0xFFF80000));
+}
+
+void TestKvmCodec::inflateStreamPreservesWindowAcrossBlocks()
+{
+    // Compress two blocks with the SAME deflate stream so the second
+    // block references the first's dictionary. Feed both through one
+    // InflateStream and verify both inflate correctly.
+    z_stream zs{};
+    QVERIFY(deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8,
+                          Z_DEFAULT_STRATEGY) == Z_OK);
+
+    auto deflateBlock = [&zs](const QByteArray &in) -> QByteArray {
+        zs.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(in.constData()));
+        zs.avail_in = static_cast<uInt>(in.size());
+        QByteArray out;
+        QByteArray buf(4096, '\0');
+        int rc;
+        do {
+            zs.next_out = reinterpret_cast<Bytef *>(buf.data());
+            zs.avail_out = static_cast<uInt>(buf.size());
+            rc = deflate(&zs, Z_SYNC_FLUSH);
+            const int produced = static_cast<int>(buf.size() - zs.avail_out);
+            if (produced > 0) out.append(buf.constData(), produced);
+        } while (zs.avail_out == 0);
+        return out;
+    };
+
+    const QByteArray inner1 = QByteArrayLiteral("\x01") + le16(0x07E0); // green
+    const QByteArray inner2 = QByteArrayLiteral("\x01") + le16(0x001F); // blue
+    const QByteArray d1 = deflateBlock(inner1);
+    const QByteArray d2 = deflateBlock(inner2);
+    deflateEnd(&zs);
+
+    InflateStream stream;
+
+    auto runRect = [&stream](const QByteArray &dBlock,
+                              quint16 expected) {
+        RectHeader rect;
+        rect.w = 2; rect.h = 2;
+        rect.encoding = EncRle;
+
+        QByteArray payload;
+        payload.append(be32(static_cast<quint32>(dBlock.size())));
+        payload.append(dBlock);
+
+        DecodedRect dr;
+        int consumed = -1;
+        QCOMPARE(tryDecodeRect(payload, rect, &dr, &consumed, &stream),
+                  DecodeStatus::Ok);
+
+        const QRgb expectedArgb = rgb565ToArgb(expected);
+        QCOMPARE(dr.image.pixel(0, 0), expectedArgb);
+    };
+
+    runRect(d1, 0x07E0);
+    runRect(d2, 0x001F);
 }
 
 QTEST_GUILESS_MAIN(TestKvmCodec)

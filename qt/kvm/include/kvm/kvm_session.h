@@ -92,6 +92,7 @@ private:
     quint16 m_width = 0;
     quint16 m_height = 0;
     int m_pendingRects = 0;
+    InflateStream m_inflate;     ///< Persists across all RLE blocks.
 };
 
 } // namespace qumesh::kvm

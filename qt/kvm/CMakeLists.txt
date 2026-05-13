@@ -12,10 +12,13 @@ target_include_directories(qumesh_kvm PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+find_package(ZLIB REQUIRED)
+
 target_link_libraries(qumesh_kvm PUBLIC
     Qt6::Core
     Qt6::Gui
     qumesh_redir
+    ZLIB::ZLIB
 )
 
 if(BUILD_TESTING)

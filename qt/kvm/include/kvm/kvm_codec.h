@@ -11,6 +11,32 @@
 
 namespace qumesh::kvm {
 
+/// Raw-deflate (-windowBits=-15) inflate stream. The KVM RLE encoding
+/// uses a single zlib stream that spans the whole session — successive
+/// compressed RLE blocks share a sliding window, so the state must
+/// survive across rect boundaries. Construct one per session and
+/// reset on (re)negotiation.
+class InflateStream
+{
+public:
+    InflateStream();
+    ~InflateStream();
+    InflateStream(const InflateStream &) = delete;
+    InflateStream &operator=(const InflateStream &) = delete;
+
+    /// Reset to a fresh state, discarding any window.
+    void reset();
+
+    /// Decompress `in` (the raw block bytes after the dataLen header)
+    /// into `out`. State persists across calls so back-references into
+    /// prior blocks resolve correctly. Returns false on a zlib error.
+    bool inflate(QByteArrayView in, QByteArray *out);
+
+private:
+    struct Impl;
+    Impl *m_impl;
+};
+
 /// RFB-variant client → server message types.
 enum ClientMsg : quint8 {
     MsgSetPixelFormat            = 0,
@@ -138,10 +164,13 @@ enum class DecodeStatus {
 ///
 /// Supported encodings (bpp=2 / RGB565):
 ///   - 0 (RAW)
-///   - 16 (RLE), subencodings 0, 1, 128 (uncompressed ZLib marker only)
+///   - 16 (RLE), subencodings 0, 1, 128. The uncompressed-ZLib-marker
+///     path requires no inflate state. Compressed blocks decode when a
+///     non-null `InflateStream*` is supplied.
 ///   - 0xFFFFFF21 (DesktopSize) — returns isDesktopSize=true, no image.
 DecodeStatus tryDecodeRect(QByteArrayView payload, const RectHeader &rect,
-                            DecodedRect *out, int *consumed);
+                            DecodedRect *out, int *consumed,
+                            InflateStream *inflate = nullptr);
 
 /// Helper: convert an RGB565 u16 into a 32-bit ARGB pixel.
 quint32 rgb565ToArgb(quint16 v);

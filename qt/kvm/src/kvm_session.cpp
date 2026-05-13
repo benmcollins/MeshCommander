@@ -29,6 +29,9 @@ void KvmSession::start()
         fail(QStringLiteral("client not authenticated"));
         return;
     }
+    // The RLE inflate stream's sliding window must be empty at the
+    // start of every session.
+    m_inflate.reset();
     setState(State::Version);
 }
 
@@ -127,15 +130,15 @@ bool KvmSession::stepFrameLoop()
 
         DecodedRect dr;
         int payloadConsumed = 0;
-        const DecodeStatus s = tryDecodeRect(payload, rect, &dr, &payloadConsumed);
+        const DecodeStatus s = tryDecodeRect(payload, rect, &dr,
+                                              &payloadConsumed, &m_inflate);
         if (s == DecodeStatus::NeedMore) return false;
         if (s == DecodeStatus::UnsupportedEncoding) {
             fail(QStringLiteral("unsupported KVM encoding %1").arg(rect.encoding));
             return false;
         }
         if (s == DecodeStatus::UnsupportedSubencoding) {
-            fail(QStringLiteral("compressed or unsupported RLE subencoding — "
-                                  "ZLib decompression not enabled in this build"));
+            fail(QStringLiteral("unsupported KVM RLE subencoding"));
             return false;
         }
         if (s == DecodeStatus::Malformed) {
