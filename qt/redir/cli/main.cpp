@@ -28,7 +28,13 @@ int main(int argc, char *argv[])
     QCommandLineOption protoOpt({QStringLiteral("protocol")},
                                 QStringLiteral("sol | kvm | ider (default sol)"),
                                 QStringLiteral("protocol"), QStringLiteral("sol"));
-    parser.addOptions({hostOpt, portOpt, protoOpt});
+    QCommandLineOption userOpt({QStringLiteral("user"), QStringLiteral("u")},
+                               QStringLiteral("AMT username (enables digest auth)"),
+                               QStringLiteral("user"));
+    QCommandLineOption passOpt({QStringLiteral("pass"), QStringLiteral("P")},
+                               QStringLiteral("AMT password"),
+                               QStringLiteral("pass"));
+    parser.addOptions({hostOpt, portOpt, protoOpt, userOpt, passOpt});
     parser.process(app);
 
     QTextStream out(stdout);
@@ -51,9 +57,17 @@ int main(int argc, char *argv[])
 
     RedirectionClient client;
     client.setProtocol(proto);
+    const bool wantAuth = parser.isSet(userOpt);
+    if (wantAuth) {
+        client.setCredentials(parser.value(userOpt), parser.value(passOpt));
+    }
 
     QObject::connect(&client, &RedirectionClient::sessionOpened, &app, [&]() {
         out << "Session opened. OEM data length: " << client.oemData().size() << Qt::endl;
+        if (!wantAuth) QCoreApplication::exit(0);
+    });
+    QObject::connect(&client, &RedirectionClient::authenticated, &app, [&]() {
+        out << "Authenticated." << Qt::endl;
         QCoreApplication::exit(0);
     });
     QObject::connect(&client, &RedirectionClient::failed, &app,
