@@ -4,6 +4,9 @@
 #include "computermodel.h"
 #include "configstore.h"
 #include "idercontroller.h"
+#include "kvmcontroller.h"
+#include "kvmframebuffer.h"
+#include "kvmviewer.h"
 #include "migrationcontroller.h"
 #include "solcontroller.h"
 #include "terminal/terminalscreen.h"
@@ -34,9 +37,14 @@ int main(int argc, char *argv[])
                                  &migrationController);
     qmlRegisterType<meshcommander::app::SolController>("QuMesh", 1, 0, "SolController");
     qmlRegisterType<meshcommander::app::IderController>("QuMesh", 1, 0, "IderController");
+    qmlRegisterType<meshcommander::app::KvmController>("QuMesh", 1, 0, "KvmController");
+    qmlRegisterType<meshcommander::app::KvmViewer>("QuMesh", 1, 0, "KvmViewer");
     qmlRegisterUncreatableType<meshcommander::terminal::TerminalScreen>(
         "QuMesh", 1, 0, "TerminalScreen",
         QStringLiteral("Owned by SolController"));
+    qmlRegisterUncreatableType<meshcommander::app::KvmFramebuffer>(
+        "QuMesh", 1, 0, "KvmFramebuffer",
+        QStringLiteral("Owned by KvmController"));
 
     QQmlApplicationEngine engine;
 

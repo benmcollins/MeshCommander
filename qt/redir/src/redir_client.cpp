@@ -160,7 +160,16 @@ void RedirectionClient::drainInbox()
                 }
                 setState(State::Authenticated);
                 emit authenticated();
-                break;
+                // Any bytes still buffered after the 0x14 success belong
+                // to the application protocol — KVM's RFB banner, for
+                // example, can arrive in the same TCP read. Hand them
+                // off via rawBytes and stop parsing as auth frames.
+                if (!m_inbox.isEmpty()) {
+                    const QByteArray leftover = m_inbox;
+                    m_inbox.clear();
+                    emit rawBytes(leftover);
+                }
+                return;
             }
             default:
                 fail(QStringLiteral("unexpected 0x14 in state %1").arg(static_cast<int>(m_state)));
