@@ -7,12 +7,10 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
 
 #include "kvmframebuffer.h"
-
-namespace meshcommander::redir {
-class RedirectionClient;
-}
+#include "redir/redir_client.h"
 
 namespace meshcommander::kvm {
 class KvmSession;
@@ -41,6 +39,7 @@ public:
         Disconnected,
         Connecting,
         Authenticating,
+        AwaitingTrust,
         Negotiating,
         Connected,
         Failed,
@@ -59,14 +58,25 @@ public:
     [[nodiscard]] int desktopWidth() const { return m_width; }
     [[nodiscard]] int desktopHeight() const { return m_height; }
     [[nodiscard]] KvmFramebuffer *framebuffer() const { return m_framebuffer; }
+    [[nodiscard]] bool tls() const { return m_tls; }
+    [[nodiscard]] QStringList trustedFingerprints() const { return m_trustedFingerprints; }
+    [[nodiscard]] bool awaitingTrust() const { return m_state == State::AwaitingTrust; }
+    [[nodiscard]] QString pendingCertSubject() const { return m_pendingCert.subject; }
+    [[nodiscard]] QString pendingCertIssuer() const { return m_pendingCert.issuer; }
+    [[nodiscard]] QString pendingCertFingerprint() const { return m_pendingCert.fingerprintSha256; }
+    [[nodiscard]] QString pendingCertNotBefore() const { return m_pendingCert.notBefore; }
+    [[nodiscard]] QString pendingCertNotAfter() const { return m_pendingCert.notAfter; }
 
     void setHost(const QString &v);
     void setPort(quint16 v);
     void setUser(const QString &v);
     void setPassword(const QString &v);
+    void setTls(bool v);
+    void setTrustedFingerprints(QStringList v);
 
     Q_INVOKABLE void open();
     Q_INVOKABLE void close();
+    Q_INVOKABLE void trustPendingCert(bool persist);
     Q_INVOKABLE void sendCtrlAltDel();
     /// Send a single key tap (down → up) by X11 keysym.
     Q_INVOKABLE void sendKeyTap(quint32 keysym);
@@ -83,6 +93,11 @@ signals:
     void stateChanged();
     void lastErrorChanged();
     void desktopResized();
+    void tlsChanged();
+    void trustedFingerprintsChanged();
+    void pendingCertChanged();
+    void awaitingTrustChanged();
+    void trustedFingerprintAdded(const QString &fingerprint);
 
 private:
     void setState(State s);
@@ -97,6 +112,9 @@ private:
     QString m_lastError;
     int m_width = 0;
     int m_height = 0;
+    bool m_tls = false;
+    QStringList m_trustedFingerprints;
+    meshcommander::redir::PeerCertSummary m_pendingCert;
 
     KvmFramebuffer *m_framebuffer;
     QPointer<meshcommander::redir::RedirectionClient> m_client;

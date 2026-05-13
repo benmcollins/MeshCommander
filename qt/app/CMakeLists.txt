@@ -47,6 +47,7 @@ qt_add_qml_module(qumesh
         qml/IderWindow.qml
         qml/KvmWindow.qml
         qml/CertificatesWindow.qml
+        qml/CertTrustDialog.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml

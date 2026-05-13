@@ -48,11 +48,27 @@ void SolController::setPassword(const QString &v)
     emit passwordChanged();
 }
 
+void SolController::setTls(bool v)
+{
+    if (v == m_tls) return;
+    m_tls = v;
+    emit tlsChanged();
+}
+
+void SolController::setTrustedFingerprints(QStringList v)
+{
+    if (v == m_trustedFingerprints) return;
+    m_trustedFingerprints = std::move(v);
+    emit trustedFingerprintsChanged();
+}
+
 void SolController::setState(State s)
 {
     if (s == m_state) return;
+    const bool wasAwaiting = (m_state == State::AwaitingTrust);
     m_state = s;
     emit stateChanged();
+    if (wasAwaiting != (s == State::AwaitingTrust)) emit awaitingTrustChanged();
 }
 
 void SolController::setLastError(const QString &e)
@@ -75,8 +91,17 @@ void SolController::open()
     m_client = new RedirectionClient(this);
     m_client->setProtocol(meshcommander::redir::Protocol::Sol);
     m_client->setCredentials(m_user, m_password);
+    m_client->setTls(m_tls);
+    m_client->setTrustedFingerprints(m_trustedFingerprints);
 
     m_session = new SolSession(m_client, this);
+
+    connect(m_client.data(), &RedirectionClient::trustPromptRequired, this,
+            [this](const meshcommander::redir::PeerCertSummary &summary) {
+                m_pendingCert = summary;
+                emit pendingCertChanged();
+                setState(State::AwaitingTrust);
+            });
 
     connect(m_client.data(), &RedirectionClient::stateChanged, this, [this]() {
         if (!m_client) return;
@@ -133,6 +158,19 @@ void SolController::close()
     setState(State::Disconnected);
 }
 
+void SolController::trustPendingCert(bool persist)
+{
+    if (!m_client || m_state != State::AwaitingTrust) return;
+    const QString fp = m_pendingCert.fingerprintSha256;
+    m_client->trustPendingPeerCert();
+    if (!m_trustedFingerprints.contains(fp)) {
+        m_trustedFingerprints.append(fp);
+        emit trustedFingerprintsChanged();
+    }
+    setState(State::Authenticating);
+    if (persist && !fp.isEmpty()) emit trustedFingerprintAdded(fp);
+}
+
 void SolController::sendText(const QString &text)
 {
     sendBytes(text.toUtf8());
@@ -155,6 +193,10 @@ void SolController::teardown()
         m_client->disconnect(this);
         m_client->deleteLater();
         m_client = nullptr;
+    }
+    if (!m_pendingCert.fingerprintSha256.isEmpty()) {
+        m_pendingCert = {};
+        emit pendingCertChanged();
     }
 }
 

@@ -28,6 +28,7 @@ struct Computer
     QString pass;
     bool tls = false;
     QString digestRealm;
+    QStringList trustedFingerprints; ///< Pinned cert fingerprints for TLS.
 
     [[nodiscard]] QJsonObject toJson() const;
     [[nodiscard]] static Computer fromJson(const QJsonObject &obj);
@@ -55,6 +56,7 @@ public:
         PassRole,
         TlsRole,
         DigestRealmRole,
+        TrustedFingerprintsRole,
     };
     Q_ENUM(Role)
 
@@ -83,6 +85,11 @@ public:
     /// Delete the computer at `row`. Returns false (and leaves state intact)
     /// if `row` is out of range or persistence fails.
     Q_INVOKABLE bool removeAt(int row);
+
+    /// Append a trusted cert fingerprint for the computer at `row`.
+    /// Idempotent; duplicates are dropped. Returns false on persistence
+    /// failure or out-of-range row.
+    Q_INVOKABLE bool addTrustedFingerprint(int row, const QString &fingerprint);
 
     /// Read-only accessor for tests / dialog state.
     [[nodiscard]] Computer at(int row) const;
