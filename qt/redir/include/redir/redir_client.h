@@ -61,11 +61,21 @@ public:
     void connectTo(const QString &host, quint16 port);
     void disconnectFromHost();
 
+    /// Write raw bytes to the underlying socket. Intended for use by an
+    /// application-layer driver (`SolSession`, future IDE-R/KVM) after
+    /// `Authenticated`. Returns the number of bytes queued or -1.
+    qint64 writeRaw(const QByteArray &bytes);
+
 signals:
     void stateChanged(State state);
     void sessionOpened();
     void authenticated();
     void failed(const QString &error);
+
+    /// Emitted for every chunk of bytes received after `Authenticated`. The
+    /// client stops parsing once auth completes; the application protocol
+    /// is responsible from there on.
+    void rawBytes(const QByteArray &chunk);
 
 private:
     void handleConnected();

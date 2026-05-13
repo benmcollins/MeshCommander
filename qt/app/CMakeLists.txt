@@ -52,6 +52,7 @@ target_link_libraries(qumesh PRIVATE
 )
 
 set_target_properties(qumesh PROPERTIES
+    OUTPUT_NAME "QuMesh"
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_BUNDLE_NAME "QuMesh"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.insynergy.QuMesh"

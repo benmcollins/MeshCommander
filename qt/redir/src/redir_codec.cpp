@@ -214,4 +214,97 @@ QString makeClientNonce()
         .arg(r2, 16, 16, QLatin1Char('0'));
 }
 
+namespace {
+
+QByteArray pack16Le(quint16 v)
+{
+    QByteArray b(2, '\0');
+    b[0] = static_cast<char>(v & 0xFF);
+    b[1] = static_cast<char>((v >> 8) & 0xFF);
+    return b;
+}
+
+quint16 read16Le(QByteArrayView v, int off)
+{
+    return static_cast<quint16>(static_cast<unsigned char>(v[off]))
+         | static_cast<quint16>(static_cast<unsigned char>(v[off + 1])) << 8;
+}
+
+} // namespace
+
+QByteArray buildSolOpen(quint32 sequence, const SolOpenParams &params)
+{
+    QByteArray f;
+    f.append(char(0x20));
+    f.append(char(0x00));
+    f.append(char(0x00));
+    f.append(char(0x00));
+    f.append(pack32Le(sequence));
+    f.append(pack16Le(params.maxTxBuffer));
+    f.append(pack16Le(params.txTimeoutMs));
+    f.append(pack16Le(params.txOverflowTimeoutMs));
+    f.append(pack16Le(params.rxTimeoutMs));
+    f.append(pack16Le(params.rxFlushTimeoutMs));
+    f.append(pack16Le(params.heartbeatMs));
+    f.append(pack32Le(0));
+    return f;
+}
+
+bool tryParseSolOpenReply(QByteArrayView buffer, SolOpenReply *reply, int *consumed)
+{
+    constexpr int kSize = 23;
+    if (consumed != nullptr) *consumed = 0;
+    if (buffer.size() < 1) return false;
+    if (static_cast<unsigned char>(buffer[0]) != 0x21) return false;
+    if (buffer.size() < kSize) return false;
+    if (reply != nullptr) reply->status = static_cast<unsigned char>(buffer[9]);
+    if (consumed != nullptr) *consumed = kSize;
+    return true;
+}
+
+QByteArray buildSolSettings(quint32 sequence)
+{
+    QByteArray f;
+    f.append(char(0x27));
+    f.append(char(0x00));
+    f.append(char(0x00));
+    f.append(char(0x00));
+    f.append(pack32Le(sequence));
+    static constexpr unsigned char kFixed[] = {0x00, 0x00, 0x1B, 0x00, 0x00, 0x00};
+    f.append(reinterpret_cast<const char *>(kFixed), sizeof(kFixed));
+    return f;
+}
+
+QByteArray buildSolDataToHost(QByteArrayView data)
+{
+    Q_ASSERT(data.size() <= 0xFFFF);
+    QByteArray f;
+    f.append(char(0x28));
+    f.append(7, '\0');
+    f.append(pack16Le(static_cast<quint16>(data.size())));
+    f.append(data.data(), static_cast<int>(data.size()));
+    return f;
+}
+
+bool tryParseSolDisplayData(QByteArrayView buffer, QByteArray *data, int *consumed)
+{
+    if (consumed != nullptr) *consumed = 0;
+    if (buffer.size() < 1) return false;
+    if (static_cast<unsigned char>(buffer[0]) != 0x2A) return false;
+    if (buffer.size() < 10) return false;
+    const quint16 n = read16Le(buffer, 8);
+    if (buffer.size() < 10 + static_cast<int>(n)) return false;
+    if (data != nullptr) *data = QByteArray(buffer.data() + 10, n);
+    if (consumed != nullptr) *consumed = 10 + static_cast<int>(n);
+    return true;
+}
+
+QByteArray buildSolKeepalive()
+{
+    QByteArray f;
+    f.append(char(0x2B));
+    f.append(7, '\0');
+    return f;
+}
+
 } // namespace meshcommander::redir

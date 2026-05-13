@@ -102,4 +102,45 @@ struct AuthReply
 /// platform CSPRNG via `QRandomGenerator::securelySeeded()`.
 [[nodiscard]] QString makeClientNonce();
 
+// -- SOL (Serial-over-LAN) framing ---------------------------------------
+
+/// Knobs the firmware accepts in a `0x20` Open. Defaults match the legacy
+/// NW.js client's hardcoded values; reasonable for interactive terminals.
+struct SolOpenParams
+{
+    quint16 maxTxBuffer = 10000;
+    quint16 txTimeoutMs = 100;
+    quint16 txOverflowTimeoutMs = 0;
+    quint16 rxTimeoutMs = 10000;
+    quint16 rxFlushTimeoutMs = 100;
+    quint16 heartbeatMs = 0;
+};
+
+/// Build a `0x20 SerialSession.Open` (24 bytes).
+[[nodiscard]] QByteArray buildSolOpen(quint32 sequence, const SolOpenParams &params = {});
+
+/// Decoded `0x21 SerialSession.OpenReply` (23 bytes; status byte at offset 9).
+struct SolOpenReply
+{
+    quint8 status = 0xFF;
+};
+[[nodiscard]] bool tryParseSolOpenReply(QByteArrayView buffer, SolOpenReply *reply,
+                                          int *consumed);
+
+/// Build `0x27 SerialSession.Settings` (14 bytes). The 6 control bytes are
+/// the same fixed values the legacy client used.
+[[nodiscard]] QByteArray buildSolSettings(quint32 sequence);
+
+/// Build `0x28 SerialDataToHost` carrying user-typed bytes. Length is u16,
+/// callers must chunk large inputs (max 65535 bytes per frame).
+[[nodiscard]] QByteArray buildSolDataToHost(QByteArrayView data);
+
+/// Streaming-friendly `0x2A IncomingDisplayData` parser. Returns true and
+/// populates `*data` (raw terminal bytes) when a full frame is present.
+[[nodiscard]] bool tryParseSolDisplayData(QByteArrayView buffer, QByteArray *data,
+                                           int *consumed);
+
+/// Build a `0x2B Keepalive` (8 bytes) the client emits every ~2 s.
+[[nodiscard]] QByteArray buildSolKeepalive();
+
 } // namespace meshcommander::redir
