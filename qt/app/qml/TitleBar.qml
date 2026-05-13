@@ -12,6 +12,7 @@ Rectangle {
     id: root
 
     signal openCertificates()
+    signal toggleTheme()
 
     color: Colors.surface
     implicitHeight: 36
@@ -49,6 +50,18 @@ Rectangle {
         }
 
         Item { Layout.fillWidth: true }
+
+        Button {
+            text: Colors.dark ? "☀" : "☾"
+            flat: true
+            font.family: Type.sans
+            font.pixelSize: Type.sizeM
+            ToolTip.visible: hovered
+            ToolTip.text: Colors.dark
+                ? qsTr("Switch to light theme")
+                : qsTr("Switch to dark theme")
+            onClicked: root.toggleTheme()
+        }
 
         Button {
             text: qsTr("Certificates")
