@@ -18,6 +18,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 find_package(Qt6 6.6 REQUIRED COMPONENTS Core Quick QuickControls2 Network Test)
+find_package(Qt6 6.6 OPTIONAL_COMPONENTS HttpServer)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
 qt_standard_project_setup(REQUIRES 6.6)
@@ -40,3 +41,4 @@ include(CTest)
 
 add_subdirectory(app)
 add_subdirectory(migrate)
+add_subdirectory(wsman)
