@@ -3,6 +3,7 @@
 
 pragma ComponentBehavior: Bound
 
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -21,7 +22,16 @@ ApplicationWindow {
     title: qsTr("QuMesh")
     color: Colors.bg
 
-    Component.onCompleted: MigrationController.checkAndMaybeMigrate()
+    Component.onCompleted: {
+        Colors.dark = themeSettings.dark;
+        MigrationController.checkAndMaybeMigrate();
+    }
+
+    Settings {
+        id: themeSettings
+        category: "theme"
+        property bool dark: true
+    }
 
     ColumnLayout {
         spacing: 0
@@ -30,6 +40,10 @@ ApplicationWindow {
         TitleBar {
             Layout.fillWidth: true
             onOpenCertificates: certificatesLoader.launch()
+            onToggleTheme: {
+                Colors.dark = !Colors.dark;
+                themeSettings.dark = Colors.dark;
+            }
         }
 
         MigrationBanner {
