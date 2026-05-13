@@ -10,11 +10,11 @@
 
 #include "redir/redir_client.h"
 
-namespace meshcommander::ider {
+namespace qumesh::ider {
 class IderSession;
 }
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 /// QML-facing controller for one IDE-R session. Owns the redirection
 /// client and the IDE-R session driver. The QML layer sets `host`,
@@ -136,10 +136,10 @@ private:
     bool m_deviceEnabled = false;
     bool m_tls = false;
     QStringList m_trustedFingerprints;
-    meshcommander::redir::PeerCertSummary m_pendingCert;
+    qumesh::redir::PeerCertSummary m_pendingCert;
 
-    QPointer<meshcommander::redir::RedirectionClient> m_client;
-    QPointer<meshcommander::ider::IderSession> m_session;
+    QPointer<qumesh::redir::RedirectionClient> m_client;
+    QPointer<qumesh::ider::IderSession> m_session;
 };
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

@@ -8,9 +8,9 @@
 
 #include <QMetaObject>
 
-namespace meshcommander::kvm {
+namespace qumesh::kvm {
 
-using meshcommander::redir::RedirectionClient;
+using qumesh::redir::RedirectionClient;
 
 KvmSession::KvmSession(RedirectionClient *client, QObject *parent)
     : QObject(parent), m_client(client)
@@ -248,4 +248,4 @@ void KvmSession::writeFrame(const QByteArray &frame)
     }
 }
 
-} // namespace meshcommander::kvm
+} // namespace qumesh::kvm

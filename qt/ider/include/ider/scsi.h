@@ -5,7 +5,7 @@
 
 #include <QByteArray>
 
-namespace meshcommander::ider::scsi {
+namespace qumesh::ider::scsi {
 
 /// SCSI opcodes used by AMT's BIOS-side IDE-R driver. Only a small
 /// subset is needed for read-only ISO booting.
@@ -80,4 +80,4 @@ inline QByteArray packBe32(quint32 v)
     return b;
 }
 
-} // namespace meshcommander::ider::scsi
+} // namespace qumesh::ider::scsi

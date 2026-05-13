@@ -12,7 +12,7 @@
 class QNetworkAccessManager;
 class QAuthenticator;
 
-namespace meshcommander::wsman {
+namespace qumesh::wsman {
 
 /// Transport layer for WSMAN/SOAP requests against an AMT device.
 ///
@@ -59,4 +59,4 @@ private:
     int m_transferTimeoutMs = 30000;
 };
 
-} // namespace meshcommander::wsman
+} // namespace qumesh::wsman

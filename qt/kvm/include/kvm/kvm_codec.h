@@ -9,7 +9,7 @@
 #include <QString>
 #include <QVector>
 
-namespace meshcommander::kvm {
+namespace qumesh::kvm {
 
 /// RFB-variant client → server message types.
 enum ClientMsg : quint8 {
@@ -146,4 +146,4 @@ DecodeStatus tryDecodeRect(QByteArrayView payload, const RectHeader &rect,
 /// Helper: convert an RGB565 u16 into a 32-bit ARGB pixel.
 quint32 rgb565ToArgb(quint16 v);
 
-} // namespace meshcommander::kvm
+} // namespace qumesh::kvm

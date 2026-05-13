@@ -11,7 +11,7 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 
-namespace meshcommander::config {
+namespace qumesh::config {
 
 namespace {
 
@@ -118,4 +118,4 @@ bool ConfigStore::saveSettings(const QJsonObject &obj)
                      QJsonDocument(obj).toJson(QJsonDocument::Indented));
 }
 
-} // namespace meshcommander::config
+} // namespace qumesh::config

@@ -8,7 +8,7 @@
 
 #include <QFileInfo>
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 MigrationController::MigrationController(QObject *parent)
     : QObject(parent)
@@ -79,4 +79,4 @@ void MigrationController::setMessage(QString m)
     emit messageChanged();
 }
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

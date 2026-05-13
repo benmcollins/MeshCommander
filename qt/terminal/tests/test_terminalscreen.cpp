@@ -6,7 +6,7 @@
 #include <QSignalSpy>
 #include <QtTest>
 
-using namespace meshcommander::terminal;
+using namespace qumesh::terminal;
 
 class TestTerminalScreen : public QObject
 {

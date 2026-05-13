@@ -8,10 +8,10 @@
 
 #include "certs/cert_store.h"
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 /// QAbstractListModel exposing the local certificate store to QML.
-/// Backed by a `meshcommander::certs::CertStore` loaded from
+/// Backed by a `qumesh::certs::CertStore` loaded from
 /// `<configDir>/certificates.json`.
 class CertModel : public QAbstractListModel
 {
@@ -62,4 +62,4 @@ private:
     QString m_lastError;
 };
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

@@ -18,7 +18,7 @@
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
 
-using namespace meshcommander::certs;
+using namespace qumesh::certs;
 
 namespace {
 

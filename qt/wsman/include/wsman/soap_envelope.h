@@ -7,7 +7,7 @@
 #include <QHash>
 #include <QString>
 
-namespace meshcommander::wsman {
+namespace qumesh::wsman {
 
 /// Pure-function helpers for building and parsing the SOAP/WS-Management
 /// envelopes that Intel AMT speaks. Kept transport-agnostic so the same
@@ -56,4 +56,4 @@ struct SoapResponse
 /// like `CIM_AssociatedPowerManagementService.PowerState`.
 [[nodiscard]] QString findScalar(const QByteArray &bodyXml, const QString &localName);
 
-} // namespace meshcommander::wsman
+} // namespace qumesh::wsman

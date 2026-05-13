@@ -14,7 +14,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
-using namespace meshcommander::migrate;
+using namespace qumesh::migrate;
 
 namespace {
 
@@ -164,7 +164,7 @@ void TestMigrate::missingLegacyDirReportsError()
 {
     MigrationOptions opts;
     opts.legacyDataDir = QStringLiteral("/definitely/not/a/dir");
-    opts.outputDir = QDir::tempPath() + QStringLiteral("/meshcommander-test-output");
+    opts.outputDir = QDir::tempPath() + QStringLiteral("/qumesh-test-output");
 
     Migrator m;
     const MigrationResult r = m.run(opts);

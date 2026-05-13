@@ -3,7 +3,7 @@
 
 #include "ider/scsi.h"
 
-namespace meshcommander::ider::scsi {
+namespace qumesh::ider::scsi {
 
 namespace {
 
@@ -139,4 +139,4 @@ const QByteArray &configTimeout()
     return kArray;
 }
 
-} // namespace meshcommander::ider::scsi
+} // namespace qumesh::ider::scsi

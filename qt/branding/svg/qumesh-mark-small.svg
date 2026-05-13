@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <title>QuMesh — small size mark</title>
+  <desc>Simplified QuMesh mark for use at 16-32 pixel sizes; the Q circle and tail node only, no interior lattice.</desc>
+  <g transform="translate(100, 100)">
+    <circle cx="0" cy="0" r="50" fill="none" stroke="currentColor" stroke-width="8"/>
+    <line x1="20" y1="20" x2="60" y2="60" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="60" cy="60" r="10" fill="currentColor"/>
+  </g>
+</svg>

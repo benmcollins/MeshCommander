@@ -6,7 +6,7 @@
 
 #include <QtTest>
 
-using namespace meshcommander::ider;
+using namespace qumesh::ider;
 
 class TestIderCodec : public QObject
 {

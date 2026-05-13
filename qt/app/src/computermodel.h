@@ -4,15 +4,20 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QList>
 #include <QString>
-namespace meshcommander::config {
+namespace qumesh::config {
 class ConfigStore;
 }
 
-namespace meshcommander::model {
+namespace qumesh::app {
+class PowerStatePoller;
+}
+
+namespace qumesh::model {
 
 /// In-memory representation of one row in `ComputerModel`. Mirrors the
 /// subset of fields the legacy app stored under `computers[i]` that we
@@ -57,6 +62,7 @@ public:
         TlsRole,
         DigestRealmRole,
         TrustedFingerprintsRole,
+        PowerStateRole,           ///< Live, set by per-row PowerStatePoller.
     };
     Q_ENUM(Role)
 
@@ -96,10 +102,17 @@ public:
 
 private:
     [[nodiscard]] bool persist();
+    /// Build / refresh the per-row poller fleet to match the current
+    /// computer list. Idempotent.
+    void rebuildPollers();
+    /// Disconnect + delete every poller.
+    void tearDownPollers();
 
     config::ConfigStore *m_store = nullptr;
     QList<Computer> m_computers;
     QString m_lastError;
+    QHash<QString, app::PowerStatePoller *> m_pollers;
+    QHash<QString, int> m_powerStates; ///< id → poller State (cast to int)
 };
 
-} // namespace meshcommander::model
+} // namespace qumesh::model

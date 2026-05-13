@@ -8,7 +8,7 @@
 #include <QJsonObject>
 #include <QString>
 
-namespace meshcommander::certs {
+namespace qumesh::certs {
 
 /// One row in the local certificate store. Mirrors the legacy
 /// MeshCommander entry layout closely enough that migrated data lands
@@ -32,4 +32,4 @@ struct CertEntry {
     static CertEntry fromJson(const QJsonObject &obj);
 };
 
-} // namespace meshcommander::certs
+} // namespace qumesh::certs

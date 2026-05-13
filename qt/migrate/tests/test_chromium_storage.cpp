@@ -9,7 +9,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
-using namespace meshcommander::migrate;
+using namespace qumesh::migrate;
 
 namespace {
 

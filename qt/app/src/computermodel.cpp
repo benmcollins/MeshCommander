@@ -4,10 +4,13 @@
 #include "computermodel.h"
 
 #include "configstore.h"
+#include "powerstatepoller.h"
 
 #include <QUuid>
 
-namespace meshcommander::model {
+namespace qumesh::model {
+
+using app::PowerStatePoller;
 
 QJsonObject Computer::toJson() const
 {
@@ -53,6 +56,7 @@ ComputerModel::ComputerModel(QObject *parent)
 void ComputerModel::setStore(config::ConfigStore *store)
 {
     beginResetModel();
+    tearDownPollers();
     m_store = store;
     m_computers.clear();
     if (m_store != nullptr) {
@@ -63,6 +67,7 @@ void ComputerModel::setStore(config::ConfigStore *store)
         }
     }
     endResetModel();
+    rebuildPollers();
 }
 
 int ComputerModel::rowCount(const QModelIndex &parent) const
@@ -96,6 +101,8 @@ QVariant ComputerModel::data(const QModelIndex &index, int role) const
         return c.digestRealm;
     case TrustedFingerprintsRole:
         return c.trustedFingerprints;
+    case PowerStateRole:
+        return m_powerStates.value(c.id, 0); // 0 = PowerStatePoller::State::Unknown
     }
     return {};
 }
@@ -163,6 +170,7 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
         {TlsRole, QByteArrayLiteral("tls")},
         {DigestRealmRole, QByteArrayLiteral("digestrealm")},
         {TrustedFingerprintsRole, QByteArrayLiteral("trustedFingerprints")},
+        {PowerStateRole, QByteArrayLiteral("powerState")},
     };
 }
 
@@ -244,7 +252,55 @@ bool ComputerModel::persist()
         return false;
     }
     m_lastError.clear();
+    rebuildPollers();
     return true;
 }
 
-} // namespace meshcommander::model
+void ComputerModel::tearDownPollers()
+{
+    for (auto *p : std::as_const(m_pollers)) p->deleteLater();
+    m_pollers.clear();
+    m_powerStates.clear();
+}
+
+void ComputerModel::rebuildPollers()
+{
+    // Track which existing pollers are still valid; drop those whose
+    // computer has been removed or whose host/auth has changed.
+    QHash<QString, PowerStatePoller *> next;
+    for (int row = 0; row < m_computers.size(); ++row) {
+        const Computer &c = m_computers.at(row);
+        if (c.host.isEmpty() || c.user.isEmpty()) {
+            // Without credentials we can't poll; drop any prior poller.
+            if (auto *old = m_pollers.take(c.id)) old->deleteLater();
+            continue;
+        }
+        PowerStatePoller *p = m_pollers.take(c.id);
+        if (p == nullptr) {
+            p = new PowerStatePoller(this);
+            const QString id = c.id;
+            connect(p, &PowerStatePoller::stateChanged, this,
+                    [this, id](PowerStatePoller::State s) {
+                        m_powerStates[id] = static_cast<int>(s);
+                        for (int r = 0; r < m_computers.size(); ++r) {
+                            if (m_computers.at(r).id == id) {
+                                const QModelIndex idx = index(r, 0);
+                                emit dataChanged(idx, idx, {PowerStateRole});
+                                break;
+                            }
+                        }
+                    });
+        }
+        p->setHost(c.host);
+        p->setPort(static_cast<quint16>(c.port));
+        p->setTls(c.tls);
+        p->setCredentials(c.user, c.pass);
+        p->start();
+        next.insert(c.id, p);
+    }
+    // Anything left in m_pollers belongs to a deleted/orphaned computer.
+    for (auto *old : std::as_const(m_pollers)) old->deleteLater();
+    m_pollers = std::move(next);
+}
+
+} // namespace qumesh::model

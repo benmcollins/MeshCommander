@@ -51,19 +51,28 @@ ApplicationWindow {
                 SplitView.preferredWidth: 360
                 SplitView.minimumWidth: 280
                 onCurrentRowChanged: root.selectedRow = listView.currentRow
-                onAddRequested: editPane.startNewComputer()
+                onAddRequested: statusPane.addRequested()
             }
 
-            ComputerEditPane {
-                id: editPane
+            ComputerStatusPane {
+                id: statusPane
                 row: root.selectedRow
                 SplitView.fillWidth: true
                 SplitView.minimumWidth: 420
+                onAddRequested: addDialog.openFor(-1)
             }
         }
 
         StatusBar {
             Layout.fillWidth: true
+        }
+    }
+
+    EditComputerDialog {
+        id: addDialog
+        onComputerSaved: function(savedRow) {
+            root.selectedRow = savedRow;
+            listView.setCurrentRow(savedRow);
         }
     }
 

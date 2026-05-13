@@ -10,7 +10,7 @@
 
 #include <QCryptographicHash>
 
-namespace meshcommander::migrate {
+namespace qumesh::migrate {
 
 namespace {
 
@@ -190,4 +190,4 @@ QByteArray LegacyCrypto::encryptV2(QByteArrayView plaintext)
     return out;
 }
 
-} // namespace meshcommander::migrate
+} // namespace qumesh::migrate

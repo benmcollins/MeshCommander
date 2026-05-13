@@ -12,7 +12,7 @@ namespace leveldb {
 class DB;
 }
 
-namespace meshcommander::migrate {
+namespace qumesh::migrate {
 
 /// A single decoded entry from Chromium's DOMStorage leveldb. `value` has
 /// already had its 1-byte Chromium type prefix stripped, and any UTF-16LE
@@ -61,4 +61,4 @@ private:
     leveldb::DB *m_db = nullptr;
 };
 
-} // namespace meshcommander::migrate
+} // namespace qumesh::migrate

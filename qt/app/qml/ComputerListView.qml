@@ -13,6 +13,8 @@ Rectangle {
 
     readonly property int currentRow: list.currentIndex
 
+    function setCurrentRow(row) { list.currentIndex = row; }
+
     signal addRequested
 
     color: Colors.bg
@@ -40,6 +42,7 @@ Rectangle {
                 required property string name
                 required property string host
                 required property int port
+                required property int powerState
 
                 width: list.width
                 height: 48
@@ -68,7 +71,18 @@ Rectangle {
                     anchors.rightMargin: 12
 
                     StatusLed {
-                        ledState: "unknown"
+                        ledState: {
+                            // PowerStatePoller::State: 0=Unknown, 1=On, 2=Off,
+                            // 3=Standby, 4=Hibernate, 5=Unreachable
+                            switch (rowItem.powerState) {
+                            case 1: return "on";
+                            case 2: return "off";
+                            case 3:
+                            case 4: return "standby";
+                            case 5: return "error";
+                            default: return "unknown";
+                            }
+                        }
                     }
 
                     ColumnLayout {

@@ -7,7 +7,7 @@
 #include <QString>
 #include <QtTypes>
 
-namespace meshcommander::redir {
+namespace qumesh::redir {
 
 /// Sub-protocols multiplexed over Intel's AMT Redirection port (16994/16995).
 enum class Protocol : quint8 {
@@ -143,4 +143,4 @@ struct SolOpenReply
 /// Build a `0x2B Keepalive` (8 bytes) the client emits every ~2 s.
 [[nodiscard]] QByteArray buildSolKeepalive();
 
-} // namespace meshcommander::redir
+} // namespace qumesh::redir

@@ -7,7 +7,7 @@
 #include <QJsonObject>
 #include <QString>
 
-namespace meshcommander::config {
+namespace qumesh::config {
 
 /// Owns the on-disk JSON files that hold the new app's persisted state:
 /// `computers.json`, `certificates.json`, `settings.json`. All writes go
@@ -58,4 +58,4 @@ private:
     mutable QString m_lastError;
 };
 
-} // namespace meshcommander::config
+} // namespace qumesh::config

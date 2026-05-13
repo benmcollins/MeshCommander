@@ -11,7 +11,7 @@
 
 #include "terminal/vt100parser.h"
 
-namespace meshcommander::terminal {
+namespace qumesh::terminal {
 
 /// Cell attribute bits. Reverse swaps fg/bg at render time.
 enum CellAttr : quint8 {
@@ -120,4 +120,4 @@ private:
     void scrollUp();
 };
 
-} // namespace meshcommander::terminal
+} // namespace qumesh::terminal

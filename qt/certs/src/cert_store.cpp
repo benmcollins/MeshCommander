@@ -12,7 +12,7 @@
 #include <QJsonObject>
 #include <QSaveFile>
 
-namespace meshcommander::certs {
+namespace qumesh::certs {
 
 CertStore::CertStore(QString path) : m_path(std::move(path)) {}
 
@@ -104,4 +104,4 @@ int CertStore::indexOf(const QString &id) const
     return -1;
 }
 
-} // namespace meshcommander::certs
+} // namespace qumesh::certs

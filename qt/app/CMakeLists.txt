@@ -21,6 +21,8 @@ qt_add_executable(qumesh
     src/kvmviewer.h
     src/certmodel.cpp
     src/certmodel.h
+    src/powerstatepoller.cpp
+    src/powerstatepoller.h
 )
 
 set_source_files_properties(
@@ -36,7 +38,8 @@ qt_add_qml_module(qumesh
     QML_FILES
         qml/Main.qml
         qml/ComputerListView.qml
-        qml/ComputerEditPane.qml
+        qml/ComputerStatusPane.qml
+        qml/EditComputerDialog.qml
         qml/MigrationBanner.qml
         qml/TitleBar.qml
         qml/StatusBar.qml
@@ -67,12 +70,13 @@ target_link_libraries(qumesh PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Network
-    meshcommander_migrate
-    meshcommander_redir
-    meshcommander_terminal
-    meshcommander_ider
-    meshcommander_kvm
-    meshcommander_certs
+    qumesh_migrate
+    qumesh_redir
+    qumesh_terminal
+    qumesh_ider
+    qumesh_kvm
+    qumesh_certs
+    qumesh_wsman
 )
 
 set_target_properties(qumesh PROPERTIES

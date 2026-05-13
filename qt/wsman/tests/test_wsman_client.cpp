@@ -12,7 +12,7 @@
 #include <QTcpServer>
 #include <QtTest>
 
-using namespace meshcommander::wsman;
+using namespace qumesh::wsman;
 
 class TestWsmanClient : public QObject
 {

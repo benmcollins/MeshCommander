@@ -8,7 +8,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
-using meshcommander::config::ConfigStore;
+using qumesh::config::ConfigStore;
 
 class TestConfigStore : public QObject
 {

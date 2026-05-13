@@ -6,7 +6,7 @@
 #include <QProcess>
 #include <QtTest>
 
-using namespace meshcommander::migrate;
+using namespace qumesh::migrate;
 
 class TestLegacyDecrypt : public QObject
 {

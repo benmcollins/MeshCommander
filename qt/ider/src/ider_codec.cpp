@@ -3,7 +3,7 @@
 
 #include "ider/ider_codec.h"
 
-namespace meshcommander::ider {
+namespace qumesh::ider {
 
 namespace {
 
@@ -242,4 +242,4 @@ bool tryParseStatusData(QByteArrayView buffer, StatusData *out, int *consumed)
     return true;
 }
 
-} // namespace meshcommander::ider
+} // namespace qumesh::ider

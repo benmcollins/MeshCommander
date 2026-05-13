@@ -12,11 +12,11 @@
 
 class QTimer;
 
-namespace meshcommander::redir {
+namespace qumesh::redir {
 class RedirectionClient;
 }
 
-namespace meshcommander::ider {
+namespace qumesh::ider {
 
 /// Drives an IDE-R session on top of an authenticated
 /// `RedirectionClient`. The driver serves a single read-only ISO file
@@ -44,7 +44,7 @@ public:
         Immediate  = kStartImmediate,
     };
 
-    explicit IderSession(meshcommander::redir::RedirectionClient *client,
+    explicit IderSession(qumesh::redir::RedirectionClient *client,
                           QObject *parent = nullptr);
     ~IderSession() override;
 
@@ -67,7 +67,7 @@ signals:
     /// Emitted when AMT acknowledges the OpenSession with valid
     /// SessionInfo. Consumers can treat this as "the channel is open
     /// but the BIOS hasn't requested anything yet".
-    void sessionOpened(const meshcommander::ider::SessionInfo &info);
+    void sessionOpened(const qumesh::ider::SessionInfo &info);
 
     /// Emitted when AMT toggles features in response to our
     /// EnableFeatures. `enabled=true` means the redirected device is
@@ -107,7 +107,7 @@ private:
 
     void fail(QString reason);
 
-    meshcommander::redir::RedirectionClient *m_client;
+    qumesh::redir::RedirectionClient *m_client;
     QString m_isoPath;
     QFile m_isoFile;
     quint64 m_isoSize = 0;
@@ -128,4 +128,4 @@ private:
     QString m_lastError;
 };
 
-} // namespace meshcommander::ider
+} // namespace qumesh::ider

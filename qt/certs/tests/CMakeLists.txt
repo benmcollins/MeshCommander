@@ -3,7 +3,7 @@
 
 qt_add_executable(test_cert_store test_cert_store.cpp)
 target_link_libraries(test_cert_store PRIVATE
-    meshcommander_certs
+    qumesh_certs
     Qt6::Test
     OpenSSL::Crypto
 )

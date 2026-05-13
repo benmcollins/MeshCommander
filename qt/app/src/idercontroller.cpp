@@ -7,10 +7,10 @@
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
-using meshcommander::ider::IderSession;
-using meshcommander::redir::RedirectionClient;
+using qumesh::ider::IderSession;
+using qumesh::redir::RedirectionClient;
 
 IderController::IderController(QObject *parent) : QObject(parent) {}
 IderController::~IderController() { teardown(); }
@@ -108,7 +108,7 @@ void IderController::open()
     emit deviceEnabledChanged();
 
     m_client = new RedirectionClient(this);
-    m_client->setProtocol(meshcommander::redir::Protocol::Ider);
+    m_client->setProtocol(qumesh::redir::Protocol::Ider);
     m_client->setCredentials(m_user, m_password);
     m_client->setTls(m_tls);
     m_client->setTrustedFingerprints(m_trustedFingerprints);
@@ -117,7 +117,7 @@ void IderController::open()
     m_session->setIsoPath(m_isoPath);
 
     connect(m_client.data(), &RedirectionClient::trustPromptRequired, this,
-            [this](const meshcommander::redir::PeerCertSummary &summary) {
+            [this](const qumesh::redir::PeerCertSummary &summary) {
                 m_pendingCert = summary;
                 emit pendingCertChanged();
                 setState(State::AwaitingTrust);
@@ -164,7 +164,7 @@ void IderController::open()
     });
 
     connect(m_session.data(), &IderSession::sessionOpened, this,
-            [this](const meshcommander::ider::SessionInfo &) {
+            [this](const qumesh::ider::SessionInfo &) {
                 setState(State::Running);
             });
     connect(m_session.data(), &IderSession::enabledChanged, this, [this](bool en) {
@@ -225,4 +225,4 @@ void IderController::teardown()
     }
 }
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

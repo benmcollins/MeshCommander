@@ -7,7 +7,7 @@
 #include <QByteArrayView>
 #include <QString>
 
-namespace meshcommander::migrate {
+namespace qumesh::migrate {
 
 /// Encryption envelope used by the legacy NW.js MeshCommander to wrap the
 /// `computers` and `certificates` localStorage entries.
@@ -61,4 +61,4 @@ private:
     LegacyCrypto() = delete;
 };
 
-} // namespace meshcommander::migrate
+} // namespace qumesh::migrate

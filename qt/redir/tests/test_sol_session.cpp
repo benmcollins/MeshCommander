@@ -12,7 +12,7 @@
 #include <QTcpSocket>
 #include <QtTest>
 
-using namespace meshcommander::redir;
+using namespace qumesh::redir;
 
 namespace {
 

@@ -5,7 +5,7 @@
 
 #include <QPainter>
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 KvmFramebuffer::KvmFramebuffer(QObject *parent) : QObject(parent) {}
 
@@ -36,4 +36,4 @@ void KvmFramebuffer::clear()
     emit tileApplied(QRect(0, 0, m_image.width(), m_image.height()));
 }
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

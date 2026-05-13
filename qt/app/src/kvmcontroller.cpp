@@ -9,10 +9,10 @@
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
-using meshcommander::kvm::KvmSession;
-using meshcommander::redir::RedirectionClient;
+using qumesh::kvm::KvmSession;
+using qumesh::redir::RedirectionClient;
 
 KvmController::KvmController(QObject *parent)
     : QObject(parent), m_framebuffer(new KvmFramebuffer(this))
@@ -90,7 +90,7 @@ void KvmController::open()
     m_framebuffer->clear();
 
     m_client = new RedirectionClient(this);
-    m_client->setProtocol(meshcommander::redir::Protocol::Kvm);
+    m_client->setProtocol(qumesh::redir::Protocol::Kvm);
     m_client->setCredentials(m_user, m_password);
     m_client->setTls(m_tls);
     m_client->setTrustedFingerprints(m_trustedFingerprints);
@@ -98,7 +98,7 @@ void KvmController::open()
     m_session = new KvmSession(m_client, this);
 
     connect(m_client.data(), &RedirectionClient::trustPromptRequired, this,
-            [this](const meshcommander::redir::PeerCertSummary &summary) {
+            [this](const qumesh::redir::PeerCertSummary &summary) {
                 m_pendingCert = summary;
                 emit pendingCertChanged();
                 setState(State::AwaitingTrust);
@@ -229,4 +229,4 @@ void KvmController::teardown()
     }
 }
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

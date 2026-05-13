@@ -27,16 +27,16 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationDomain(QStringLiteral("insynergy.com"));
     QCoreApplication::setApplicationName(QStringLiteral("QuMesh"));
 
-    meshcommander::config::ConfigStore configStore;
+    qumesh::config::ConfigStore configStore;
 
-    meshcommander::app::MigrationController migrationController;
+    qumesh::app::MigrationController migrationController;
     migrationController.setStore(&configStore);
     migrationController.checkAndMaybeMigrate();
 
-    meshcommander::model::ComputerModel computerModel;
+    qumesh::model::ComputerModel computerModel;
     computerModel.setStore(&configStore);
 
-    meshcommander::app::CertModel certModel;
+    qumesh::app::CertModel certModel;
     {
         const QString dir = QStandardPaths::writableLocation(
             QStandardPaths::AppDataLocation);
@@ -48,14 +48,14 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "MigrationController",
                                  &migrationController);
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "CertModel", &certModel);
-    qmlRegisterType<meshcommander::app::SolController>("QuMesh", 1, 0, "SolController");
-    qmlRegisterType<meshcommander::app::IderController>("QuMesh", 1, 0, "IderController");
-    qmlRegisterType<meshcommander::app::KvmController>("QuMesh", 1, 0, "KvmController");
-    qmlRegisterType<meshcommander::app::KvmViewer>("QuMesh", 1, 0, "KvmViewer");
-    qmlRegisterUncreatableType<meshcommander::terminal::TerminalScreen>(
+    qmlRegisterType<qumesh::app::SolController>("QuMesh", 1, 0, "SolController");
+    qmlRegisterType<qumesh::app::IderController>("QuMesh", 1, 0, "IderController");
+    qmlRegisterType<qumesh::app::KvmController>("QuMesh", 1, 0, "KvmController");
+    qmlRegisterType<qumesh::app::KvmViewer>("QuMesh", 1, 0, "KvmViewer");
+    qmlRegisterUncreatableType<qumesh::terminal::TerminalScreen>(
         "QuMesh", 1, 0, "TerminalScreen",
         QStringLiteral("Owned by SolController"));
-    qmlRegisterUncreatableType<meshcommander::app::KvmFramebuffer>(
+    qmlRegisterUncreatableType<qumesh::app::KvmFramebuffer>(
         "QuMesh", 1, 0, "KvmFramebuffer",
         QStringLiteral("Owned by KvmController"));
 

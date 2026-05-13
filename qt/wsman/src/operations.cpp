@@ -10,7 +10,7 @@
 #include <QObject>
 #include <QUuid>
 
-namespace meshcommander::wsman {
+namespace qumesh::wsman {
 
 namespace {
 
@@ -109,4 +109,4 @@ void getPowerState(WsmanClient *client, std::function<void(PowerStateResult)> ca
                      });
 }
 
-} // namespace meshcommander::wsman
+} // namespace qumesh::wsman

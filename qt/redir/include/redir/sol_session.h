@@ -9,7 +9,7 @@
 
 class QTimer;
 
-namespace meshcommander::redir {
+namespace qumesh::redir {
 
 class RedirectionClient;
 
@@ -63,4 +63,4 @@ private:
     QString m_lastError;
 };
 
-} // namespace meshcommander::redir
+} // namespace qumesh::redir

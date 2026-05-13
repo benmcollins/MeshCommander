@@ -6,7 +6,7 @@
 #include <QByteArray>
 #include <QByteArrayView>
 
-namespace meshcommander::ider {
+namespace qumesh::ider {
 
 /// IDE-R wire commands. Every frame starts with an 8-byte header:
 ///     [cmdId:1] [0x00:1] [0x00:1] [attrs:1] [sequence:4 LE]
@@ -126,4 +126,4 @@ bool tryParseStatusData(QByteArrayView buffer, StatusData *out, int *consumed);
 /// the buffer is empty.
 quint8 peekTag(QByteArrayView buffer);
 
-} // namespace meshcommander::ider
+} // namespace qumesh::ider

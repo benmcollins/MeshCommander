@@ -16,7 +16,7 @@ class QAbstractSocket;
 class QSslSocket;
 class QTcpSocket;
 
-namespace meshcommander::redir {
+namespace qumesh::redir {
 
 /// Summary of a peer cert shown to the user when an unknown
 /// certificate is presented during the TLS handshake. The QML layer
@@ -30,11 +30,11 @@ struct PeerCertSummary {
     QByteArray der;            ///< Raw cert, in case the consumer wants to save it.
 };
 
-} // namespace meshcommander::redir
+} // namespace qumesh::redir
 
-Q_DECLARE_METATYPE(meshcommander::redir::PeerCertSummary)
+Q_DECLARE_METATYPE(qumesh::redir::PeerCertSummary)
 
-namespace meshcommander::redir {
+namespace qumesh::redir {
 
 /// Plaintext (port 16994) transport with the full AMT digest auth
 /// handshake. TLS (16995) lands in a separate issue.
@@ -123,7 +123,7 @@ signals:
     /// not in the trusted list. The handshake is paused; the consumer
     /// must call either `trustPendingPeerCert()` (continue) or
     /// `disconnectFromHost()` (abort).
-    void trustPromptRequired(const meshcommander::redir::PeerCertSummary &summary);
+    void trustPromptRequired(const qumesh::redir::PeerCertSummary &summary);
 
 private:
     void handleConnected();
@@ -158,4 +158,4 @@ private:
     bool m_awaitingTrust = false;
 };
 
-} // namespace meshcommander::redir
+} // namespace qumesh::redir

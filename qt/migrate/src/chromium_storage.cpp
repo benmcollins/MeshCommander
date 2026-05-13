@@ -14,7 +14,7 @@
 #include <QTemporaryDir>
 #include <QUuid>
 
-namespace meshcommander::migrate {
+namespace qumesh::migrate {
 
 namespace {
 
@@ -59,7 +59,7 @@ bool ChromiumStorageReader::open()
     if (m_db != nullptr) return true;
 
     const QString tempBase = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                                 .absoluteFilePath(QStringLiteral("meshcommander-migrate-") +
+                                 .absoluteFilePath(QStringLiteral("qumesh-migrate-") +
                                                    QUuid::createUuid().toString(QUuid::WithoutBraces));
     m_workPath = tempBase;
 
@@ -161,4 +161,4 @@ QByteArray ChromiumStorageReader::decodeValue(QByteArray rawValueWithTag)
     }
 }
 
-} // namespace meshcommander::migrate
+} // namespace qumesh::migrate

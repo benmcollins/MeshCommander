@@ -8,7 +8,7 @@
 #include <QFile>
 #include <QFileInfo>
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 using certs::CertEntry;
 using certs::CertParser;
@@ -185,4 +185,4 @@ void CertModel::reload()
     endResetModel();
 }
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

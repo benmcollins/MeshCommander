@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
-qt_add_library(meshcommander_certs STATIC
+qt_add_library(qumesh_certs STATIC
     include/certs/cert_entry.h
     include/certs/cert_parser.h
     include/certs/cert_store.h
@@ -10,11 +10,11 @@ qt_add_library(meshcommander_certs STATIC
     src/cert_store.cpp
 )
 
-target_include_directories(meshcommander_certs PUBLIC
+target_include_directories(qumesh_certs PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(meshcommander_certs PUBLIC
+target_link_libraries(qumesh_certs PUBLIC
     Qt6::Core
     Qt6::Network
     OpenSSL::Crypto
