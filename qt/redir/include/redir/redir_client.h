@@ -10,16 +10,21 @@ class QTcpSocket;
 
 namespace meshcommander::redir {
 
-/// Plaintext (port 16994) transport handshake for AMT Redirection. TLS
-/// (port 16995) and authentication are not implemented yet — this class is
-/// the foundation for those follow-ups.
+/// Plaintext (port 16994) transport with the full AMT digest auth
+/// handshake. TLS (16995) lands in a separate issue.
 ///
-/// Lifecycle:
-/// - construct, set protocol, call `connectTo(host, port)`.
-/// - state transitions through `stateChanged` signals:
-///   Disconnected → Connecting → SelectorSent → SessionOpened (or Failed).
-/// - on `SessionOpened` the device is ready for the next phase of the
-///   protocol (the auth/query frame `0x13`). This class does not send it.
+/// State machine (after `connectTo()`):
+///
+///     Disconnected → Connecting → SelectorSent → SessionOpened
+///         → AuthQuerying       (sent 0x13 authType=0)
+///         → AuthChallenging    (sent 0x13 authType=4 with user+uri)
+///         → AuthResponding     (sent 0x13 authType=4 with full digest)
+///         → Authenticated      (server returned 0x14 status=0)
+///         | Failed (any step)
+///
+/// The auth steps only run when `setCredentials()` was called with a
+/// non-empty user. Otherwise the client stops at `SessionOpened` so
+/// existing tests that don't care about auth keep working.
 class RedirectionClient : public QObject
 {
     Q_OBJECT
@@ -29,6 +34,10 @@ public:
         Connecting,
         SelectorSent,
         SessionOpened,
+        AuthQuerying,
+        AuthChallenging,
+        AuthResponding,
+        Authenticated,
         Failed,
     };
     Q_ENUM(State)
@@ -37,6 +46,9 @@ public:
     ~RedirectionClient() override;
 
     void setProtocol(Protocol p) { m_protocol = p; }
+    void setCredentials(QString user, QString pass);
+    void setAuthUri(QString uri) { m_authUri = std::move(uri); }
+
     [[nodiscard]] Protocol protocol() const { return m_protocol; }
     [[nodiscard]] State state() const { return m_state; }
     [[nodiscard]] QString lastError() const { return m_lastError; }
@@ -49,16 +61,24 @@ public:
 signals:
     void stateChanged(State state);
     void sessionOpened();
+    void authenticated();
     void failed(const QString &error);
 
 private:
     void handleConnected();
     void handleReadyRead();
     void handleSocketError();
+
+    /// Pull frames out of `m_inbox`; called whenever new bytes arrive.
+    void drainInbox();
+
     void setState(State s);
     void fail(QString error);
 
     Protocol m_protocol = Protocol::Sol;
+    QString m_user;
+    QString m_pass;
+    QString m_authUri = QStringLiteral("/RedirectionService");
     QTcpSocket *m_socket = nullptr;
     QByteArray m_inbox;
     State m_state = State::Disconnected;

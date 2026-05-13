@@ -33,6 +33,12 @@ RedirectionClient::RedirectionClient(QObject *parent)
 
 RedirectionClient::~RedirectionClient() = default;
 
+void RedirectionClient::setCredentials(QString user, QString pass)
+{
+    m_user = std::move(user);
+    m_pass = std::move(pass);
+}
+
 void RedirectionClient::connectTo(const QString &host, quint16 port)
 {
     m_inbox.clear();
@@ -62,28 +68,98 @@ void RedirectionClient::handleConnected()
 void RedirectionClient::handleReadyRead()
 {
     m_inbox.append(m_socket->readAll());
+    drainInbox();
+}
 
-    StartSessionReply reply;
-    int consumed = 0;
-    if (!tryParseStartSessionReply(m_inbox, &reply, &consumed)) {
-        // not enough bytes yet, or not a 0x11 frame
-        if (!m_inbox.isEmpty() && static_cast<unsigned char>(m_inbox.at(0)) != 0x11) {
-            fail(QStringLiteral("unexpected first byte 0x%1 (waiting for 0x11)")
-                     .arg(static_cast<unsigned char>(m_inbox.at(0)), 2, 16, QLatin1Char('0')));
+void RedirectionClient::drainInbox()
+{
+    while (!m_inbox.isEmpty()) {
+        const unsigned char tag = static_cast<unsigned char>(m_inbox.at(0));
+
+        if (tag == 0x11) {
+            StartSessionReply reply;
+            int consumed = 0;
+            if (!tryParseStartSessionReply(m_inbox, &reply, &consumed)) return;
+            m_inbox.remove(0, consumed);
+            m_startStatus = reply.status;
+            m_oemData = reply.oemData;
+            if (reply.status != StartSessionStatus::Success) {
+                fail(describe(reply.status));
+                return;
+            }
+            emit sessionOpened();
+            setState(State::SessionOpened);
+
+            if (!m_user.isEmpty()) {
+                if (m_socket->write(buildAuthQuery()) < 0) {
+                    fail(m_socket->errorString());
+                    return;
+                }
+                setState(State::AuthQuerying);
+            }
+            continue;
         }
+
+        if (tag == 0x14) {
+            AuthReply reply;
+            int consumed = 0;
+            if (!tryParseAuthReply(m_inbox, &reply, &consumed)) return;
+            m_inbox.remove(0, consumed);
+
+            switch (m_state) {
+            case State::AuthQuerying: {
+                if (!reply.caps.hasDigestWithQop) {
+                    fail(QStringLiteral("device does not offer DigestWithQop auth"));
+                    return;
+                }
+                if (m_socket->write(buildDigestQuery(m_user, m_authUri)) < 0) {
+                    fail(m_socket->errorString());
+                    return;
+                }
+                setState(State::AuthChallenging);
+                break;
+            }
+            case State::AuthChallenging: {
+                if (reply.status != 1 || reply.realm.isEmpty() || reply.nonce.isEmpty()) {
+                    fail(QStringLiteral("authentication rejected by device"));
+                    return;
+                }
+                const QString qop = reply.qop.isEmpty() ? QStringLiteral("auth") : reply.qop;
+                const QString nc = QStringLiteral("00000001");
+                const QString cnonce = makeClientNonce();
+                const QString response = computeDigest(m_user, reply.realm, m_pass,
+                                                       reply.nonce, nc, cnonce, qop,
+                                                       m_authUri);
+                if (m_socket->write(buildDigestResponse(m_user, reply.realm, reply.nonce,
+                                                       m_authUri, cnonce, nc, response,
+                                                       qop)) < 0) {
+                    fail(m_socket->errorString());
+                    return;
+                }
+                setState(State::AuthResponding);
+                break;
+            }
+            case State::AuthResponding: {
+                if (reply.status != 0) {
+                    fail(QStringLiteral("authentication failed (status %1)").arg(reply.status));
+                    return;
+                }
+                setState(State::Authenticated);
+                emit authenticated();
+                break;
+            }
+            default:
+                fail(QStringLiteral("unexpected 0x14 in state %1").arg(static_cast<int>(m_state)));
+                return;
+            }
+            continue;
+        }
+
+        fail(QStringLiteral("unexpected frame 0x%1 in state %2")
+                 .arg(tag, 2, 16, QLatin1Char('0'))
+                 .arg(static_cast<int>(m_state)));
         return;
     }
-
-    m_inbox.remove(0, consumed);
-    m_startStatus = reply.status;
-    m_oemData = reply.oemData;
-
-    if (reply.status != StartSessionStatus::Success) {
-        fail(describe(reply.status));
-        return;
-    }
-    setState(State::SessionOpened);
-    emit sessionOpened();
 }
 
 void RedirectionClient::handleSocketError()
