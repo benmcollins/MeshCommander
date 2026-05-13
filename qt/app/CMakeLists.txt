@@ -87,3 +87,77 @@ set_target_properties(qumesh PROPERTIES
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
+
+# --- Install / deploy -------------------------------------------------
+#
+# Install the app + the Qt runtime + OpenSSL into the install prefix.
+# CPack at the top level picks this up to produce a .dmg / .exe.
+
+if(APPLE)
+    install(TARGETS qumesh BUNDLE DESTINATION .)
+elseif(WIN32)
+    install(TARGETS qumesh RUNTIME DESTINATION .)
+else()
+    install(TARGETS qumesh RUNTIME DESTINATION bin)
+endif()
+
+# Bundle OpenSSL's libcrypto next to the app. macdeployqt will follow
+# it as a dependency on macOS once it lives inside the bundle;
+# windeployqt does not pull in non-Qt DLLs so we install it manually.
+if(WIN32)
+    if(TARGET OpenSSL::Crypto)
+        get_target_property(_ossl_loc OpenSSL::Crypto IMPORTED_LOCATION)
+        if(_ossl_loc)
+            install(FILES "${_ossl_loc}" DESTINATION .)
+        endif()
+        # OpenSSL 3 ships as libcrypto-3-x64.dll + a separate libssl.
+        # Glob the directory so we pick up any sibling DLLs.
+        get_filename_component(_ossl_dir "${_ossl_loc}" DIRECTORY)
+        file(GLOB _ossl_dlls "${_ossl_dir}/libcrypto-*.dll")
+        if(_ossl_dlls)
+            install(FILES ${_ossl_dlls} DESTINATION .)
+        endif()
+    endif()
+endif()
+
+# Qt 6.5+ helper: produces a per-target deploy script that invokes
+# macdeployqt / windeployqt with the right QML scan roots. The deploy
+# script runs at install time, so it's already aware of our install
+# prefix and bundle layout.
+qt_generate_deploy_qml_app_script(
+    TARGET qumesh
+    OUTPUT_SCRIPT qumesh_deploy_script
+    NO_UNSUPPORTED_PLATFORM_ERROR
+)
+install(SCRIPT ${qumesh_deploy_script})
+
+# --- Code signing stubs ----------------------------------------------
+#
+# When CI provisions the relevant secrets, these blocks codesign the
+# bundle before CPack picks it up. Until then they are no-ops; the
+# unsigned bundle still produces a runnable .dmg / .exe (with the usual
+# Gatekeeper / SmartScreen prompts on first launch).
+
+if(APPLE AND DEFINED ENV{MAC_SIGNING_IDENTITY} AND NOT "$ENV{MAC_SIGNING_IDENTITY}" STREQUAL "")
+    install(CODE "
+        execute_process(COMMAND codesign --force --deep --options runtime
+                                  --sign \"$ENV{MAC_SIGNING_IDENTITY}\"
+                                  \"\${CMAKE_INSTALL_PREFIX}/QuMesh.app\"
+                          RESULT_VARIABLE _sign_rc)
+        if(NOT _sign_rc EQUAL 0)
+            message(FATAL_ERROR \"codesign failed (\${_sign_rc})\")
+        endif()
+    ")
+endif()
+
+if(WIN32 AND DEFINED ENV{WIN_SIGN_THUMBPRINT} AND NOT "$ENV{WIN_SIGN_THUMBPRINT}" STREQUAL "")
+    install(CODE "
+        execute_process(COMMAND signtool sign /sha1 \"$ENV{WIN_SIGN_THUMBPRINT}\"
+                                  /fd SHA256 /tr http://timestamp.digicert.com /td SHA256
+                                  \"\${CMAKE_INSTALL_PREFIX}/QuMesh.exe\"
+                          RESULT_VARIABLE _sign_rc)
+        if(NOT _sign_rc EQUAL 0)
+            message(FATAL_ERROR \"signtool sign failed (\${_sign_rc})\")
+        endif()
+    ")
+endif()

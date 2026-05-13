@@ -69,8 +69,13 @@ Each phase is one or more issues. The workflow per logical unit is: issue → br
 
 ### Phase 9 — Packaging
 
-- macOS `.app` bundle with codesigning + notarization.
-- Windows installer (WiX or NSIS).
+- macOS `.app` bundle with codesigning + notarization. ✅ unsigned bundle (#27)
+- Windows installer (WiX or NSIS). ✅ NSIS .exe (#27)
+
+Signing and notarization are gated on repo secrets (see
+[PACKAGING.md](PACKAGING.md)) and activate automatically once those
+land. The unsigned bundles still run; users see the OS's standard
+"unverified publisher" prompt on first launch.
 
 ## Reference
 
