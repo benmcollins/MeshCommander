@@ -1,11 +1,11 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import MeshCommander
 
-Item {
+Rectangle {
     id: root
 
     property int row: -1
@@ -19,6 +19,9 @@ Item {
     property string draftUser
     property string draftPass
     property bool draftTls: false
+    property bool revealPass: false
+
+    color: Colors.bg
 
     function startNewComputer() {
         root.isNew = true;
@@ -28,12 +31,14 @@ Item {
         root.draftUser = "";
         root.draftPass = "";
         root.draftTls = false;
+        root.revealPass = false;
     }
 
     function loadFromRow() {
         if (!root.hasSelection) return;
         const idx = ComputerModel.index(root.row, 0);
         root.isNew = false;
+        root.revealPass = false;
         root.draftName = ComputerModel.data(idx, ComputerModel.NameRole) || "";
         root.draftHost = ComputerModel.data(idx, ComputerModel.HostRole) || "";
         root.draftPort = ComputerModel.data(idx, ComputerModel.PortRole) || 16992;
@@ -44,76 +49,199 @@ Item {
 
     onRowChanged: if (root.hasSelection) root.loadFromRow()
 
-    GridLayout {
-        columns: 2
-        columnSpacing: 8
-        rowSpacing: 8
-        enabled: root.hasSelection || root.isNew
+    ColumnLayout {
+        spacing: 0
         anchors.fill: parent
-        anchors.margins: 16
 
-        Label { text: qsTr("Name") }
-        TextField {
-            placeholderText: qsTr("My AMT machine")
-            text: root.draftName
+        Flickable {
+            id: flick
+            clip: true
+            contentWidth: width
+            contentHeight: form.implicitHeight + 32
             Layout.fillWidth: true
-            onTextEdited: root.draftName = text
-        }
-
-        Label { text: qsTr("Host") }
-        TextField {
-            placeholderText: qsTr("10.0.0.5 or amt-01.example")
-            text: root.draftHost
-            Layout.fillWidth: true
-            onTextEdited: root.draftHost = text
-        }
-
-        Label { text: qsTr("Port") }
-        SpinBox {
-            from: 1
-            to: 65535
-            value: root.draftPort
-            editable: true
-            onValueModified: root.draftPort = value
-        }
-
-        Label { text: qsTr("User") }
-        TextField {
-            placeholderText: qsTr("admin")
-            text: root.draftUser
-            Layout.fillWidth: true
-            onTextEdited: root.draftUser = text
-        }
-
-        Label { text: qsTr("Password") }
-        TextField {
-            echoMode: TextInput.Password
-            text: root.draftPass
-            Layout.fillWidth: true
-            onTextEdited: root.draftPass = text
-        }
-
-        Label { text: qsTr("TLS") }
-        Switch {
-            checked: root.draftTls
-            onCheckedChanged: root.draftTls = checked
-        }
-
-        Item {
-            Layout.columnSpan: 2
             Layout.fillHeight: true
+
+            ColumnLayout {
+                id: form
+                spacing: 24
+                enabled: root.hasSelection || root.isNew
+                width: flick.width
+
+                Section {
+                    title: qsTr("IDENTITY")
+                    Layout.fillWidth: true
+                    Layout.topMargin: 24
+                    Layout.leftMargin: 24
+                    Layout.rightMargin: 24
+
+                    GridLayout {
+                        columns: 2
+                        columnSpacing: 16
+                        rowSpacing: 10
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: qsTr("Name")
+                            color: Colors.textMuted
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeS
+                            Layout.preferredWidth: 80
+                        }
+                        TextField {
+                            placeholderText: qsTr("My AMT machine")
+                            text: root.draftName
+                            color: Colors.text
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeM
+                            Layout.fillWidth: true
+                            onTextEdited: root.draftName = text
+                        }
+                    }
+                }
+
+                Section {
+                    title: qsTr("CONNECTION")
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 24
+                    Layout.rightMargin: 24
+
+                    GridLayout {
+                        columns: 2
+                        columnSpacing: 16
+                        rowSpacing: 10
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: qsTr("Host")
+                            color: Colors.textMuted
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeS
+                            Layout.preferredWidth: 80
+                        }
+                        TextField {
+                            placeholderText: "10.0.0.5"
+                            text: root.draftHost
+                            color: Colors.text
+                            font.family: Type.mono
+                            font.pixelSize: Type.sizeM
+                            Layout.fillWidth: true
+                            onTextEdited: root.draftHost = text
+                        }
+
+                        Text {
+                            text: qsTr("Port")
+                            color: Colors.textMuted
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeS
+                            Layout.preferredWidth: 80
+                        }
+                        SpinBox {
+                            from: 1
+                            to: 65535
+                            value: root.draftPort
+                            editable: true
+                            font.family: Type.mono
+                            font.pixelSize: Type.sizeM
+                            onValueModified: root.draftPort = value
+                        }
+
+                        Text {
+                            text: qsTr("TLS")
+                            color: Colors.textMuted
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeS
+                            Layout.preferredWidth: 80
+                        }
+                        Switch {
+                            checked: root.draftTls
+                            onCheckedChanged: root.draftTls = checked
+                        }
+                    }
+                }
+
+                Section {
+                    title: qsTr("AUTHENTICATION")
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 24
+                    Layout.rightMargin: 24
+                    Layout.bottomMargin: 24
+
+                    GridLayout {
+                        columns: 2
+                        columnSpacing: 16
+                        rowSpacing: 10
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: qsTr("User")
+                            color: Colors.textMuted
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeS
+                            Layout.preferredWidth: 80
+                        }
+                        TextField {
+                            placeholderText: "admin"
+                            text: root.draftUser
+                            color: Colors.text
+                            font.family: Type.mono
+                            font.pixelSize: Type.sizeM
+                            Layout.fillWidth: true
+                            onTextEdited: root.draftUser = text
+                        }
+
+                        Text {
+                            text: qsTr("Password")
+                            color: Colors.textMuted
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeS
+                            Layout.preferredWidth: 80
+                        }
+                        RowLayout {
+                            spacing: 6
+                            Layout.fillWidth: true
+
+                            TextField {
+                                echoMode: root.revealPass ? TextInput.Normal : TextInput.Password
+                                text: root.draftPass
+                                color: Colors.text
+                                font.family: Type.mono
+                                font.pixelSize: Type.sizeM
+                                Layout.fillWidth: true
+                                onTextEdited: root.draftPass = text
+                            }
+
+                            Button {
+                                text: root.revealPass ? qsTr("Hide") : qsTr("Show")
+                                flat: true
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                                onClicked: root.revealPass = !root.revealPass
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            color: Colors.border
+            implicitHeight: 1
+            Layout.fillWidth: true
         }
 
         RowLayout {
             spacing: 8
-            Layout.columnSpan: 2
             Layout.fillWidth: true
+            Layout.margins: 12
 
             Item { Layout.fillWidth: true }
 
             Button {
                 visible: root.isNew
                 text: qsTr("Cancel")
+                flat: true
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
                 onClicked: {
                     root.isNew = false;
                     if (root.hasSelection) root.loadFromRow();
@@ -121,8 +249,11 @@ Item {
             }
 
             Button {
-                text: root.isNew ? qsTr("Add") : qsTr("Save")
+                text: root.isNew ? qsTr("Add machine") : qsTr("Save changes")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
                 enabled: root.draftName.length > 0 && root.draftHost.length > 0
+                         && (root.hasSelection || root.isNew)
                 onClicked: {
                     if (root.isNew) {
                         const newRow = ComputerModel.addComputer(root.draftName, root.draftHost,
@@ -145,10 +276,36 @@ Item {
         }
     }
 
-    Label {
+    ColumnLayout {
         visible: !root.hasSelection && !root.isNew
-        opacity: 0.5
-        text: qsTr("Select a computer or add a new one.")
+        spacing: 6
         anchors.centerIn: parent
+
+        Text {
+            text: "◇"
+            color: Colors.textFaint
+            font.pixelSize: 48
+            horizontalAlignment: Text.AlignHCenter
+            Layout.alignment: Qt.AlignHCenter
+        }
+        Text {
+            text: qsTr("MESHCOMMANDER")
+            color: Colors.textFaint
+            font.family: Type.sans
+            font.pixelSize: Type.sizeXs
+            font.letterSpacing: 3
+            font.weight: Font.Medium
+            horizontalAlignment: Text.AlignHCenter
+            Layout.alignment: Qt.AlignHCenter
+        }
+        Text {
+            text: qsTr("Select a machine, or click + to add one.")
+            color: Colors.textFaint
+            font.family: Type.sans
+            font.pixelSize: Type.sizeS
+            horizontalAlignment: Text.AlignHCenter
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: 8
+        }
     }
 }
