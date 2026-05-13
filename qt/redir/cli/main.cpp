@@ -11,7 +11,7 @@
 #include <QSocketNotifier>
 #include <QTextStream>
 
-using namespace meshcommander::redir;
+using namespace qumesh::redir;
 
 int main(int argc, char *argv[])
 {

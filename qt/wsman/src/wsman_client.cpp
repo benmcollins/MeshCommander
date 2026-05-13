@@ -9,7 +9,7 @@
 #include <QNetworkRequest>
 #include <QUrl>
 
-namespace meshcommander::wsman {
+namespace qumesh::wsman {
 
 WsmanClient::WsmanClient(QObject *parent)
     : QObject(parent), m_nam(new QNetworkAccessManager(this))
@@ -60,4 +60,4 @@ void WsmanClient::handleAuthenticationRequired(QNetworkReply *, QAuthenticator *
     }
 }
 
-} // namespace meshcommander::wsman
+} // namespace qumesh::wsman

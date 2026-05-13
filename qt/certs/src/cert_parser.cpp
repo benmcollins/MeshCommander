@@ -13,7 +13,7 @@
 #include <openssl/pkcs12.h>
 #include <openssl/x509.h>
 
-namespace meshcommander::certs {
+namespace qumesh::certs {
 
 namespace {
 
@@ -180,4 +180,4 @@ QByteArray CertParser::toPem(const CertEntry &entry)
     return out;
 }
 
-} // namespace meshcommander::certs
+} // namespace qumesh::certs

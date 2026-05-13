@@ -7,7 +7,7 @@
 #include <QString>
 #include <QVector>
 
-namespace meshcommander::terminal {
+namespace qumesh::terminal {
 
 class TerminalScreen;
 
@@ -64,4 +64,4 @@ private:
     bool m_csiPrivate = false;
 };
 
-} // namespace meshcommander::terminal
+} // namespace qumesh::terminal

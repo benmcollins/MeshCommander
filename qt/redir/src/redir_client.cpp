@@ -9,7 +9,7 @@
 #include <QSslSocket>
 #include <QTcpSocket>
 
-namespace meshcommander::redir {
+namespace qumesh::redir {
 
 namespace {
 
@@ -292,4 +292,4 @@ void RedirectionClient::fail(QString error)
     emit failed(m_lastError);
 }
 
-} // namespace meshcommander::redir
+} // namespace qumesh::redir

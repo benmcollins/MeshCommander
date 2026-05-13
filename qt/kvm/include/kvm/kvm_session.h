@@ -10,11 +10,11 @@
 
 #include "kvm/kvm_codec.h"
 
-namespace meshcommander::redir {
+namespace qumesh::redir {
 class RedirectionClient;
 }
 
-namespace meshcommander::kvm {
+namespace qumesh::kvm {
 
 /// Drives the AMT KVM (HW remote desktop) protocol on top of an
 /// authenticated `RedirectionClient`.
@@ -40,7 +40,7 @@ public:
     };
     Q_ENUM(State)
 
-    explicit KvmSession(meshcommander::redir::RedirectionClient *client,
+    explicit KvmSession(qumesh::redir::RedirectionClient *client,
                          QObject *parent = nullptr);
     ~KvmSession() override;
 
@@ -84,7 +84,7 @@ private:
     void fail(QString reason);
     void writeFrame(const QByteArray &frame);
 
-    meshcommander::redir::RedirectionClient *m_client;
+    qumesh::redir::RedirectionClient *m_client;
     QByteArray m_inbox;
     State m_state = State::Idle;
     QString m_lastError;
@@ -94,4 +94,4 @@ private:
     int m_pendingRects = 0;
 };
 
-} // namespace meshcommander::kvm
+} // namespace qumesh::kvm

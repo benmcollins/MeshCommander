@@ -6,7 +6,7 @@
 #include <QCryptographicHash>
 #include <QRandomGenerator>
 
-namespace meshcommander::redir {
+namespace qumesh::redir {
 
 namespace {
 
@@ -307,4 +307,4 @@ QByteArray buildSolKeepalive()
     return f;
 }
 
-} // namespace meshcommander::redir
+} // namespace qumesh::redir

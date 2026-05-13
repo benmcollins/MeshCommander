@@ -1,18 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
-qt_add_library(meshcommander_migrate STATIC
+qt_add_library(qumesh_migrate STATIC
     src/legacy_decrypt.cpp
     src/chromium_storage.cpp
     src/migrate.cpp
 )
 
-target_include_directories(meshcommander_migrate
+target_include_directories(qumesh_migrate
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(meshcommander_migrate
+target_link_libraries(qumesh_migrate
     PUBLIC
         Qt6::Core
     PRIVATE
@@ -23,9 +23,9 @@ target_link_libraries(meshcommander_migrate
 # Suppress warnings inside vendored leveldb headers when consumers include
 # <leveldb/db.h> indirectly through our public headers.
 if(MSVC)
-    target_compile_options(meshcommander_migrate PRIVATE /W4)
+    target_compile_options(qumesh_migrate PRIVATE /W4)
 else()
-    target_compile_options(meshcommander_migrate PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(qumesh_migrate PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 qt_add_executable(qumesh-migrate
@@ -33,7 +33,7 @@ qt_add_executable(qumesh-migrate
 )
 target_link_libraries(qumesh-migrate PRIVATE
     Qt6::Core
-    meshcommander_migrate
+    qumesh_migrate
 )
 
 if(BUILD_TESTING)

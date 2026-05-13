@@ -10,7 +10,7 @@
 #include <QTextStream>
 #include <QUrl>
 
-using namespace meshcommander::wsman;
+using namespace qumesh::wsman;
 
 int main(int argc, char *argv[])
 {

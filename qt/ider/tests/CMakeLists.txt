@@ -3,14 +3,14 @@
 
 qt_add_executable(test_ider_codec test_ider_codec.cpp)
 target_link_libraries(test_ider_codec PRIVATE
-    meshcommander_ider
+    qumesh_ider
     Qt6::Test
 )
 add_test(NAME test_ider_codec COMMAND test_ider_codec)
 
 qt_add_executable(test_ider_session test_ider_session.cpp)
 target_link_libraries(test_ider_session PRIVATE
-    meshcommander_ider
+    qumesh_ider
     Qt6::Network
     Qt6::Test
 )

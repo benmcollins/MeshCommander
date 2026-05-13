@@ -13,8 +13,8 @@
 #include <QTcpSocket>
 #include <QtTest>
 
-using namespace meshcommander::kvm;
-using meshcommander::redir::RedirectionClient;
+using namespace qumesh::kvm;
+using qumesh::redir::RedirectionClient;
 
 namespace {
 
@@ -203,7 +203,7 @@ void TestKvmSession::handshakeThroughFrameLoopWithRawTile()
     QVERIFY(server.listen());
 
     RedirectionClient client;
-    client.setProtocol(meshcommander::redir::Protocol::Kvm);
+    client.setProtocol(qumesh::redir::Protocol::Kvm);
     client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
 
     KvmSession session(&client);

@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/icons">
+    <file alias="qumesh-mark.svg">svg/qumesh-mark.svg</file>
+    <file alias="qumesh-mark-small.svg">svg/qumesh-mark-small.svg</file>
+    <file alias="qumesh-macos.svg">svg/qumesh-macos.svg</file>
+    <file alias="qumesh-windows.svg">svg/qumesh-windows.svg</file>
+  </qresource>
+</RCC>

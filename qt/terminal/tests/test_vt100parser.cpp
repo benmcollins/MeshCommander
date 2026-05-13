@@ -6,7 +6,7 @@
 
 #include <QtTest>
 
-using namespace meshcommander::terminal;
+using namespace qumesh::terminal;
 
 class TestVt100Parser : public QObject
 {

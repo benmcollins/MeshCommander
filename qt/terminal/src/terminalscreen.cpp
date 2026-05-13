@@ -3,7 +3,7 @@
 
 #include "terminal/terminalscreen.h"
 
-namespace meshcommander::terminal {
+namespace qumesh::terminal {
 
 namespace {
 
@@ -288,4 +288,4 @@ void TerminalScreen::touch()
     emit screenUpdated();
 }
 
-} // namespace meshcommander::terminal
+} // namespace qumesh::terminal

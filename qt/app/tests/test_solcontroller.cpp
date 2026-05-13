@@ -11,8 +11,8 @@
 #include <QTcpSocket>
 #include <QtTest>
 
-using meshcommander::app::SolController;
-using meshcommander::terminal::TerminalScreen;
+using qumesh::app::SolController;
+using qumesh::terminal::TerminalScreen;
 
 namespace {
 

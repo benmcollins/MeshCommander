@@ -15,7 +15,7 @@
 #include <QJsonObject>
 #include <QStandardPaths>
 
-namespace meshcommander::migrate {
+namespace qumesh::migrate {
 
 namespace {
 
@@ -78,14 +78,14 @@ QString Migrator::defaultLegacyDataDir()
 {
 #if defined(Q_OS_MACOS)
     return QDir::homePath()
-        + QStringLiteral("/Library/Application Support/meshcommander/Default/Local Storage/leveldb");
+        + QStringLiteral("/Library/Application Support/qumesh/Default/Local Storage/leveldb");
 #elif defined(Q_OS_WIN)
     const QString base = QString::fromLocal8Bit(qgetenv("LOCALAPPDATA"));
     return QDir::fromNativeSeparators(base)
-        + QStringLiteral("/meshcommander/Default/Local Storage/leveldb");
+        + QStringLiteral("/qumesh/Default/Local Storage/leveldb");
 #else
     return QDir::homePath()
-        + QStringLiteral("/.config/meshcommander/Default/Local Storage/leveldb");
+        + QStringLiteral("/.config/qumesh/Default/Local Storage/leveldb");
 #endif
 }
 
@@ -188,4 +188,4 @@ MigrationResult Migrator::run(const MigrationOptions &opts)
     return result;
 }
 
-} // namespace meshcommander::migrate
+} // namespace qumesh::migrate

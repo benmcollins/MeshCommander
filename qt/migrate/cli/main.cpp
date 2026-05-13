@@ -8,7 +8,7 @@
 #include <QCoreApplication>
 #include <QTextStream>
 
-using namespace meshcommander::migrate;
+using namespace qumesh::migrate;
 
 int main(int argc, char *argv[])
 {

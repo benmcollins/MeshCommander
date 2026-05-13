@@ -11,12 +11,12 @@
 #include "redir/redir_client.h"
 #include "terminal/terminalscreen.h"
 
-namespace meshcommander::redir {
+namespace qumesh::redir {
 class RedirectionClient;
 class SolSession;
-} // namespace meshcommander::redir
+} // namespace qumesh::redir
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 /// QML-facing controller for one SOL session. Owns the redirection
 /// client, the SOL session driver, and the terminal screen the QML
@@ -31,7 +31,7 @@ class SolController : public QObject
     Q_PROPERTY(QString password READ password WRITE setPassword NOTIFY passwordChanged)
     Q_PROPERTY(State state READ state NOTIFY stateChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
-    Q_PROPERTY(meshcommander::terminal::TerminalScreen *screen READ screen CONSTANT)
+    Q_PROPERTY(qumesh::terminal::TerminalScreen *screen READ screen CONSTANT)
     Q_PROPERTY(bool tls READ tls WRITE setTls NOTIFY tlsChanged)
     Q_PROPERTY(QStringList trustedFingerprints READ trustedFingerprints
                    WRITE setTrustedFingerprints NOTIFY trustedFingerprintsChanged)
@@ -71,7 +71,7 @@ public:
     [[nodiscard]] QString pendingCertFingerprint() const { return m_pendingCert.fingerprintSha256; }
     [[nodiscard]] QString pendingCertNotBefore() const { return m_pendingCert.notBefore; }
     [[nodiscard]] QString pendingCertNotAfter() const { return m_pendingCert.notAfter; }
-    [[nodiscard]] meshcommander::terminal::TerminalScreen *screen() const { return m_screen; }
+    [[nodiscard]] qumesh::terminal::TerminalScreen *screen() const { return m_screen; }
 
     void setHost(const QString &v);
     void setPort(quint16 v);
@@ -119,11 +119,11 @@ private:
     QStringList m_trustedFingerprints;
     State m_state = State::Disconnected;
     QString m_lastError;
-    meshcommander::redir::PeerCertSummary m_pendingCert;
+    qumesh::redir::PeerCertSummary m_pendingCert;
 
-    meshcommander::terminal::TerminalScreen *m_screen;
-    QPointer<meshcommander::redir::RedirectionClient> m_client;
-    QPointer<meshcommander::redir::SolSession> m_session;
+    qumesh::terminal::TerminalScreen *m_screen;
+    QPointer<qumesh::redir::RedirectionClient> m_client;
+    QPointer<qumesh::redir::SolSession> m_session;
 };
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

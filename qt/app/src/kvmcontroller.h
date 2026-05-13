@@ -12,11 +12,11 @@
 #include "kvmframebuffer.h"
 #include "redir/redir_client.h"
 
-namespace meshcommander::kvm {
+namespace qumesh::kvm {
 class KvmSession;
 }
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 /// QML-creatable controller for one KVM session. Owns the redirection
 /// client, the KVM session driver, and the framebuffer the QML viewer
@@ -114,11 +114,11 @@ private:
     int m_height = 0;
     bool m_tls = false;
     QStringList m_trustedFingerprints;
-    meshcommander::redir::PeerCertSummary m_pendingCert;
+    qumesh::redir::PeerCertSummary m_pendingCert;
 
     KvmFramebuffer *m_framebuffer;
-    QPointer<meshcommander::redir::RedirectionClient> m_client;
-    QPointer<meshcommander::kvm::KvmSession> m_session;
+    QPointer<qumesh::redir::RedirectionClient> m_client;
+    QPointer<qumesh::kvm::KvmSession> m_session;
 };
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

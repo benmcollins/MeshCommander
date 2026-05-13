@@ -8,7 +8,7 @@
 
 #include "certs/cert_entry.h"
 
-namespace meshcommander::certs {
+namespace qumesh::certs {
 
 /// Stateless utilities to populate a `CertEntry` from on-disk bytes.
 class CertParser
@@ -44,4 +44,4 @@ public:
     static bool populateMetadata(CertEntry *entry, QString *error);
 };
 
-} // namespace meshcommander::certs
+} // namespace qumesh::certs

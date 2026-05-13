@@ -9,7 +9,7 @@
 
 #include "certs/cert_entry.h"
 
-namespace meshcommander::certs {
+namespace qumesh::certs {
 
 /// On-disk certificate store. Wraps reading and writing
 /// `<configDir>/certificates.json` — the same file the migration tool
@@ -49,4 +49,4 @@ private:
     QVector<CertEntry> m_entries;
 };
 
-} // namespace meshcommander::certs
+} // namespace qumesh::certs

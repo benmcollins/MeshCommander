@@ -3,7 +3,7 @@
 
 #include "certs/cert_entry.h"
 
-namespace meshcommander::certs {
+namespace qumesh::certs {
 
 QJsonObject CertEntry::toJson() const
 {
@@ -43,4 +43,4 @@ CertEntry CertEntry::fromJson(const QJsonObject &obj)
     return e;
 }
 
-} // namespace meshcommander::certs
+} // namespace qumesh::certs

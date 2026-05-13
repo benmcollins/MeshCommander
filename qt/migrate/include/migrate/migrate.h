@@ -5,7 +5,7 @@
 
 #include <QString>
 
-namespace meshcommander::migrate {
+namespace qumesh::migrate {
 
 struct MigrationOptions
 {
@@ -51,4 +51,4 @@ public:
     [[nodiscard]] MigrationResult run(const MigrationOptions &opts = {});
 };
 
-} // namespace meshcommander::migrate
+} // namespace qumesh::migrate

@@ -10,10 +10,10 @@
 #include <QEventLoop>
 #include <QFileInfo>
 
-namespace meshcommander::ider {
+namespace qumesh::ider {
 
-using namespace meshcommander::ider::scsi;
-using meshcommander::redir::RedirectionClient;
+using namespace qumesh::ider::scsi;
+using qumesh::redir::RedirectionClient;
 
 namespace {
 
@@ -551,4 +551,4 @@ void IderSession::fail(QString reason)
     emit closed(m_lastError);
 }
 
-} // namespace meshcommander::ider
+} // namespace qumesh::ider

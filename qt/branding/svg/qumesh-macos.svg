@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>QuMesh — macOS app icon</title>
+  <desc>QuMesh macOS app icon: slate-filled squircle with the QuMesh mark in white.</desc>
+  <path d="M 512,0 C 153.6,0 0,153.6 0,512 C 0,870.4 153.6,1024 512,1024 C 870.4,1024 1024,870.4 1024,512 C 1024,153.6 870.4,0 512,0 Z" fill="#1e293b"/>
+  <g transform="translate(512, 512) scale(3.84)">
+    <circle cx="0" cy="0" r="50" fill="none" stroke="#ffffff" stroke-width="4"/>
+    <circle cx="-50" cy="0" r="5" fill="#ffffff"/>
+    <circle cx="50" cy="0" r="5" fill="#ffffff"/>
+    <circle cx="0" cy="-50" r="5" fill="#ffffff"/>
+    <circle cx="0" cy="50" r="5" fill="#ffffff"/>
+    <circle cx="-35.355" cy="-35.355" r="5" fill="#ffffff"/>
+    <circle cx="35.355" cy="-35.355" r="5" fill="#ffffff"/>
+    <circle cx="-35.355" cy="35.355" r="5" fill="#ffffff"/>
+    <circle cx="35.355" cy="35.355" r="5" fill="#ffffff"/>
+    <line x1="20" y1="20" x2="55" y2="55" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="55" cy="55" r="7" fill="#ffffff"/>
+  </g>
+</svg>

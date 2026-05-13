@@ -3,7 +3,7 @@
 
 #include "kvm/kvm_codec.h"
 
-namespace meshcommander::kvm {
+namespace qumesh::kvm {
 
 namespace {
 
@@ -363,4 +363,4 @@ DecodeStatus tryDecodeRect(QByteArrayView payload, const RectHeader &rect,
     return DecodeStatus::UnsupportedEncoding;
 }
 
-} // namespace meshcommander::kvm
+} // namespace qumesh::kvm

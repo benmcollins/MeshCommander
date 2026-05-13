@@ -5,7 +5,7 @@
 
 #include <QtTest>
 
-using namespace meshcommander::wsman;
+using namespace qumesh::wsman;
 
 class TestSoapEnvelope : public QObject
 {

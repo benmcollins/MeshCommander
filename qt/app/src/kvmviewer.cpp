@@ -11,7 +11,7 @@
 #include <QRect>
 #include <QWheelEvent>
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 namespace {
 
@@ -220,4 +220,4 @@ void KvmViewer::keyReleaseEvent(QKeyEvent *event)
     event->accept();
 }
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

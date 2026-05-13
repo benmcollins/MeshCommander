@@ -9,9 +9,9 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
-using meshcommander::config::ConfigStore;
-using meshcommander::model::Computer;
-using meshcommander::model::ComputerModel;
+using qumesh::config::ConfigStore;
+using qumesh::model::Computer;
+using qumesh::model::ComputerModel;
 
 class TestComputerModel : public QObject
 {

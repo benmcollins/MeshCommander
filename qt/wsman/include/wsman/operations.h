@@ -6,7 +6,7 @@
 #include <QString>
 #include <functional>
 
-namespace meshcommander::wsman {
+namespace qumesh::wsman {
 
 class WsmanClient;
 
@@ -36,4 +36,4 @@ void identify(WsmanClient *client, std::function<void(IdentifyResult)> callback)
 /// enum: 2=On, 6=Off (Soft), 8=Off (Hard), 13=Sleep, etc.
 void getPowerState(WsmanClient *client, std::function<void(PowerStateResult)> callback);
 
-} // namespace meshcommander::wsman
+} // namespace qumesh::wsman

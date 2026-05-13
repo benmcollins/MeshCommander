@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
-qt_add_library(meshcommander_wsman STATIC
+qt_add_library(qumesh_wsman STATIC
     src/soap_envelope.cpp
     src/wsman_client.cpp
     src/operations.cpp
@@ -10,20 +10,20 @@ qt_add_library(meshcommander_wsman STATIC
     include/wsman/operations.h
 )
 
-target_include_directories(meshcommander_wsman
+target_include_directories(qumesh_wsman
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(meshcommander_wsman
+target_link_libraries(qumesh_wsman
     PUBLIC
         Qt6::Core
         Qt6::Network
 )
 
 if(MSVC)
-    target_compile_options(meshcommander_wsman PRIVATE /W4)
+    target_compile_options(qumesh_wsman PRIVATE /W4)
 else()
-    target_compile_options(meshcommander_wsman PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(qumesh_wsman PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 qt_add_executable(qumesh-wsman
@@ -31,7 +31,7 @@ qt_add_executable(qumesh-wsman
 )
 target_link_libraries(qumesh-wsman PRIVATE
     Qt6::Core
-    meshcommander_wsman
+    qumesh_wsman
 )
 
 if(BUILD_TESTING)

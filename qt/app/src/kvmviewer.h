@@ -7,7 +7,7 @@
 #include <QPointer>
 #include <QQuickPaintedItem>
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 class KvmController;
 class KvmFramebuffer;
@@ -19,7 +19,7 @@ class KvmFramebuffer;
 class KvmViewer : public QQuickPaintedItem
 {
     Q_OBJECT
-    Q_PROPERTY(meshcommander::app::KvmController *controller
+    Q_PROPERTY(qumesh::app::KvmController *controller
                    READ controller WRITE setController NOTIFY controllerChanged)
 
 public:
@@ -55,4 +55,4 @@ private:
     quint8 m_lastSentMask = 0;
 };
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

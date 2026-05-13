@@ -20,7 +20,7 @@
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 
-using namespace meshcommander::redir;
+using namespace qumesh::redir;
 
 namespace {
 

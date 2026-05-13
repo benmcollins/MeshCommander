@@ -8,7 +8,7 @@
 
 #include <QTimer>
 
-namespace meshcommander::redir {
+namespace qumesh::redir {
 
 namespace {
 
@@ -128,4 +128,4 @@ void SolSession::fail(QString reason)
     emit closed(m_lastError);
 }
 
-} // namespace meshcommander::redir
+} // namespace qumesh::redir

@@ -7,7 +7,7 @@
 #include <QObject>
 #include <QRect>
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 /// Backing framebuffer for the KVM viewer. The session pushes tiles
 /// here as `QImage`s; the QML viewer queries the current frame via
@@ -44,4 +44,4 @@ private:
     int m_version = 0;
 };
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

@@ -6,7 +6,7 @@
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
-namespace meshcommander::wsman {
+namespace qumesh::wsman {
 
 namespace {
 
@@ -189,4 +189,4 @@ QString findScalar(const QByteArray &bodyXml, const QString &localName)
     return {};
 }
 
-} // namespace meshcommander::wsman
+} // namespace qumesh::wsman

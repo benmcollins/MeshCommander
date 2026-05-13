@@ -5,7 +5,7 @@
 
 #include <QtTest>
 
-using namespace meshcommander::kvm;
+using namespace qumesh::kvm;
 
 namespace {
 

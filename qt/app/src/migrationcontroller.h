@@ -6,11 +6,11 @@
 #include <QObject>
 #include <QString>
 
-namespace meshcommander::config {
+namespace qumesh::config {
 class ConfigStore;
 }
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
 /// Bridges the standalone `migrate` library into the Qt app's startup flow.
 ///
@@ -69,4 +69,4 @@ private:
     int m_computersImported = 0;
 };
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

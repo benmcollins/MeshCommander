@@ -7,11 +7,11 @@
 #include "redir/redir_codec.h"
 #include "redir/sol_session.h"
 
-namespace meshcommander::app {
+namespace qumesh::app {
 
-using meshcommander::redir::RedirectionClient;
-using meshcommander::redir::SolSession;
-using meshcommander::terminal::TerminalScreen;
+using qumesh::redir::RedirectionClient;
+using qumesh::redir::SolSession;
+using qumesh::terminal::TerminalScreen;
 
 SolController::SolController(QObject *parent)
     : QObject(parent), m_screen(new TerminalScreen(this))
@@ -89,7 +89,7 @@ void SolController::open()
     m_screen->clear();
 
     m_client = new RedirectionClient(this);
-    m_client->setProtocol(meshcommander::redir::Protocol::Sol);
+    m_client->setProtocol(qumesh::redir::Protocol::Sol);
     m_client->setCredentials(m_user, m_password);
     m_client->setTls(m_tls);
     m_client->setTrustedFingerprints(m_trustedFingerprints);
@@ -97,7 +97,7 @@ void SolController::open()
     m_session = new SolSession(m_client, this);
 
     connect(m_client.data(), &RedirectionClient::trustPromptRequired, this,
-            [this](const meshcommander::redir::PeerCertSummary &summary) {
+            [this](const qumesh::redir::PeerCertSummary &summary) {
                 m_pendingCert = summary;
                 emit pendingCertChanged();
                 setState(State::AwaitingTrust);
@@ -200,4 +200,4 @@ void SolController::teardown()
     }
 }
 
-} // namespace meshcommander::app
+} // namespace qumesh::app

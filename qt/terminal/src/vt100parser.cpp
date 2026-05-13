@@ -5,7 +5,7 @@
 
 #include "terminal/terminalscreen.h"
 
-namespace meshcommander::terminal {
+namespace qumesh::terminal {
 
 namespace {
 
@@ -247,4 +247,4 @@ void Vt100Parser::handleSgr(const QVector<int> &params)
     }
 }
 
-} // namespace meshcommander::terminal
+} // namespace qumesh::terminal

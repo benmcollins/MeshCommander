@@ -15,8 +15,8 @@
 #include <QTemporaryFile>
 #include <QtTest>
 
-using namespace meshcommander::ider;
-using meshcommander::redir::RedirectionClient;
+using namespace qumesh::ider;
+using qumesh::redir::RedirectionClient;
 
 namespace {
 
@@ -195,7 +195,7 @@ void TestIderSession::readScsiCdServesIsoBytes()
     QVERIFY(server.listen());
 
     RedirectionClient client;
-    client.setProtocol(meshcommander::redir::Protocol::Ider);
+    client.setProtocol(qumesh::redir::Protocol::Ider);
     client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
 
     IderSession session(&client);

@@ -13,9 +13,9 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
-using meshcommander::config::ConfigStore;
-using meshcommander::app::MigrationController;
-using meshcommander::migrate::LegacyCrypto;
+using qumesh::config::ConfigStore;
+using qumesh::app::MigrationController;
+using qumesh::migrate::LegacyCrypto;
 
 namespace {
 
