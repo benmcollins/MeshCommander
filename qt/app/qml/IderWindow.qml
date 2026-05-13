@@ -1,0 +1,229 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Controls.Basic
+import QtQuick.Dialogs
+import QtQuick.Layouts
+import QuMesh
+
+/// Detached window hosting one IDE-R session. The user picks an ISO,
+/// chooses a start trigger, and clicks **Mount**. While the session is
+/// active the window shows running stats and an enable/disable badge
+/// reflecting AMT's reported feature status.
+Window {
+    id: root
+
+    property string targetHost
+    property int targetPort: 16994
+    property string user
+    property string password
+    property string label: qsTr("IDE Redirection")
+
+    width: 640
+    height: 480
+    minimumWidth: 520
+    minimumHeight: 360
+    title: qsTr("QuMesh — %1 — %2").arg(root.label).arg(root.targetHost)
+    color: Colors.bg
+
+    IderController {
+        id: controller
+        host: root.targetHost
+        port: root.targetPort
+        user: root.user
+        password: root.password
+    }
+
+    FileDialog {
+        id: isoDialog
+        nameFilters: [qsTr("ISO images (*.iso)"), qsTr("All files (*)")]
+        title: qsTr("Select ISO to mount")
+        onAccepted: controller.isoPath = Qt.urlToLocalFile(isoDialog.selectedFile)
+    }
+
+    onClosing: controller.close()
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 14
+        spacing: 14
+
+        Section {
+            title: qsTr("MEDIA")
+            Layout.fillWidth: true
+
+            RowLayout {
+                spacing: 8
+                Layout.fillWidth: true
+
+                Text {
+                    text: qsTr("ISO")
+                    color: Colors.textMuted
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    Layout.preferredWidth: 60
+                }
+
+                TextField {
+                    text: controller.isoPath
+                    placeholderText: qsTr("/path/to/install.iso")
+                    color: Colors.text
+                    font.family: Type.mono
+                    font.pixelSize: Type.sizeM
+                    Layout.fillWidth: true
+                    onTextEdited: controller.isoPath = text
+                }
+
+                Button {
+                    text: qsTr("Browse…")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    onClicked: isoDialog.open()
+                }
+            }
+        }
+
+        Section {
+            title: qsTr("START TRIGGER")
+            Layout.fillWidth: true
+
+            RowLayout {
+                spacing: 10
+                Layout.fillWidth: true
+
+                RadioButton {
+                    text: qsTr("Graceful")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    checked: controller.startOption === IderController.Graceful
+                    onClicked: controller.startOption = IderController.Graceful
+                }
+                RadioButton {
+                    text: qsTr("On reboot")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    checked: controller.startOption === IderController.OnReboot
+                    onClicked: controller.startOption = IderController.OnReboot
+                }
+                RadioButton {
+                    text: qsTr("Immediately")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    checked: controller.startOption === IderController.Immediate
+                    onClicked: controller.startOption = IderController.Immediate
+                }
+            }
+        }
+
+        Section {
+            title: qsTr("STATUS")
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            RowLayout {
+                spacing: 10
+                Layout.fillWidth: true
+
+                Rectangle {
+                    implicitWidth: 10
+                    implicitHeight: 10
+                    radius: 5
+                    color: controller.state === IderController.Running ? Colors.on
+                         : controller.state === IderController.Failed ? Colors.error
+                         : controller.state === IderController.Disconnected ? Colors.off
+                         : Colors.standby
+                }
+
+                Text {
+                    text: {
+                        switch (controller.state) {
+                        case IderController.Disconnected:   return qsTr("Disconnected");
+                        case IderController.Connecting:     return qsTr("Connecting…");
+                        case IderController.Authenticating: return qsTr("Authenticating…");
+                        case IderController.Opening:        return qsTr("Opening IDE-R session…");
+                        case IderController.Running:        return controller.deviceEnabled
+                                                                   ? qsTr("Mounted — AMT BIOS armed")
+                                                                   : qsTr("Mounted — waiting for AMT to arm");
+                        case IderController.Failed:         return qsTr("Failed: %1").arg(controller.lastError);
+                        }
+                        return "";
+                    }
+                    color: controller.state === IderController.Failed ? Colors.error : Colors.textMuted
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            GridLayout {
+                columns: 2
+                columnSpacing: 16
+                rowSpacing: 6
+                Layout.fillWidth: true
+                Layout.topMargin: 6
+
+                Text {
+                    text: qsTr("Sent to AMT")
+                    color: Colors.textMuted
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                }
+                Text {
+                    text: controller.bytesSentToAmt.toLocaleString(Qt.locale(), 'f', 0)
+                    color: Colors.text
+                    font.family: Type.mono
+                    font.pixelSize: Type.sizeM
+                }
+                Text {
+                    text: qsTr("Received")
+                    color: Colors.textMuted
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                }
+                Text {
+                    text: controller.bytesReceivedFromAmt.toLocaleString(Qt.locale(), 'f', 0)
+                    color: Colors.text
+                    font.family: Type.mono
+                    font.pixelSize: Type.sizeM
+                }
+            }
+        }
+
+        RowLayout {
+            spacing: 8
+            Layout.fillWidth: true
+
+            Item { Layout.fillWidth: true }
+
+            Button {
+                text: qsTr("Close")
+                flat: true
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                onClicked: root.close()
+            }
+
+            Button {
+                text: controller.state === IderController.Disconnected
+                      || controller.state === IderController.Failed
+                    ? qsTr("Mount")
+                    : qsTr("Unmount")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                enabled: controller.isoPath.length > 0
+                onClicked: {
+                    if (controller.state === IderController.Disconnected
+                        || controller.state === IderController.Failed) {
+                        controller.open();
+                    } else {
+                        controller.close();
+                    }
+                }
+            }
+        }
+    }
+}

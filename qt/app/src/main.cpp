@@ -3,6 +3,7 @@
 
 #include "computermodel.h"
 #include "configstore.h"
+#include "idercontroller.h"
 #include "migrationcontroller.h"
 #include "solcontroller.h"
 #include "terminal/terminalscreen.h"
@@ -32,6 +33,7 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "MigrationController",
                                  &migrationController);
     qmlRegisterType<meshcommander::app::SolController>("QuMesh", 1, 0, "SolController");
+    qmlRegisterType<meshcommander::app::IderController>("QuMesh", 1, 0, "IderController");
     qmlRegisterUncreatableType<meshcommander::terminal::TerminalScreen>(
         "QuMesh", 1, 0, "TerminalScreen",
         QStringLiteral("Owned by SolController"));

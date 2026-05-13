@@ -247,6 +247,16 @@ Rectangle {
                 onClicked: solLoader.launch()
             }
 
+            Button {
+                visible: root.hasSelection && !root.isNew
+                text: qsTr("Mount ISO")
+                flat: true
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                enabled: root.draftHost.length > 0 && root.draftUser.length > 0
+                onClicked: iderLoader.launch()
+            }
+
             Item { Layout.fillWidth: true }
 
             Button {
@@ -316,6 +326,33 @@ Rectangle {
 
         sourceComponent: SolWindow {
             onClosing: solLoader.active = false
+        }
+    }
+
+    Loader {
+        id: iderLoader
+        active: false
+        asynchronous: true
+
+        function launch() {
+            active = false;
+            active = true;
+        }
+
+        function openWindow() {
+            if (item === null) return;
+            item.targetHost = root.draftHost;
+            item.targetPort = 16994;
+            item.user = root.draftUser;
+            item.password = root.draftPass;
+            item.label = root.draftName.length > 0 ? root.draftName : root.draftHost;
+            item.visible = true;
+        }
+
+        onStatusChanged: if (status === Loader.Ready) openWindow()
+
+        sourceComponent: IderWindow {
+            onClosing: iderLoader.active = false
         }
     }
 

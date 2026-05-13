@@ -54,8 +54,8 @@ Each phase is one or more issues. The workflow per logical unit is: issue → br
 
 ### Phase 6 — IDE-R
 
-- Mount local ISO as remote IDE/USB.
-- IDE-R framing on top of the redirection transport.
+- Mount local ISO as remote IDE/USB. ✅ (#21)
+- IDE-R framing on top of the redirection transport. ✅ (#21)
 
 ### Phase 7 — KVM
 
