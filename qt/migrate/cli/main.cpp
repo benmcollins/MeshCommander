@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 #include "migrate/migrate.h"
 
 #include <QCommandLineOption>
@@ -10,7 +13,7 @@ using namespace meshcommander::migrate;
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("meshcommander-migrate"));
+    QCoreApplication::setApplicationName(QStringLiteral("qumesh-migrate"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1"));
     QCoreApplication::setOrganizationName(QStringLiteral("Insynergy"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("insynergy.com"));

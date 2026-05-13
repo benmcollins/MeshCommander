@@ -1,3 +1,8 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+-->
+
 # Bundled fonts
 
 Bundled so the app renders identically across macOS, Windows, and Linux

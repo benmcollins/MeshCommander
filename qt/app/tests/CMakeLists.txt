@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 function(meshcommander_app_test name)
     qt_add_executable(${name}
         ${name}.cpp

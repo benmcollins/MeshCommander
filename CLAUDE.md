@@ -1,15 +1,20 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+-->
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
 
-The repo is **mid-rewrite from NW.js to a native Qt6/QML app**, cross-platform (macOS + Windows). Two trees coexist:
+The repo is **mid-rewrite from Intel's NW.js MeshCommander to QuMesh, a native Qt6/QML app**, cross-platform (macOS + Windows). The new product is QuMesh; the legacy product is MeshCommander. Two trees coexist:
 
-- **`qt/`** — the new Qt6/QML app. This is where active development happens. Read `qt/ROADMAP.md` for the phased plan.
-- **`source/` + `mkapp*` + top-level `package.json`** — the legacy NW.js implementation. Kept as a reference for AMT protocol behavior while features are ported, and removed progressively (see `qt/ROADMAP.md` "Progressive cleanup").
+- **`qt/`** — QuMesh, the new Qt6/QML app. Where active development happens. Read `qt/ROADMAP.md` for the phased plan.
+- **`source/` + `mkapp*` + top-level `package.json`** — the legacy NW.js MeshCommander implementation. Kept as a reference for AMT protocol behavior while features are ported, and removed progressively (see `qt/ROADMAP.md` "Progressive cleanup").
 
-The legacy is a macOS repackaging of Intel's MeshCommander web app (a console for managing Intel AMT / vPro hardware), wrapping a ~53k-line single-page web app (`source/Commander.htm`) in NW.js. Upstream is Intel's MeshCommander source (Apache-2.0).
+The legacy was a macOS repackaging of Intel's MeshCommander web app (a console for managing Intel AMT / vPro hardware), wrapping a ~53k-line single-page web app (`source/Commander.htm`) in NW.js. Upstream is Intel's MeshCommander source (Apache-2.0).
 
 ## Workflow
 
@@ -19,7 +24,7 @@ For Qt/QML changes specifically: use the `qt-development-skills` plugin — invo
 
 ## Build
 
-### Qt rewrite (`qt/`)
+### QuMesh (`qt/`)
 
 ```
 cd qt
@@ -28,7 +33,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Run the app: `./build/app/meshcommander.app/Contents/MacOS/meshcommander` (macOS) or `build\app\meshcommander.exe` (Windows). Requires Qt 6.6+ with the `Quick`, `QuickControls2`, `Network`, and `Test` modules — on macOS install via `brew install qt ninja`. CI uses Qt 6.8.0.
+Run the app: `./build/app/qumesh.app/Contents/MacOS/qumesh` (macOS) or `build\app\qumesh.exe` (Windows). Requires Qt 6.6+ with the `Quick`, `QuickControls2`, `Network`, and `Test` modules — on macOS install via `brew install qt ninja`. CI uses Qt 6.8.0.
 
 ### Legacy NW.js build
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 #include "redir/redir_codec.h"
 
 #include <QRegularExpression>

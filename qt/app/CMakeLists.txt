@@ -1,4 +1,7 @@
-qt_add_executable(meshcommander
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
+qt_add_executable(qumesh
     src/main.cpp
     src/configstore.cpp
     src/configstore.h
@@ -15,8 +18,8 @@ set_source_files_properties(
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
-qt_add_qml_module(meshcommander
-    URI MeshCommander
+qt_add_qml_module(qumesh
+    URI QuMesh
     VERSION 1.0
     QML_FILES
         qml/Main.qml
@@ -36,11 +39,11 @@ qt_add_qml_module(meshcommander
         qml/fonts/JetBrainsMono-Regular.ttf
 )
 
-target_include_directories(meshcommander PRIVATE
+target_include_directories(qumesh PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(meshcommander PRIVATE
+target_link_libraries(qumesh PRIVATE
     Qt6::Core
     Qt6::Quick
     Qt6::QuickControls2
@@ -48,10 +51,10 @@ target_link_libraries(meshcommander PRIVATE
     meshcommander_migrate
 )
 
-set_target_properties(meshcommander PROPERTIES
+set_target_properties(qumesh PROPERTIES
     MACOSX_BUNDLE TRUE
-    MACOSX_BUNDLE_BUNDLE_NAME "MeshCommander"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.insynergy.MeshCommander"
+    MACOSX_BUNDLE_BUNDLE_NAME "QuMesh"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.insynergy.QuMesh"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     WIN32_EXECUTABLE TRUE

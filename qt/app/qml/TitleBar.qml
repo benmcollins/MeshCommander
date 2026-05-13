@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
-import MeshCommander
+import QuMesh
 
 Rectangle {
     id: root
@@ -17,7 +20,7 @@ Rectangle {
         anchors.rightMargin: 16
 
         Text {
-            text: "◇  MESHCOMMANDER"
+            text: "◇  QUMESH"
             color: Colors.text
             font.family: Type.sans
             font.pixelSize: Type.sizeXs

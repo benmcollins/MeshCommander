@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 #include "computermodel.h"
 #include "configstore.h"
 #include "migrationcontroller.h"
@@ -12,7 +15,7 @@ int main(int argc, char *argv[])
 
     QCoreApplication::setOrganizationName(QStringLiteral("Insynergy"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("insynergy.com"));
-    QCoreApplication::setApplicationName(QStringLiteral("MeshCommander"));
+    QCoreApplication::setApplicationName(QStringLiteral("QuMesh"));
 
     meshcommander::config::ConfigStore configStore;
 
@@ -23,8 +26,8 @@ int main(int argc, char *argv[])
     meshcommander::model::ComputerModel computerModel;
     computerModel.setStore(&configStore);
 
-    qmlRegisterSingletonInstance("MeshCommander", 1, 0, "ComputerModel", &computerModel);
-    qmlRegisterSingletonInstance("MeshCommander", 1, 0, "MigrationController",
+    qmlRegisterSingletonInstance("QuMesh", 1, 0, "ComputerModel", &computerModel);
+    qmlRegisterSingletonInstance("QuMesh", 1, 0, "MigrationController",
                                  &migrationController);
 
     QQmlApplicationEngine engine;
@@ -35,7 +38,7 @@ int main(int argc, char *argv[])
         &app,
         []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
-    engine.loadFromModule("MeshCommander", "Main");
+    engine.loadFromModule("QuMesh", "Main");
 
     return app.exec();
 }

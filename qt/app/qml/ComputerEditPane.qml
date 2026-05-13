@@ -1,9 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import MeshCommander
+import QuMesh
 
 Rectangle {
     id: root
@@ -289,7 +292,7 @@ Rectangle {
             Layout.alignment: Qt.AlignHCenter
         }
         Text {
-            text: qsTr("MESHCOMMANDER")
+            text: qsTr("QUMESH")
             color: Colors.textFaint
             font.family: Type.sans
             font.pixelSize: Type.sizeXs

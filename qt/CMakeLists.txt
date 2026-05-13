@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 cmake_minimum_required(VERSION 3.21)
 
-project(MeshCommanderQt
+project(QuMesh
     VERSION 0.1.0
-    DESCRIPTION "Native Qt6/QML rewrite of MeshCommander"
+    DESCRIPTION "QuMesh — native Qt6/QML console for Intel AMT (vPro) devices"
     LANGUAGES CXX
 )
 

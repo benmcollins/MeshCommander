@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
 qt_add_library(meshcommander_migrate STATIC
     src/legacy_decrypt.cpp
     src/chromium_storage.cpp
@@ -25,10 +28,10 @@ else()
     target_compile_options(meshcommander_migrate PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-qt_add_executable(meshcommander-migrate
+qt_add_executable(qumesh-migrate
     cli/main.cpp
 )
-target_link_libraries(meshcommander-migrate PRIVATE
+target_link_libraries(qumesh-migrate PRIVATE
     Qt6::Core
     meshcommander_migrate
 )
