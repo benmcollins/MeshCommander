@@ -314,9 +314,13 @@ Rectangle {
         active: false
         asynchronous: true
 
+        // Row snapshotted at launch time so the persist callback fires
+        // against the right computer even if the user changes the
+        // selection while the window is open.
+        property int targetRow: -1
+
         function launch() {
-            // Reset so the next load always fires onStatusChanged → openWindow,
-            // even if we were previously active.
+            targetRow = root.row;
             active = false;
             active = true;
         }
@@ -324,9 +328,14 @@ Rectangle {
         function openWindow() {
             if (item === null) return;
             item.targetHost = root.draftHost;
-            item.targetPort = 16994;
+            item.targetPort = root.draftTls ? 16995 : 16994;
             item.user = root.draftUser;
             item.password = root.draftPass;
+            item.tls = root.draftTls;
+            item.trustedFingerprints = targetRow >= 0
+                ? (ComputerModel.data(ComputerModel.index(targetRow, 0),
+                                       ComputerModel.TrustedFingerprintsRole) || [])
+                : [];
             item.label = root.draftName.length > 0 ? root.draftName : root.draftHost;
             item.visible = true;
             item.start();
@@ -336,6 +345,10 @@ Rectangle {
 
         sourceComponent: SolWindow {
             onClosing: solLoader.active = false
+            onTrustedFingerprintPersistRequested: function(fp) {
+                if (solLoader.targetRow >= 0)
+                    ComputerModel.addTrustedFingerprint(solLoader.targetRow, fp);
+            }
         }
     }
 
@@ -344,7 +357,10 @@ Rectangle {
         active: false
         asynchronous: true
 
+        property int targetRow: -1
+
         function launch() {
+            targetRow = root.row;
             active = false;
             active = true;
         }
@@ -352,9 +368,14 @@ Rectangle {
         function openWindow() {
             if (item === null) return;
             item.targetHost = root.draftHost;
-            item.targetPort = 16994;
+            item.targetPort = root.draftTls ? 16995 : 16994;
             item.user = root.draftUser;
             item.password = root.draftPass;
+            item.tls = root.draftTls;
+            item.trustedFingerprints = targetRow >= 0
+                ? (ComputerModel.data(ComputerModel.index(targetRow, 0),
+                                       ComputerModel.TrustedFingerprintsRole) || [])
+                : [];
             item.label = root.draftName.length > 0 ? root.draftName : root.draftHost;
             item.visible = true;
         }
@@ -363,6 +384,10 @@ Rectangle {
 
         sourceComponent: IderWindow {
             onClosing: iderLoader.active = false
+            onTrustedFingerprintPersistRequested: function(fp) {
+                if (iderLoader.targetRow >= 0)
+                    ComputerModel.addTrustedFingerprint(iderLoader.targetRow, fp);
+            }
         }
     }
 
@@ -371,7 +396,10 @@ Rectangle {
         active: false
         asynchronous: true
 
+        property int targetRow: -1
+
         function launch() {
+            targetRow = root.row;
             active = false;
             active = true;
         }
@@ -379,9 +407,14 @@ Rectangle {
         function openWindow() {
             if (item === null) return;
             item.targetHost = root.draftHost;
-            item.targetPort = 16994;
+            item.targetPort = root.draftTls ? 16995 : 16994;
             item.user = root.draftUser;
             item.password = root.draftPass;
+            item.tls = root.draftTls;
+            item.trustedFingerprints = targetRow >= 0
+                ? (ComputerModel.data(ComputerModel.index(targetRow, 0),
+                                       ComputerModel.TrustedFingerprintsRole) || [])
+                : [];
             item.label = root.draftName.length > 0 ? root.draftName : root.draftHost;
             item.visible = true;
             item.start();
@@ -391,6 +424,10 @@ Rectangle {
 
         sourceComponent: KvmWindow {
             onClosing: kvmLoader.active = false
+            onTrustedFingerprintPersistRequested: function(fp) {
+                if (kvmLoader.targetRow >= 0)
+                    ComputerModel.addTrustedFingerprint(kvmLoader.targetRow, fp);
+            }
         }
     }
 

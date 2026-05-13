@@ -20,7 +20,11 @@ Window {
     property int targetPort: 16994
     property string user
     property string password
+    property bool tls: false
+    property var trustedFingerprints: []
     property string label: qsTr("IDE Redirection")
+
+    signal trustedFingerprintPersistRequested(string fingerprint)
 
     width: 640
     height: 480
@@ -35,6 +39,15 @@ Window {
         port: root.targetPort
         user: root.user
         password: root.password
+        tls: root.tls
+        trustedFingerprints: root.trustedFingerprints
+        onTrustedFingerprintAdded: function(fp) {
+            root.trustedFingerprintPersistRequested(fp);
+        }
+    }
+
+    CertTrustDialog {
+        controller: controller
     }
 
     FileDialog {

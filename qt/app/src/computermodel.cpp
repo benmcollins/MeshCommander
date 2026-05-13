@@ -11,6 +11,8 @@ namespace meshcommander::model {
 
 QJsonObject Computer::toJson() const
 {
+    QJsonArray fps;
+    for (const QString &fp : trustedFingerprints) fps.push_back(fp);
     return QJsonObject{
         {QStringLiteral("id"), id},
         {QStringLiteral("name"), name},
@@ -20,6 +22,7 @@ QJsonObject Computer::toJson() const
         {QStringLiteral("pass"), pass},
         {QStringLiteral("tls"), tls},
         {QStringLiteral("digestrealm"), digestRealm},
+        {QStringLiteral("trustedFingerprints"), fps},
     };
 }
 
@@ -35,6 +38,10 @@ Computer Computer::fromJson(const QJsonObject &obj)
     c.pass = obj.value(QStringLiteral("pass")).toString();
     c.tls = obj.value(QStringLiteral("tls")).toBool();
     c.digestRealm = obj.value(QStringLiteral("digestrealm")).toString();
+    const QJsonArray fps = obj.value(QStringLiteral("trustedFingerprints")).toArray();
+    for (const QJsonValue &v : fps) {
+        if (v.isString()) c.trustedFingerprints.push_back(v.toString());
+    }
     return c;
 }
 
@@ -87,6 +94,8 @@ QVariant ComputerModel::data(const QModelIndex &index, int role) const
         return c.tls;
     case DigestRealmRole:
         return c.digestRealm;
+    case TrustedFingerprintsRole:
+        return c.trustedFingerprints;
     }
     return {};
 }
@@ -153,7 +162,25 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
         {PassRole, QByteArrayLiteral("pass")},
         {TlsRole, QByteArrayLiteral("tls")},
         {DigestRealmRole, QByteArrayLiteral("digestrealm")},
+        {TrustedFingerprintsRole, QByteArrayLiteral("trustedFingerprints")},
     };
+}
+
+bool ComputerModel::addTrustedFingerprint(int row, const QString &fingerprint)
+{
+    if (row < 0 || row >= m_computers.size()) return false;
+    Computer &c = m_computers[row];
+    if (c.trustedFingerprints.contains(fingerprint)) return true;
+
+    Computer snapshot = c;
+    c.trustedFingerprints.append(fingerprint);
+    if (!persist()) {
+        c = snapshot;
+        return false;
+    }
+    const QModelIndex idx = index(row, 0);
+    emit dataChanged(idx, idx, {TrustedFingerprintsRole});
+    return true;
 }
 
 int ComputerModel::addComputer(const QString &name, const QString &host, int port,

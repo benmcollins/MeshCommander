@@ -6,10 +6,9 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
 
-namespace meshcommander::redir {
-class RedirectionClient;
-}
+#include "redir/redir_client.h"
 
 namespace meshcommander::ider {
 class IderSession;
@@ -36,12 +35,22 @@ class IderController : public QObject
     Q_PROPERTY(quint64 bytesSentToAmt READ bytesSentToAmt NOTIFY statsChanged)
     Q_PROPERTY(quint64 bytesReceivedFromAmt READ bytesReceivedFromAmt NOTIFY statsChanged)
     Q_PROPERTY(bool deviceEnabled READ deviceEnabled NOTIFY deviceEnabledChanged)
+    Q_PROPERTY(bool tls READ tls WRITE setTls NOTIFY tlsChanged)
+    Q_PROPERTY(QStringList trustedFingerprints READ trustedFingerprints
+                   WRITE setTrustedFingerprints NOTIFY trustedFingerprintsChanged)
+    Q_PROPERTY(QString pendingCertSubject READ pendingCertSubject NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertIssuer READ pendingCertIssuer NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertFingerprint READ pendingCertFingerprint NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertNotBefore READ pendingCertNotBefore NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertNotAfter READ pendingCertNotAfter NOTIFY pendingCertChanged)
+    Q_PROPERTY(bool awaitingTrust READ awaitingTrust NOTIFY awaitingTrustChanged)
 
 public:
     enum class State {
         Disconnected,
         Connecting,
         Authenticating,
+        AwaitingTrust,
         Opening,
         Running,
         Failed,
@@ -69,6 +78,14 @@ public:
     [[nodiscard]] quint64 bytesSentToAmt() const { return m_bytesSentToAmt; }
     [[nodiscard]] quint64 bytesReceivedFromAmt() const { return m_bytesReceivedFromAmt; }
     [[nodiscard]] bool deviceEnabled() const { return m_deviceEnabled; }
+    [[nodiscard]] bool tls() const { return m_tls; }
+    [[nodiscard]] QStringList trustedFingerprints() const { return m_trustedFingerprints; }
+    [[nodiscard]] bool awaitingTrust() const { return m_state == State::AwaitingTrust; }
+    [[nodiscard]] QString pendingCertSubject() const { return m_pendingCert.subject; }
+    [[nodiscard]] QString pendingCertIssuer() const { return m_pendingCert.issuer; }
+    [[nodiscard]] QString pendingCertFingerprint() const { return m_pendingCert.fingerprintSha256; }
+    [[nodiscard]] QString pendingCertNotBefore() const { return m_pendingCert.notBefore; }
+    [[nodiscard]] QString pendingCertNotAfter() const { return m_pendingCert.notAfter; }
 
     void setHost(const QString &v);
     void setPort(quint16 v);
@@ -76,9 +93,12 @@ public:
     void setPassword(const QString &v);
     void setIsoPath(const QString &v);
     void setStartOption(StartOption v);
+    void setTls(bool v);
+    void setTrustedFingerprints(QStringList v);
 
     Q_INVOKABLE void open();
     Q_INVOKABLE void close();
+    Q_INVOKABLE void trustPendingCert(bool persist);
 
 signals:
     void hostChanged();
@@ -91,6 +111,11 @@ signals:
     void lastErrorChanged();
     void statsChanged();
     void deviceEnabledChanged();
+    void tlsChanged();
+    void trustedFingerprintsChanged();
+    void pendingCertChanged();
+    void awaitingTrustChanged();
+    void trustedFingerprintAdded(const QString &fingerprint);
 
 private:
     void setState(State s);
@@ -109,6 +134,9 @@ private:
     quint64 m_bytesSentToAmt = 0;
     quint64 m_bytesReceivedFromAmt = 0;
     bool m_deviceEnabled = false;
+    bool m_tls = false;
+    QStringList m_trustedFingerprints;
+    meshcommander::redir::PeerCertSummary m_pendingCert;
 
     QPointer<meshcommander::redir::RedirectionClient> m_client;
     QPointer<meshcommander::ider::IderSession> m_session;

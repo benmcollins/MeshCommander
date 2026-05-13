@@ -49,11 +49,27 @@ void KvmController::setPassword(const QString &v)
     emit passwordChanged();
 }
 
+void KvmController::setTls(bool v)
+{
+    if (v == m_tls) return;
+    m_tls = v;
+    emit tlsChanged();
+}
+
+void KvmController::setTrustedFingerprints(QStringList v)
+{
+    if (v == m_trustedFingerprints) return;
+    m_trustedFingerprints = std::move(v);
+    emit trustedFingerprintsChanged();
+}
+
 void KvmController::setState(State s)
 {
     if (s == m_state) return;
+    const bool wasAwaiting = (m_state == State::AwaitingTrust);
     m_state = s;
     emit stateChanged();
+    if (wasAwaiting != (s == State::AwaitingTrust)) emit awaitingTrustChanged();
 }
 
 void KvmController::setLastError(const QString &e)
@@ -76,8 +92,17 @@ void KvmController::open()
     m_client = new RedirectionClient(this);
     m_client->setProtocol(meshcommander::redir::Protocol::Kvm);
     m_client->setCredentials(m_user, m_password);
+    m_client->setTls(m_tls);
+    m_client->setTrustedFingerprints(m_trustedFingerprints);
 
     m_session = new KvmSession(m_client, this);
+
+    connect(m_client.data(), &RedirectionClient::trustPromptRequired, this,
+            [this](const meshcommander::redir::PeerCertSummary &summary) {
+                m_pendingCert = summary;
+                emit pendingCertChanged();
+                setState(State::AwaitingTrust);
+            });
 
     connect(m_client.data(), &RedirectionClient::stateChanged, this, [this]() {
         if (!m_client) return;
@@ -147,6 +172,19 @@ void KvmController::close()
     setState(State::Disconnected);
 }
 
+void KvmController::trustPendingCert(bool persist)
+{
+    if (!m_client || m_state != State::AwaitingTrust) return;
+    const QString fp = m_pendingCert.fingerprintSha256;
+    m_client->trustPendingPeerCert();
+    if (!m_trustedFingerprints.contains(fp)) {
+        m_trustedFingerprints.append(fp);
+        emit trustedFingerprintsChanged();
+    }
+    setState(State::Authenticating);
+    if (persist && !fp.isEmpty()) emit trustedFingerprintAdded(fp);
+}
+
 void KvmController::sendCtrlAltDel()
 {
     if (m_session) m_session->sendCtrlAltDel();
@@ -184,6 +222,10 @@ void KvmController::teardown()
         m_client->disconnect(this);
         m_client->deleteLater();
         m_client = nullptr;
+    }
+    if (!m_pendingCert.fingerprintSha256.isEmpty()) {
+        m_pendingCert = {};
+        emit pendingCertChanged();
     }
 }
 

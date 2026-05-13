@@ -3,6 +3,10 @@
 
 #include "redir/redir_client.h"
 
+#include <QCryptographicHash>
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#include <QSslSocket>
 #include <QTcpSocket>
 
 namespace meshcommander::redir {
@@ -26,13 +30,7 @@ QString describe(StartSessionStatus s)
 
 } // namespace
 
-RedirectionClient::RedirectionClient(QObject *parent)
-    : QObject(parent), m_socket(new QTcpSocket(this))
-{
-    connect(m_socket, &QTcpSocket::connected, this, &RedirectionClient::handleConnected);
-    connect(m_socket, &QTcpSocket::readyRead, this, &RedirectionClient::handleReadyRead);
-    connect(m_socket, &QTcpSocket::errorOccurred, this, &RedirectionClient::handleSocketError);
-}
+RedirectionClient::RedirectionClient(QObject *parent) : QObject(parent) {}
 
 RedirectionClient::~RedirectionClient() = default;
 
@@ -48,14 +46,62 @@ void RedirectionClient::connectTo(const QString &host, quint16 port)
     m_lastError.clear();
     m_startStatus = StartSessionStatus::UnknownError;
     m_oemData.clear();
+    m_pendingPeerCert = {};
+    m_awaitingTrust = false;
+
+    if (m_socket != nullptr) {
+        m_socket->disconnect(this);
+        m_socket->deleteLater();
+        m_socket = nullptr;
+        m_sslSocket = nullptr;
+    }
+
+    if (m_tls) {
+        m_sslSocket = new QSslSocket(this);
+        // AMT devices generally ship self-signed certs, so we can't
+        // rely on CA-trust validation. Use VerifyNone and pin by
+        // fingerprint in handleEncrypted() instead.
+        QSslConfiguration cfg = m_sslSocket->sslConfiguration();
+        cfg.setPeerVerifyMode(QSslSocket::VerifyNone);
+        m_sslSocket->setSslConfiguration(cfg);
+        m_socket = m_sslSocket;
+        connect(m_sslSocket, &QSslSocket::encrypted, this,
+                &RedirectionClient::handleEncrypted);
+    } else {
+        QTcpSocket *tcp = new QTcpSocket(this);
+        m_socket = tcp;
+        connect(tcp, &QTcpSocket::connected, this, &RedirectionClient::handleConnected);
+    }
+    connect(m_socket, &QAbstractSocket::readyRead, this,
+            &RedirectionClient::handleReadyRead);
+    connect(m_socket, &QAbstractSocket::errorOccurred, this,
+            &RedirectionClient::handleSocketError);
+
     setState(State::Connecting);
-    m_socket->connectToHost(host, port);
+    if (m_tls) {
+        m_sslSocket->connectToHostEncrypted(host, port);
+    } else {
+        m_socket->connectToHost(host, port);
+    }
 }
 
 void RedirectionClient::disconnectFromHost()
 {
-    m_socket->disconnectFromHost();
+    if (m_socket != nullptr) m_socket->disconnectFromHost();
     setState(State::Disconnected);
+}
+
+void RedirectionClient::trustPendingPeerCert()
+{
+    if (m_sslSocket == nullptr || !m_awaitingTrust) return;
+    if (!m_pendingPeerCert.fingerprintSha256.isEmpty()
+        && !m_trustedFingerprints.contains(m_pendingPeerCert.fingerprintSha256)) {
+        m_trustedFingerprints.append(m_pendingPeerCert.fingerprintSha256);
+    }
+    m_awaitingTrust = false;
+    // The TLS handshake is already complete — the only thing held back
+    // was the redirection selector. Proceed as if we had just connected.
+    handleConnected();
 }
 
 void RedirectionClient::handleConnected()
@@ -188,6 +234,48 @@ void RedirectionClient::drainInbox()
 void RedirectionClient::handleSocketError()
 {
     fail(m_socket->errorString());
+}
+
+void RedirectionClient::handleEncrypted()
+{
+    Q_ASSERT(m_sslSocket != nullptr);
+    const QSslCertificate cert = m_sslSocket->peerCertificate();
+    if (cert.isNull()) {
+        fail(QStringLiteral("TLS peer presented no certificate"));
+        return;
+    }
+    const PeerCertSummary summary = summarize(cert);
+    if (m_trustedFingerprints.contains(summary.fingerprintSha256)) {
+        // Fingerprint pinned — proceed with the redirection selector.
+        handleConnected();
+        return;
+    }
+    // Hold the selector and ask the consumer to confirm.
+    m_pendingPeerCert = summary;
+    m_awaitingTrust = true;
+    emit trustPromptRequired(summary);
+}
+
+PeerCertSummary RedirectionClient::summarize(const QSslCertificate &cert)
+{
+    PeerCertSummary s;
+    const auto subjects = cert.subjectInfo(QSslCertificate::CommonName);
+    const auto issuers  = cert.issuerInfo(QSslCertificate::CommonName);
+    if (!subjects.isEmpty()) s.subject = subjects.first();
+    if (!issuers.isEmpty())  s.issuer  = issuers.first();
+
+    s.der = cert.toDer();
+    const QByteArray hash = QCryptographicHash::hash(s.der, QCryptographicHash::Sha256);
+    QString fp;
+    fp.reserve(hash.size() * 3);
+    for (int i = 0; i < hash.size(); ++i) {
+        if (i > 0) fp += QLatin1Char(':');
+        fp += QString::asprintf("%02X", static_cast<quint8>(hash.at(i)));
+    }
+    s.fingerprintSha256 = fp;
+    s.notBefore = cert.effectiveDate().toString(Qt::ISODate);
+    s.notAfter  = cert.expiryDate().toString(Qt::ISODate);
+    return s;
 }
 
 void RedirectionClient::setState(State s)

@@ -18,13 +18,19 @@ Window {
     property int targetPort: 16994
     property string user
     property string password
+    property bool tls: false
+    property var trustedFingerprints: []
     property string label: qsTr("Serial Console")
+
+    signal trustedFingerprintPersistRequested(string fingerprint)
 
     function start() {
         controller.host = root.targetHost;
         controller.port = root.targetPort;
         controller.user = root.user;
         controller.password = root.password;
+        controller.tls = root.tls;
+        controller.trustedFingerprints = root.trustedFingerprints;
         controller.open();
     }
 
@@ -37,6 +43,13 @@ Window {
 
     SolController {
         id: controller
+        onTrustedFingerprintAdded: function(fp) {
+            root.trustedFingerprintPersistRequested(fp);
+        }
+    }
+
+    CertTrustDialog {
+        controller: controller
     }
 
     onClosing: controller.close()
