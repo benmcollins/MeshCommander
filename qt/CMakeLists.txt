@@ -18,10 +18,25 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 find_package(Qt6 6.6 REQUIRED COMPONENTS Core Quick QuickControls2 Network Test)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
 qt_standard_project_setup(REQUIRES 6.6)
 qt_policy(SET QTP0004 NEW)
 
+# leveldb (read-only access to the legacy NW.js Chromium DOMStorage)
+include(FetchContent)
+set(LEVELDB_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LEVELDB_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(LEVELDB_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    leveldb
+    GIT_REPOSITORY https://github.com/google/leveldb.git
+    GIT_TAG       1.23
+    GIT_SHALLOW   TRUE
+)
+FetchContent_MakeAvailable(leveldb)
+
 include(CTest)
 
 add_subdirectory(app)
+add_subdirectory(migrate)

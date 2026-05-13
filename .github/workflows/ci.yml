@@ -42,6 +42,26 @@ jobs:
         with:
           arch: x64
 
+      - name: Locate OpenSSL (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+
+      - name: Locate OpenSSL (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # OpenSSL 3 is pre-installed on windows-latest via chocolatey.
+          if [ -d "/c/Program Files/OpenSSL-Win64" ]; then
+            echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
+          elif [ -d "/c/Program Files/OpenSSL" ]; then
+            echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL" >> $GITHUB_ENV
+          else
+            echo "Could not locate a pre-installed OpenSSL; installing via choco" >&2
+            choco install -y --no-progress openssl
+            echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
+          fi
+
       - name: Configure
         shell: bash
         working-directory: qt
