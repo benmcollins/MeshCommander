@@ -36,7 +36,13 @@ jobs:
       - name: Install Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
-      - name: Configure (Unix Makefiles is fine but Ninja is faster)
+      - name: Set up MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
         shell: bash
         working-directory: qt
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
