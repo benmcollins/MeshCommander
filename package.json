@@ -1,0 +1,24 @@
+{
+  "name": "meshcommander",
+  "version": "1.0.0",
+  "description": "Mac OS X application to manage computers with Intel AMT technology (vPro)",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/benmcollins/MeshCommander.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/benmcollins/MeshCommander/issues"
+  },
+  "homepage": "https://github.com/benmcollins/MeshCommander#readme",
+  "dependencies": {
+    "nw-builder": "^4.17.10"
+  }
+}

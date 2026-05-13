@@ -44228,23 +44228,56 @@ var CreateWebSocketWrapper = function (host, port, path, certhash) {
         }
 
 
+        // Node 22 removed crypto.createCipher/createDecipher. Replicate the legacy
+        // OpenSSL EVP_BytesToKey(MD5, no salt, 1 iter) so historical localStorage
+        // values still decrypt; new writes use createCipheriv with random key+IV
+        // and a 'v2:' prefix.
+        function _localCryptoEvpKey(password, keyLen, ivLen) {
+            var crypto = require('crypto');
+            var pwd = Buffer.isBuffer(password) ? password : Buffer.from(password);
+            var bytes = Buffer.alloc(keyLen + ivLen);
+            var last = Buffer.alloc(0), offset = 0;
+            while (offset < bytes.length) {
+                var md = crypto.createHash('md5').update(last).update(pwd).digest();
+                md.copy(bytes, offset);
+                offset += md.length;
+                last = md;
+            }
+            return { key: bytes.slice(0, keyLen), iv: bytes.slice(keyLen, keyLen + ivLen) };
+        }
+        function _localCryptoEncrypt(plain) {
+            var crypto = require('crypto');
+            var buf = crypto.randomBytes(48);
+            var key = buf.slice(0, 32), iv = buf.slice(32, 48);
+            var cipher = crypto.createCipheriv('aes-256-ctr', key, iv);
+            var crypted = cipher.update(plain, 'utf8', 'hex') + cipher.final('hex');
+            return 'v2:' + key.toString('hex') + iv.toString('hex') + crypted;
+        }
+        function _localCryptoDecrypt(ctext) {
+            var crypto = require('crypto');
+            if (ctext.substring(0, 3) === 'v2:') {
+                var rest = ctext.substring(3);
+                var key = Buffer.from(rest.substring(0, 64), 'hex');
+                var iv = Buffer.from(rest.substring(64, 96), 'hex');
+                var crypted = rest.substring(96);
+                var decipher = crypto.createDecipheriv('aes-256-ctr', key, iv);
+                return decipher.update(crypted, 'hex', 'utf8') + decipher.final('utf8');
+            }
+            if (ctext.length > 512) {
+                var pwd = ctext.substring(0, 512), crypted = ctext.substring(512);
+                var ki = _localCryptoEvpKey(pwd, 32, 16);
+                var decipher = crypto.createDecipheriv('aes-256-ctr', ki.key, ki.iv);
+                return decipher.update(crypted, 'hex', 'utf8') + decipher.final('utf8');
+            }
+            return null;
+        }
+
         function saveComputers() {
             if (urlvars['host']) return;
-
             if (meshCentralServer != null) return;
-
-
-            const crypto = require('crypto');
-            crypto.randomBytes(256, function(err, buf) {
-                if (err) throw err; // Add trivial security, not intended to be real security. This just avoids storing data in plain text, but it's almost the same.
-                var computerlist2 = JSON.parse(JSON.stringify(computerlist));
-                for (var i in computerlist2) { delete computerlist2[i]['tlscert2']; delete computerlist2[i]['tlscerthash2']; } // Clean up the list
-                var k = buf.toString('hex'), cipher = crypto.createCipher('aes-256-ctr', k), crypted = cipher.update(JSON.stringify(computerlist2), 'utf8', 'hex');
-                crypted += cipher.final('hex');
-                try { localStorage.setItem('computers', k + crypted); } catch (ex) { }
-            });
-
-
+            var computerlist2 = JSON.parse(JSON.stringify(computerlist));
+            for (var i in computerlist2) { delete computerlist2[i]['tlscert2']; delete computerlist2[i]['tlscerthash2']; } // Clean up the list
+            try { localStorage.setItem('computers', _localCryptoEncrypt(JSON.stringify(computerlist2))); } catch (ex) { }
         }
 
         function loadComputers() {
@@ -44254,9 +44287,9 @@ var CreateWebSocketWrapper = function (host, port, path, certhash) {
             try { ctext = localStorage.getItem('computers'); } catch (ex) { }
             if (ctext) {
                 try { computerlist = JSON.parse(ctext); } catch (e) {
-                    if (ctext.length > 512) { // Add trivial security, not intended to be real security. This just avoids storing data in plain text, but it's almost the same.
-                        var crypto = require('crypto'), k = ctext.substring(0, 512), crypted = ctext.substring(512), decipher = crypto.createDecipher('aes-256-ctr', k), dec = decipher.update(crypted, 'hex', 'utf8');
-                        dec += decipher.final('utf8');
+                    var dec = null;
+                    try { dec = _localCryptoDecrypt(ctext); } catch (ex) { }
+                    if (dec != null) {
                         try { computerlist = JSON.parse(dec); } catch (e) { computerlist = []; }
                         var pins = getCertPinnings();
                         for (var i in computerlist) {
@@ -44266,6 +44299,8 @@ var CreateWebSocketWrapper = function (host, port, path, certhash) {
                             delete computerlist[i]['tlscert2'];
                             delete computerlist[i]['tlscerthash2'];
                         }
+                        // Re-save in v2 envelope so the legacy path isn't needed again.
+                        if (ctext.substring(0, 3) !== 'v2:' && computerlist.length > 0) { saveComputers(); }
                     }
                 }
             }
@@ -51789,10 +51824,11 @@ var CreateWebSocketWrapper = function (host, port, path, certhash) {
             try { ctext = localStorage.getItem('certificates'); } catch (ex) { }
             if (ctext) {
                 try { computerlist = JSON.parse(ctext); } catch (e) {
-                    if (ctext.length > 512) { // Add trivial security, not intended to be real security. This just avoids storing data in plain text, but it's almost the same.
-                        var crypto = require('crypto'), k = ctext.substring(0, 512), crypted = ctext.substring(512), decipher = crypto.createDecipher('aes-256-ctr', k), dec = decipher.update(crypted, 'hex', 'utf8');
-                        dec += decipher.final('utf8');
-                        var certificateStore2 = JSON.parse(dec);
+                    var dec = null;
+                    try { dec = _localCryptoDecrypt(ctext); } catch (ex) { }
+                    if (dec != null) {
+                        var certificateStore2 = [];
+                        try { certificateStore2 = JSON.parse(dec); } catch (e) { certificateStore2 = []; }
                         if (Array.isArray(certificateStore2) == false) { certificateStore2 = []; }
                         for (var i in certificateStore2) {
                             try {
@@ -51803,6 +51839,7 @@ var CreateWebSocketWrapper = function (host, port, path, certhash) {
                         }
                         certificateStore = [];
                         for (var i in certificateStore2) { if (typeof certificateStore2[i] == 'object') certificateStore.push(certificateStore2[i]); }
+                        if (ctext.substring(0, 3) !== 'v2:' && certificateStore.length > 0) { cert_saveCertificates(); }
                     }
                 }
             }
@@ -51812,16 +51849,7 @@ var CreateWebSocketWrapper = function (host, port, path, certhash) {
         }
 
         function cert_saveCertificates() {
-
-            const crypto = require('crypto'); 
-            crypto.randomBytes(256, function(err, buf) {
-                if (err) throw err; // Add trivial security, not intended to be real security. This just avoids storing data in plain text, but it's almost the same.
-                var k = buf.toString('hex'), cipher = crypto.createCipher('aes-256-ctr', k), crypted = cipher.update(JSON.stringify(certificateStore), 'utf8', 'hex');
-                crypted += cipher.final('hex');
-                try { localStorage.setItem('certificates', k + crypted); } catch (ex) { }
-            });
-
-
+            try { localStorage.setItem('certificates', _localCryptoEncrypt(JSON.stringify(certificateStore))); } catch (ex) { }
         }
 
         function cert_createNew() {
