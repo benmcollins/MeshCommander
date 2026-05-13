@@ -11,6 +11,8 @@ qt_add_executable(qumesh
     src/migrationcontroller.h
     src/solcontroller.cpp
     src/solcontroller.h
+    src/idercontroller.cpp
+    src/idercontroller.h
 )
 
 set_source_files_properties(
@@ -34,6 +36,7 @@ qt_add_qml_module(qumesh
         qml/Section.qml
         qml/Terminal.qml
         qml/SolWindow.qml
+        qml/IderWindow.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
@@ -55,6 +58,7 @@ target_link_libraries(qumesh PRIVATE
     meshcommander_migrate
     meshcommander_redir
     meshcommander_terminal
+    meshcommander_ider
 )
 
 set_target_properties(qumesh PROPERTIES
