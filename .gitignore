@@ -3,3 +3,5 @@ cache/
 node_modules/
 source/cache/
 .DS_Store
+qt/build/
+qt/build-*/

@@ -4,11 +4,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A macOS repackaging of Intel's MeshCommander web app (a console for managing Intel AMT / vPro hardware) as a native NW.js desktop application. The actual UI is a single giant HTML page (`source/Commander.htm`, ~53k lines) that pulls in inlined and external JavaScript and runs inside a Chromium webview with Node.js access.
+The repo is **mid-rewrite from NW.js to a native Qt6/QML app**, cross-platform (macOS + Windows). Two trees coexist:
 
-The upstream is Intel's MeshCommander source (Apache-2.0). The local fork adds macOS packaging (`mkapp` family scripts) and small JS patches to keep the app working on current NW.js / Node versions.
+- **`qt/`** — the new Qt6/QML app. This is where active development happens. Read `qt/ROADMAP.md` for the phased plan.
+- **`source/` + `mkapp*` + top-level `package.json`** — the legacy NW.js implementation. Kept as a reference for AMT protocol behavior while features are ported, and removed progressively (see `qt/ROADMAP.md` "Progressive cleanup").
+
+The legacy is a macOS repackaging of Intel's MeshCommander web app (a console for managing Intel AMT / vPro hardware), wrapping a ~53k-line single-page web app (`source/Commander.htm`) in NW.js. Upstream is Intel's MeshCommander source (Apache-2.0).
+
+## Workflow
+
+For any non-trivial change in this repo: create a GitHub issue, then a branch named `<issue#>-<short-desc>`, then a PR linking the issue, then merge. Tests are required for all new code. CI (`.github/workflows/ci.yml`) builds and tests on macOS + Windows on every PR.
+
+For Qt/QML changes specifically: use the `qt-development-skills` plugin — invoke `qt-development-skills:qt-qml` when authoring QML, run `qt-development-skills:qt-qml-review` and/or `qt-development-skills:qt-cpp-review` before opening a PR.
 
 ## Build
+
+### Qt rewrite (`qt/`)
+
+```
+cd qt
+cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+Run the app: `./build/app/meshcommander.app/Contents/MacOS/meshcommander` (macOS) or `build\app\meshcommander.exe` (Windows). Requires Qt 6.6+ with the `Quick`, `QuickControls2`, `Network`, and `Test` modules — on macOS install via `brew install qt ninja`. CI uses Qt 6.8.0.
+
+### Legacy NW.js build
 
 ```
 npm install                      # install nw-builder (top-level package.json)
