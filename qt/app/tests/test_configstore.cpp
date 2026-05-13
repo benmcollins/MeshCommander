@@ -17,7 +17,6 @@ private slots:
     void emptyDirHasNoNativeConfig();
     void computersRoundTrip();
     void settingsRoundTrip();
-    void certificatesRoundTrip();
     void malformedJsonReportsError();
     void saveCreatesDirIfMissing();
     void atomicityPartialWriteLeavesOldFile();
@@ -68,16 +67,6 @@ void TestConfigStore::settingsRoundTrip()
     QCOMPARE(reloaded.size(), 2);
     QCOMPARE(reloaded.value(QStringLiteral("meshserverurl")).toString(),
              QStringLiteral("https://server.example/"));
-}
-
-void TestConfigStore::certificatesRoundTrip()
-{
-    QTemporaryDir tmp;
-    QVERIFY(tmp.isValid());
-    ConfigStore store(tmp.path());
-    QJsonArray arr{QJsonObject{{QStringLiteral("name"), QStringLiteral("rootca")}}};
-    QVERIFY(store.saveCertificates(arr));
-    QCOMPARE(store.loadCertificates().size(), 1);
 }
 
 void TestConfigStore::malformedJsonReportsError()

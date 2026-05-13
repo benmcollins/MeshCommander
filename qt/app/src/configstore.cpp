@@ -16,7 +16,6 @@ namespace meshcommander::config {
 namespace {
 
 constexpr char kComputersFile[] = "computers.json";
-constexpr char kCertificatesFile[] = "certificates.json";
 constexpr char kSettingsFile[] = "settings.json";
 
 } // namespace
@@ -94,19 +93,6 @@ QJsonArray ConfigStore::loadComputers()
     return doc.array();
 }
 
-QJsonArray ConfigStore::loadCertificates()
-{
-    const QByteArray bytes = readFile(QString::fromLatin1(kCertificatesFile));
-    if (bytes.isEmpty()) return {};
-    QJsonParseError pe = {};
-    const QJsonDocument doc = QJsonDocument::fromJson(bytes, &pe);
-    if (pe.error != QJsonParseError::NoError || !doc.isArray()) {
-        m_lastError = QStringLiteral("certificates.json is not a JSON array: %1").arg(pe.errorString());
-        return {};
-    }
-    return doc.array();
-}
-
 QJsonObject ConfigStore::loadSettings()
 {
     const QByteArray bytes = readFile(QString::fromLatin1(kSettingsFile));
@@ -123,12 +109,6 @@ QJsonObject ConfigStore::loadSettings()
 bool ConfigStore::saveComputers(const QJsonArray &arr)
 {
     return writeFile(QString::fromLatin1(kComputersFile),
-                     QJsonDocument(arr).toJson(QJsonDocument::Indented));
-}
-
-bool ConfigStore::saveCertificates(const QJsonArray &arr)
-{
-    return writeFile(QString::fromLatin1(kCertificatesFile),
                      QJsonDocument(arr).toJson(QJsonDocument::Indented));
 }
 

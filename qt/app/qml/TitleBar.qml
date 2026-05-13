@@ -4,11 +4,14 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QuMesh
 
 Rectangle {
     id: root
+
+    signal openCertificates()
 
     color: Colors.surface
     implicitHeight: 36
@@ -46,6 +49,15 @@ Rectangle {
         }
 
         Item { Layout.fillWidth: true }
+
+        Button {
+            text: qsTr("Certificates")
+            flat: true
+            font.family: Type.sans
+            font.pixelSize: Type.sizeXs
+            font.letterSpacing: 1
+            onClicked: root.openCertificates()
+        }
     }
 
     Rectangle {
