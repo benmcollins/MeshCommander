@@ -68,6 +68,19 @@ jobs:
         with:
           arch: x64
 
+      - name: Install NSIS (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # NSIS used to ship with windows-latest images but the
+          # 2026 image dropped it. Pull it in explicitly so CPack
+          # can drive `makensis`.
+          if ! command -v makensis >/dev/null 2>&1; then
+            choco install -y --no-progress nsis
+          fi
+          # The choco install lands NSIS under "C:\Program Files (x86)\NSIS".
+          echo "C:\\Program Files (x86)\\NSIS" >> $GITHUB_PATH
+
       - name: Locate OpenSSL (macOS)
         if: runner.os == 'macOS'
         shell: bash
