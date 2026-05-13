@@ -30,3 +30,18 @@ meshcommander_app_test(test_computermodel)
 meshcommander_app_test(test_migrationcontroller)
 # test_migrationcontroller also seeds a real leveldb fixture.
 target_link_libraries(test_migrationcontroller PRIVATE leveldb)
+
+qt_add_executable(test_solcontroller
+    test_solcontroller.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/solcontroller.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/solcontroller.h
+)
+target_include_directories(test_solcontroller PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_solcontroller PRIVATE
+    Qt6::Core
+    Qt6::Network
+    Qt6::Test
+    meshcommander_redir
+    meshcommander_terminal
+)
+add_test(NAME test_solcontroller COMMAND test_solcontroller)

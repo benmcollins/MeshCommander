@@ -9,6 +9,8 @@ qt_add_executable(qumesh
     src/computermodel.h
     src/migrationcontroller.cpp
     src/migrationcontroller.h
+    src/solcontroller.cpp
+    src/solcontroller.h
 )
 
 set_source_files_properties(
@@ -30,6 +32,8 @@ qt_add_qml_module(qumesh
         qml/StatusBar.qml
         qml/StatusLed.qml
         qml/Section.qml
+        qml/Terminal.qml
+        qml/SolWindow.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
@@ -49,6 +53,8 @@ target_link_libraries(qumesh PRIVATE
     Qt6::QuickControls2
     Qt6::Network
     meshcommander_migrate
+    meshcommander_redir
+    meshcommander_terminal
 )
 
 set_target_properties(qumesh PROPERTIES
