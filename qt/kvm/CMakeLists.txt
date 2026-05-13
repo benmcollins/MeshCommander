@@ -12,7 +12,31 @@ target_include_directories(qumesh_kvm PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-find_package(ZLIB REQUIRED)
+# Try the system zlib first (always present on macOS / Linux), fall
+# back to building from source via FetchContent on Windows where the
+# default GitHub-hosted runner image doesn't ship a discoverable zlib.
+find_package(ZLIB QUIET)
+if(NOT ZLIB_FOUND)
+    include(FetchContent)
+    set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        zlib
+        GIT_REPOSITORY https://github.com/madler/zlib.git
+        GIT_TAG       v1.3.1
+        GIT_SHALLOW   TRUE
+    )
+    FetchContent_MakeAvailable(zlib)
+    # zlib's CMake exports targets `zlib` (shared) and `zlibstatic`.
+    # Alias one of them as ZLIB::ZLIB so the link statement below
+    # works regardless of which target name madler/zlib produced.
+    if(NOT TARGET ZLIB::ZLIB)
+        if(TARGET zlibstatic)
+            add_library(ZLIB::ZLIB ALIAS zlibstatic)
+        else()
+            add_library(ZLIB::ZLIB ALIAS zlib)
+        endif()
+    endif()
+endif()
 
 target_link_libraries(qumesh_kvm PUBLIC
     Qt6::Core
