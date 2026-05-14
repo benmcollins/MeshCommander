@@ -13,7 +13,7 @@ import QuMesh
 /// chooses a start trigger, and clicks **Mount**. While the session is
 /// active the window shows running stats and an enable/disable badge
 /// reflecting AMT's reported feature status.
-Window {
+AppWindow {
     id: root
 
     property string targetHost
@@ -30,7 +30,6 @@ Window {
     minimumWidth: 520
     minimumHeight: 360
     title: qsTr("QuMesh — %1 — %2").arg(root.label).arg(root.targetHost)
-    color: Colors.bg
 
     IderController {
         id: controller

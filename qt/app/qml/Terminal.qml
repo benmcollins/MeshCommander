@@ -21,7 +21,11 @@ Rectangle {
     readonly property int cellHeight: metrics.height
     readonly property int padding: 10
 
-    color: "#07090C"
+    // Terminal surface tracks the theme — in dark mode it sits a notch
+    // darker than the surrounding pane (a near-black serial-console
+    // aesthetic); in light mode it goes pure white so the cursor /
+    // selected text still reads at high contrast.
+    color: Colors.dark ? "#07090C" : "#FFFFFF"
     border.color: Colors.border
     border.width: 1
     radius: 4

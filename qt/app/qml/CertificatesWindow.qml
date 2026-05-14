@@ -9,7 +9,7 @@ import QtQuick.Dialogs
 import QtQuick.Layouts
 import QuMesh
 
-Window {
+AppWindow {
     id: root
 
     width: 920
@@ -17,7 +17,6 @@ Window {
     minimumWidth: 720
     minimumHeight: 380
     title: qsTr("QuMesh — Certificates")
-    color: Colors.bg
 
     property int selectedRow: -1
 
@@ -178,12 +177,11 @@ Window {
                         font.pixelSize: Type.sizeS
                         Layout.alignment: Qt.AlignHCenter
                     }
-                    Button {
+                    AccentButton {
                         text: qsTr("Import…")
                         font.family: Type.sans
                         font.pixelSize: Type.sizeS
-                        highlighted: true
-                        Layout.alignment: Qt.AlignHCenter
+Layout.alignment: Qt.AlignHCenter
                         onClicked: importDialog.open()
                     }
                 }

@@ -12,7 +12,7 @@ import QuMesh
 /// double-clicking a machine here is the explicit connect. The sidebar
 /// lists components (Overview, Network, ...) and each pane fetches its
 /// data on-demand via the MachineDetailsController.
-Window {
+AppWindow {
     id: root
 
     // Inputs from the main-window Loader.
@@ -33,7 +33,6 @@ Window {
     title: machineName.length > 0
         ? qsTr("QuMesh — %1").arg(machineName)
         : qsTr("QuMesh — %1").arg(machineHost)
-    color: Colors.bg
 
     MachineDetailsController {
         id: controller
@@ -679,10 +678,9 @@ Window {
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                             }
-                            Button {
+                            AccentButton {
                                 text: qsTr("Open SOL")
-                                highlighted: true
-                                enabled: root.machineHost.length > 0 && root.machineUser.length > 0
+enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 onClicked: solLoader.launch()
                             }
                         }
@@ -704,10 +702,9 @@ Window {
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                             }
-                            Button {
+                            AccentButton {
                                 text: qsTr("Open KVM")
-                                highlighted: true
-                                enabled: root.machineHost.length > 0 && root.machineUser.length > 0
+enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 onClicked: kvmLoader.launch()
                             }
                         }
@@ -730,10 +727,9 @@ Window {
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                             }
-                            Button {
+                            AccentButton {
                                 text: qsTr("Mount ISO…")
-                                highlighted: true
-                                enabled: root.machineHost.length > 0 && root.machineUser.length > 0
+enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 onClicked: iderLoader.launch()
                             }
                         }

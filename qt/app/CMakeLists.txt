@@ -29,6 +29,7 @@ set_source_files_properties(
     qml/Theme/Colors.qml
     qml/Theme/Type.qml
     qml/Theme/Motion.qml
+    qml/Theme/ThemePalette.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -60,11 +61,14 @@ qt_add_qml_module(qumesh
         qml/MachineDetailsWindow.qml
         qml/CertificatesWindow.qml
         qml/CertTrustDialog.qml
+        qml/AccentButton.qml
         qml/AppMark.qml
+        qml/AppWindow.qml
         qml/FlatButton.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
+        qml/Theme/ThemePalette.qml
     RESOURCES
         qml/fonts/IBMPlexSans-Regular.ttf
         qml/fonts/IBMPlexSans-Medium.ttf

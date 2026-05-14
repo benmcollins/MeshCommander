@@ -11,7 +11,7 @@ import QuMesh
 /// Detached window hosting one SOL session. Created on demand by the
 /// edit pane; owns its `SolController`. Closing the window closes the
 /// underlying TCP session.
-Window {
+AppWindow {
     id: root
 
     property string targetHost
@@ -37,7 +37,6 @@ Window {
     minimumWidth: 560
     minimumHeight: 360
     title: qsTr("QuMesh — %1 — %2").arg(root.label).arg(root.targetHost)
-    color: Colors.bg
 
     SolController {
         id: controller
