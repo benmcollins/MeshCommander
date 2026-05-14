@@ -80,7 +80,17 @@ struct BootCapabilitiesResult
     bool biosPause = false;
     bool secureErase = false;
     bool forceUefiHttpsBoot = false;
+    /// `true` when the firmware advertises any Platform Erase support.
     bool platformErase = false;
+    /// Raw bitmask AMT returns under `PlatformErase`. Bits:
+    ///   1  — Pyrite Revert
+    ///   2  — Secure Erase All SSDs
+    ///   6  — TPM Clear
+    ///   16 — OEM Custom Action
+    ///   25 — Clear BIOS NVM Variables
+    ///   26 — BIOS Reload of Golden Configuration
+    ///   31 — CSME Unconfigure
+    quint32 platformEraseMask = 0;
 };
 
 struct InvokeResult
@@ -163,7 +173,28 @@ struct BootActionParams
     /// AMT RSE (Remote Secure Erase) password — required when
     /// `secureErase = true` and the firmware enforces it.
     QString rsePassword;
+
+    /// Platform Erase ("Remote Platform Erase"). When set, the chain
+    /// includes `PlatformErase = true` plus the base64-encoded
+    /// `UefiBootParametersArray` TLV blob built by
+    /// `buildPlatformEraseTlv()` and the matching parameter count.
+    bool platformErase = false;
+    QString platformEraseTlvBase64;
+    int platformEraseTlvCount = 0;
 };
+
+/// Build the `UefiBootParametersArray` TLV blob for a Platform Erase
+/// request. Format (matches the legacy NW.js port's `makeUefiBootParam`):
+///
+///   * Header entry  — vendor 0x8086, type 1, 4 bytes = `flags` bitmask
+///   * Pyrite Revert (bit 1) → vendor 0x8086, type 10, value = `psid` bytes
+///   * SSD Erase    (bit 2) → vendor 0x8086, type 20, value = `ssdPassword` bytes
+///
+/// `*tlvCount` is populated with the number of entries we emitted; the
+/// caller assigns this to `BootActionParams::platformEraseTlvCount`.
+[[nodiscard]] QByteArray buildPlatformEraseTlv(quint32 flags, const QString &psid,
+                                                const QString &ssdPassword,
+                                                int *tlvCount);
 
 /// Run the full boot-source-override chain:
 ///   1. ChangeBootOrder(null)   — clear the boot order

@@ -64,6 +64,15 @@ AppWindow {
         }
     }
 
+    PlatformErasePrompt {
+        id: platformErasePrompt
+        tlsActive: root.machineTls
+        capabilitiesMask: controller.capPlatformEraseMask
+        onConfirmed: function(flags, psid, ssdPassword, reset) {
+            controller.bootToPlatformErase(reset, flags, psid, ssdPassword);
+        }
+    }
+
     // Sidebar items. The `id` keys must match the value used by each
     // Loader/StackLayout currentIndex below.
     readonly property var sections: [
@@ -513,6 +522,20 @@ AppWindow {
                                         height: visible ? implicitHeight : 0
                                         text: qsTr("Reset to Secure Erase…")
                                         onTriggered: secureErasePrompt.openFor(true)
+                                    }
+
+                                    MenuSeparator { visible: controller.capPlatformErase; height: visible ? implicitHeight : 0 }
+                                    MenuItem {
+                                        visible: controller.capPlatformErase
+                                        height: visible ? implicitHeight : 0
+                                        text: qsTr("Power on to Platform Erase…")
+                                        onTriggered: platformErasePrompt.openFor(false)
+                                    }
+                                    MenuItem {
+                                        visible: controller.capPlatformErase
+                                        height: visible ? implicitHeight : 0
+                                        text: qsTr("Reset to Platform Erase…")
+                                        onTriggered: platformErasePrompt.openFor(true)
                                     }
                                 }
                             }

@@ -244,6 +244,73 @@ void getEthernetSettings(WsmanClient *client,
         std::move(callback));
 }
 
+namespace {
+
+void appendU16Le(QByteArray &b, quint16 v)
+{
+    b.append(char(v & 0xFF));
+    b.append(char((v >> 8) & 0xFF));
+}
+
+void appendU32Le(QByteArray &b, quint32 v)
+{
+    b.append(char(v & 0xFF));
+    b.append(char((v >> 8) & 0xFF));
+    b.append(char((v >> 16) & 0xFF));
+    b.append(char((v >> 24) & 0xFF));
+}
+
+/// Match the legacy `makeUefiBootParam(type, data, len, vendorid)`:
+///   * 2 bytes LE vendor (default Intel 0x8086)
+///   * 2 bytes LE type
+///   * 4 bytes LE length
+///   * `data.size()` bytes payload
+void appendTlv(QByteArray &b, quint16 vendor, quint16 type, const QByteArray &data)
+{
+    appendU16Le(b, vendor);
+    appendU16Le(b, type);
+    appendU32Le(b, static_cast<quint32>(data.size()));
+    b.append(data);
+}
+
+QByteArray u32LeBytes(quint32 v)
+{
+    QByteArray b;
+    appendU32Le(b, v);
+    return b;
+}
+
+} // namespace
+
+QByteArray buildPlatformEraseTlv(quint32 flags, const QString &psid,
+                                  const QString &ssdPassword, int *tlvCount)
+{
+    constexpr quint16 kVendorIntel = 0x8086;
+    int count = 0;
+    QByteArray blob;
+
+    // Header: the bitmask of which sub-actions to perform.
+    appendTlv(blob, kVendorIntel, /*type*/ 1, u32LeBytes(flags));
+    ++count;
+
+    // Pyrite Revert (bit 1) → PSID bytes.
+    if ((flags & (1u << 1)) && !psid.isEmpty()) {
+        appendTlv(blob, kVendorIntel, /*type*/ 10, psid.toUtf8());
+        ++count;
+    }
+    // Secure Erase All SSDs (bit 2) → admin password bytes.
+    if ((flags & (1u << 2)) && !ssdPassword.isEmpty()) {
+        appendTlv(blob, kVendorIntel, /*type*/ 20, ssdPassword.toUtf8());
+        ++count;
+    }
+    // OEM Custom (bit 16) intentionally not exposed — needs hex blob
+    // input + non-Intel vendor id 0x000B that the QML side doesn't
+    // surface yet.
+
+    if (tlvCount != nullptr) *tlvCount = count;
+    return blob;
+}
+
 void getBootCapabilities(WsmanClient *client,
                          std::function<void(BootCapabilitiesResult)> callback)
 {
@@ -260,12 +327,19 @@ void getBootCapabilities(WsmanClient *client,
             r.biosPause           = truthy(QStringLiteral("BIOSPause"));
             r.secureErase         = truthy(QStringLiteral("SecureErase"));
             r.forceUefiHttpsBoot  = truthy(QStringLiteral("ForceUEFIHTTPSBoot"));
-            // PlatformErase is a bitmask in newer firmware; "true" / "1" /
-            // non-zero numeric all count as supported.
+            // PlatformErase is a bitmask in newer firmware. Decode as
+            // u32 when numeric; treat "true" as "all bits supported"
+            // so older firmware still gets the menu surface.
             const QString pe = findScalar(body, QStringLiteral("PlatformErase"));
-            r.platformErase = (pe == QStringLiteral("true"))
-                              || (!pe.isEmpty() && pe != QStringLiteral("0")
-                                  && pe != QStringLiteral("false"));
+            if (pe == QStringLiteral("true")) {
+                r.platformErase = true;
+                r.platformEraseMask = ~quint32{0};
+            } else {
+                bool conv = false;
+                const quint32 mask = pe.toUInt(&conv);
+                r.platformEraseMask = conv ? mask : 0;
+                r.platformErase = r.platformEraseMask != 0;
+            }
             r.ok = true;
         },
         std::move(callback));
@@ -498,6 +572,17 @@ void runPerformBootAction(WsmanClient *client, const BootActionParams &p,
                 props.insert(QStringLiteral("RSEPassword"), p.rsePassword);
         } else {
             props.insert(QStringLiteral("SecureErase"), QStringLiteral("false"));
+        }
+        if (p.platformErase) {
+            props.insert(QStringLiteral("PlatformErase"), QStringLiteral("true"));
+            if (!p.platformEraseTlvBase64.isEmpty()) {
+                props.insert(QStringLiteral("UefiBootParametersArray"),
+                             p.platformEraseTlvBase64);
+                props.insert(QStringLiteral("UefiBootNumberOfParams"),
+                             QString::number(p.platformEraseTlvCount));
+            }
+        } else {
+            props.insert(QStringLiteral("PlatformErase"), QStringLiteral("false"));
         }
 
         QHash<QString, QString> selectors;
