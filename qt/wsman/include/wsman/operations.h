@@ -70,6 +70,19 @@ struct TimeSettingsResult
     qint64 secondsSinceEpoch = 0; ///< 0 if not parsed.
 };
 
+/// Subset of `AMT_BootCapabilities` flags the UI gates power actions on.
+/// Each is `true` when the firmware reports the capability.
+struct BootCapabilitiesResult
+{
+    bool ok = false;
+    QString error;
+    bool biosSetup = false;
+    bool biosPause = false;
+    bool secureErase = false;
+    bool forceUefiHttpsBoot = false;
+    bool platformErase = false;
+};
+
 struct InvokeResult
 {
     bool ok = false;
@@ -104,6 +117,12 @@ void getEthernetSettings(WsmanClient *client,
 /// Read `AMT_TimeSynchronizationService` — current AMT clock value.
 void getTimeSettings(WsmanClient *client,
                      std::function<void(TimeSettingsResult)> callback);
+
+/// Read `AMT_BootCapabilities` — which boot-source-override flags the
+/// firmware will accept. Drives the gating of menu entries
+/// (Secure Erase / Platform Erase / HTTPS Boot etc.).
+void getBootCapabilities(WsmanClient *client,
+                         std::function<void(BootCapabilitiesResult)> callback);
 
 /// Invoke `CIM_PowerManagementService.RequestPowerStateChange`. `powerState`
 /// is the CIM target enum: 2=On, 8=Off (Hard), 5=Reset, 4=Sleep,
@@ -140,6 +159,10 @@ struct BootActionParams
     /// 0 = floppy / 1 = CD-ROM in the IDE-R bus.
     int iderBootDevice = 0;
     bool useSol = false;
+    bool secureErase = false;
+    /// AMT RSE (Remote Secure Erase) password — required when
+    /// `secureErase = true` and the firmware enforces it.
+    QString rsePassword;
 };
 
 /// Run the full boot-source-override chain:

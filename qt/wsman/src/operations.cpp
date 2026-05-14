@@ -51,6 +51,10 @@ constexpr char kIpsPowerServiceResource[] =
     "http://intel.com/wbem/wscim/1/ips-schema/1/"
     "IPS_PowerManagementService";
 
+constexpr char kBootCapabilitiesResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/"
+    "AMT_BootCapabilities";
+
 QString newMessageId()
 {
     return QStringLiteral("uuid:") + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -236,6 +240,33 @@ void getEthernetSettings(WsmanClient *client,
             r.ok = !r.macAddress.isEmpty();
             if (!r.ok)
                 r.error = QStringLiteral("AMT_EthernetPortSettings body had no MACAddress");
+        },
+        std::move(callback));
+}
+
+void getBootCapabilities(WsmanClient *client,
+                         std::function<void(BootCapabilitiesResult)> callback)
+{
+    const QByteArray env = buildGetEnvelope(QString::fromLatin1(kBootCapabilitiesResource),
+                                             {},
+                                             client ? client->endpoint().toString() : QString(),
+                                             newMessageId());
+    runRequest<BootCapabilitiesResult>(client, env, {},
+        [](const QByteArray &body, BootCapabilitiesResult &r) {
+            const auto truthy = [&](const QString &name) {
+                return findScalar(body, name) == QStringLiteral("true");
+            };
+            r.biosSetup           = truthy(QStringLiteral("BIOSSetup"));
+            r.biosPause           = truthy(QStringLiteral("BIOSPause"));
+            r.secureErase         = truthy(QStringLiteral("SecureErase"));
+            r.forceUefiHttpsBoot  = truthy(QStringLiteral("ForceUEFIHTTPSBoot"));
+            // PlatformErase is a bitmask in newer firmware; "true" / "1" /
+            // non-zero numeric all count as supported.
+            const QString pe = findScalar(body, QStringLiteral("PlatformErase"));
+            r.platformErase = (pe == QStringLiteral("true"))
+                              || (!pe.isEmpty() && pe != QStringLiteral("0")
+                                  && pe != QStringLiteral("false"));
+            r.ok = true;
         },
         std::move(callback));
 }
@@ -461,6 +492,13 @@ void runPerformBootAction(WsmanClient *client, const BootActionParams &p,
         props.insert(QStringLiteral("UseSOL"),          boolStr(p.useSol));
         props.insert(QStringLiteral("UseSafeMode"),     boolStr(false));
         props.insert(QStringLiteral("UserPasswordBypass"), boolStr(false));
+        if (p.secureErase) {
+            props.insert(QStringLiteral("SecureErase"), QStringLiteral("true"));
+            if (!p.rsePassword.isEmpty())
+                props.insert(QStringLiteral("RSEPassword"), p.rsePassword);
+        } else {
+            props.insert(QStringLiteral("SecureErase"), QStringLiteral("false"));
+        }
 
         QHash<QString, QString> selectors;
         selectors.insert(QStringLiteral("InstanceID"),

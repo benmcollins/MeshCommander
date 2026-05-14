@@ -80,6 +80,13 @@ class MachineDetailsController : public QObject
     // Time.
     Q_PROPERTY(qint64 amtEpoch READ amtEpoch NOTIFY timeChanged)
 
+    // Boot capabilities — which power-to-X menu entries we show.
+    Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
+    Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
+    Q_PROPERTY(bool capSecureErase READ capSecureErase NOTIFY bootCapabilitiesChanged)
+    Q_PROPERTY(bool capPlatformErase READ capPlatformErase NOTIFY bootCapabilitiesChanged)
+    Q_PROPERTY(bool capForceUefiHttpsBoot READ capForceUefiHttpsBoot NOTIFY bootCapabilitiesChanged)
+
 public:
     explicit MachineDetailsController(QObject *parent = nullptr);
     ~MachineDetailsController() override;
@@ -132,6 +139,12 @@ public:
 
     [[nodiscard]] qint64 amtEpoch() const { return m_amtEpoch; }
 
+    [[nodiscard]] bool capBiosSetup() const { return m_capBiosSetup; }
+    [[nodiscard]] bool capBiosPause() const { return m_capBiosPause; }
+    [[nodiscard]] bool capSecureErase() const { return m_capSecureErase; }
+    [[nodiscard]] bool capPlatformErase() const { return m_capPlatformErase; }
+    [[nodiscard]] bool capForceUefiHttpsBoot() const { return m_capForceUefiHttpsBoot; }
+
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
     /// reacts to whichever property changes.
@@ -170,6 +183,12 @@ public:
     Q_INVOKABLE void osWakeFromSleep();
     Q_INVOKABLE void osPutToSleep();
 
+    /// Boot to Secure Erase. `password` is the AMT RSE (Remote Secure
+    /// Erase) password — required by firmware versions that enforce
+    /// it. Pass empty when not configured. Gated in the UI on
+    /// `capSecureErase`.
+    Q_INVOKABLE void bootToSecureErase(bool reset, const QString &password);
+
     /// Called by the QML trust prompt. On accept, the pending cert's
     /// fingerprint is promoted into the trusted list, the trust state
     /// clears, and the operation that triggered the prompt is retried.
@@ -197,6 +216,7 @@ signals:
     void timeChanged();
     void awaitingTrustChanged();
     void pendingCertChanged();
+    void bootCapabilitiesChanged();
     void powerChangeRequested(int state);
     void powerChangeCompleted(int state, bool ok, const QString &error);
     /// Emitted after `trustPendingCert(true)` — the QML layer persists
@@ -255,6 +275,12 @@ private:
     QString m_secondaryDns;
 
     qint64 m_amtEpoch = 0;
+
+    bool m_capBiosSetup = false;
+    bool m_capBiosPause = false;
+    bool m_capSecureErase = false;
+    bool m_capPlatformErase = false;
+    bool m_capForceUefiHttpsBoot = false;
 };
 
 } // namespace qumesh::app
