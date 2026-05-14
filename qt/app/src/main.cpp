@@ -13,7 +13,10 @@
 #include "terminal/terminalscreen.h"
 
 #include <QDir>
+#include <QLibraryInfo>
+#include <QLocale>
 #include <QStandardPaths>
+#include <QTranslator>
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -26,6 +29,23 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("Insynergy"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("insynergy.com"));
     QCoreApplication::setApplicationName(QStringLiteral("QuMesh"));
+
+    // Load the .qm matching the system locale. qt_add_translations()
+    // embeds the compiled .qm under :/i18n/ in the QML resource
+    // module. Falling through to the English source baked into the
+    // qsTr() calls is intentional when no .qm matches.
+    static QTranslator s_appTranslator;
+    if (s_appTranslator.load(QLocale(), QStringLiteral("qumesh"),
+                              QStringLiteral("_"),
+                              QStringLiteral(":/i18n"))) {
+        QCoreApplication::installTranslator(&s_appTranslator);
+    }
+    static QTranslator s_qtTranslator;
+    if (s_qtTranslator.load(QLocale(), QStringLiteral("qtbase"),
+                             QStringLiteral("_"),
+                             QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {
+        QCoreApplication::installTranslator(&s_qtTranslator);
+    }
 
     qumesh::config::ConfigStore configStore;
 
