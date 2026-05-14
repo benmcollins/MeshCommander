@@ -60,6 +60,7 @@ qt_add_qml_module(qumesh
         qml/CertificatesWindow.qml
         qml/CertTrustDialog.qml
         qml/AppMark.qml
+        qml/FlatButton.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
@@ -101,7 +102,7 @@ set(_branding_dir "${CMAKE_SOURCE_DIR}/branding")
 set(_baked_icons_dir "${CMAKE_CURRENT_BINARY_DIR}/icons")
 file(MAKE_DIRECTORY "${_baked_icons_dir}")
 
-foreach(_svg_name IN ITEMS qumesh-mark qumesh-mark-small)
+foreach(_svg_name IN ITEMS qumesh-mark qumesh-mark-small icon-sun icon-moon)
     file(READ "${_branding_dir}/svg/${_svg_name}.svg" _svg_src)
     string(REPLACE "currentColor" "#1e293b" _svg_slate "${_svg_src}")
     string(REPLACE "currentColor" "#E6EDF3" _svg_light "${_svg_src}")
@@ -117,6 +118,10 @@ qt_add_resources(qumesh "qumesh_icons"
         "${_baked_icons_dir}/qumesh-mark-light.svg"
         "${_baked_icons_dir}/qumesh-mark-small-slate.svg"
         "${_baked_icons_dir}/qumesh-mark-small-light.svg"
+        "${_baked_icons_dir}/icon-sun-slate.svg"
+        "${_baked_icons_dir}/icon-sun-light.svg"
+        "${_baked_icons_dir}/icon-moon-slate.svg"
+        "${_baked_icons_dir}/icon-moon-light.svg"
 )
 
 # Platform app icons (already pre-built under branding/build/).

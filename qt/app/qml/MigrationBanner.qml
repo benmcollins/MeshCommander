@@ -52,9 +52,8 @@ Rectangle {
             Layout.fillWidth: true
         }
 
-        Button {
+        FlatButton {
             text: qsTr("Dismiss")
-            flat: true
             font.family: Type.sans
             font.pixelSize: Type.sizeXs
             visible: !root.isMigrating

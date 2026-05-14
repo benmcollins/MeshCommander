@@ -254,16 +254,14 @@ Rectangle {
                             enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             onClicked: kvmLoader.launch()
                         }
-                        Button {
+                        FlatButton {
                             text: qsTr("Edit settings…")
-                            flat: true
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
                             onClicked: editDialog.openFor(root.row)
                         }
-                        Button {
+                        FlatButton {
                             text: qsTr("Delete machine")
-                            flat: true
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
                             onClicked: confirmDelete.open()

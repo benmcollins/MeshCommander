@@ -132,9 +132,8 @@ Dialog {
             Layout.topMargin: 6
 
             Item { Layout.fillWidth: true }
-            Button {
+            FlatButton {
                 text: qsTr("Cancel")
-                flat: true
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 onClicked: if (root.controller) root.controller.close()
