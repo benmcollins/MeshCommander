@@ -9,10 +9,14 @@ QtObject {
     readonly property string sans: sansRegularLoader.name
     readonly property string mono: monoLoader.name
 
-    readonly property int sizeXs: 11
-    readonly property int sizeS:  12
-    readonly property int sizeM:  13
-    readonly property int sizeL:  16
+    // Scale follows a 1.25× progression for cleaner hierarchy than the
+    // older 11/12/13/16 cluster. Reserve sizeXs for chip-style labels;
+    // everything else picks from sizeS upward.
+    readonly property int sizeXs: 12   // chip / micro label
+    readonly property int sizeS:  13   // body small
+    readonly property int sizeM:  15   // body
+    readonly property int sizeL:  18   // section heading
+    readonly property int sizeXl: 24   // hero
 
     property FontLoader sansRegularLoader: FontLoader {
         source: Qt.resolvedUrl("../fonts/IBMPlexSans-Regular.ttf")
