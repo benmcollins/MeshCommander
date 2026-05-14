@@ -26,6 +26,15 @@
 
 int main(int argc, char *argv[])
 {
+    // macOS by default swaps Ctrl ↔ Cmd at the Qt key-event layer:
+    // pressing ⌃ fires `Key_Meta`/`MetaModifier`, pressing ⌘ fires
+    // `Key_Control`/`ControlModifier`. That breaks the SOL terminal
+    // (Ctrl+C never lands in the `Ctrl+A..Z` branch) and KVM (the
+    // remote receives Meta+C instead of Ctrl+C). Disable the swap so
+    // Ctrl is always Ctrl across platforms — Cmd remains usable via
+    // `MetaModifier` if the QML side ever needs it.
+    QCoreApplication::setAttribute(Qt::AA_MacDontSwapCtrlAndMeta);
+
     QGuiApplication app(argc, argv);
 
     QCoreApplication::setOrganizationName(QStringLiteral("Insynergy"));

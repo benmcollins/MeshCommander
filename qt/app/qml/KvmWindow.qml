@@ -30,6 +30,25 @@ Window {
         controller.open();
     }
 
+    // X11 keysyms used by the Send-keys menu. Mirror the constants in
+    // kvmviewer.cpp; the menu reaches them via `root.kXk*`.
+    readonly property int kXkLAlt: 0xFFE9
+    readonly property int kXkLCtrl: 0xFFE3
+    readonly property int kXkLMeta: 0xFFE7   // Windows / Super_L
+    readonly property int kXkLShift: 0xFFE1
+    readonly property int kXkEscape: 0xFF1B
+    readonly property int kXkTab: 0xFF09
+    readonly property int kXkF1Base: 0xFFBE
+
+    function chord(keys) {
+        // Press each key in order, release in reverse — modifiers wrap
+        // the inner key the way AMT expects.
+        for (let i = 0; i < keys.length; ++i)
+            controller.sendKey(keys[i], true);
+        for (let i = keys.length - 1; i >= 0; --i)
+            controller.sendKey(keys[i], false);
+    }
+
     width: 1024
     height: 720
     minimumWidth: 640
@@ -92,11 +111,67 @@ Window {
             Item { Layout.fillWidth: true }
 
             Button {
-                text: qsTr("Ctrl+Alt+Del")
+                text: qsTr("Send keys ▾")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeXs
                 enabled: controller.state === KvmController.Connected
-                onClicked: controller.sendCtrlAltDel()
+                onClicked: sendMenu.popup()
+
+                Menu {
+                    id: sendMenu
+                    MenuItem {
+                        text: qsTr("Ctrl+Alt+Del")
+                        onTriggered: controller.sendCtrlAltDel()
+                    }
+                    MenuSeparator {}
+                    MenuItem {
+                        text: qsTr("Alt+Tab")
+                        onTriggered: root.chord([root.kXkLAlt, root.kXkTab])
+                    }
+                    MenuItem {
+                        text: qsTr("Alt+F4")
+                        onTriggered: root.chord([root.kXkLAlt, root.kXkF1Base + 3])
+                    }
+                    MenuItem {
+                        text: qsTr("Esc")
+                        onTriggered: controller.sendKeyTap(root.kXkEscape)
+                    }
+                    MenuSeparator {}
+                    MenuItem {
+                        text: qsTr("Win key")
+                        onTriggered: controller.sendKeyTap(root.kXkLMeta)
+                    }
+                    MenuItem {
+                        text: qsTr("Win+L (lock)")
+                        onTriggered: root.chord([root.kXkLMeta, 0x6C])  // 'l'
+                    }
+                    MenuItem {
+                        text: qsTr("Win+R (run)")
+                        onTriggered: root.chord([root.kXkLMeta, 0x72])  // 'r'
+                    }
+                    MenuItem {
+                        text: qsTr("Win+E (explorer)")
+                        onTriggered: root.chord([root.kXkLMeta, 0x65])  // 'e'
+                    }
+                    MenuItem {
+                        text: qsTr("Win+D (desktop)")
+                        onTriggered: root.chord([root.kXkLMeta, 0x64])  // 'd'
+                    }
+                    MenuSeparator {}
+                    Menu {
+                        title: qsTr("Function keys")
+                        // F1..F12 — useful when macOS intercepts the
+                        // physical F-keys for brightness / volume.
+                        Repeater {
+                            model: 12
+                            delegate: MenuItem {
+                                required property int index
+                                text: qsTr("F%1").arg(index + 1)
+                                onTriggered: controller.sendKeyTap(root.kXkF1Base + index)
+                            }
+                        }
+                    }
+                }
             }
 
             Button {
