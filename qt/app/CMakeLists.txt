@@ -56,9 +56,10 @@ qt_add_qml_module(qumesh
         qml/StatusLed.qml
         qml/Section.qml
         qml/Terminal.qml
-        qml/SolWindow.qml
-        qml/IderWindow.qml
-        qml/KvmWindow.qml
+        qml/IderPanel.qml
+        qml/KvmPanel.qml
+        qml/SessionWindow.qml
+        qml/SolPanel.qml
         qml/MachineDetailsWindow.qml
         qml/CertificatesWindow.qml
         qml/CertTrustDialog.qml

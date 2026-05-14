@@ -9,11 +9,10 @@ import QtQuick.Dialogs
 import QtQuick.Layouts
 import QuMesh
 
-/// Detached window hosting one IDE-R session. The user picks an ISO,
-/// chooses a start trigger, and clicks **Mount**. While the session is
-/// active the window shows running stats and an enable/disable badge
-/// reflecting AMT's reported feature status.
-AppWindow {
+/// Embeddable IDE-R control pane. Unlike SOL/KVM, the user mounts
+/// manually via the Mount button, so `start()` is a no-op that lets the
+/// containing window keep a uniform tab API.
+Item {
     id: root
 
     property string targetHost
@@ -21,15 +20,12 @@ AppWindow {
     property string password
     property bool tls: false
     property var trustedFingerprints: []
-    property string label: qsTr("IDE Redirection")
 
     signal trustedFingerprintPersistRequested(string fingerprint)
+    signal peerCertVerifiedByPin(string fingerprint)
 
-    width: 640
-    height: 480
-    minimumWidth: 520
-    minimumHeight: 360
-    title: qsTr("QuMesh — %1 — %2").arg(root.label).arg(root.targetHost)
+    function start() { /* user-driven; mount via the Mount button */ }
+    function stop() { controller.close() }
 
     IderController {
         id: controller
@@ -41,7 +37,7 @@ AppWindow {
         onTrustedFingerprintAdded: function(fp) {
             root.trustedFingerprintPersistRequested(fp);
         }
-        onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+        onPeerCertVerifiedByPin: function(fp) { root.peerCertVerifiedByPin(fp) }
         onStateChanged: {
             if (state === IderController.Running) ActivityHeartbeat.reportSuccess();
             else if (state === IderController.Failed)
@@ -53,23 +49,12 @@ AppWindow {
         controller: controller
     }
 
-    CertPinFlash {
-        id: certPinFlash
-        anchors.top: parent.top
-        anchors.right: parent.right
-        anchors.topMargin: 12
-        anchors.rightMargin: 12
-        z: 1000
-    }
-
     FileDialog {
         id: isoDialog
         nameFilters: [qsTr("ISO images (*.iso)"), qsTr("All files (*)")]
         title: qsTr("Select ISO to mount")
         onAccepted: controller.isoPath = Qt.urlToLocalFile(isoDialog.selectedFile)
     }
-
-    onClosing: controller.close()
 
     ColumnLayout {
         anchors.fill: parent
@@ -225,13 +210,6 @@ AppWindow {
             Layout.fillWidth: true
 
             Item { Layout.fillWidth: true }
-
-            FlatButton {
-                text: qsTr("Close")
-                font.family: Type.sans
-                font.pixelSize: Type.sizeS
-                onClicked: root.close()
-            }
 
             Button {
                 text: controller.state === IderController.Disconnected

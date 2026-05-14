@@ -8,8 +8,9 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QuMesh
 
-/// Modal "Trust this cert?" prompt shared by SolWindow, IderWindow,
-/// and KvmWindow. Drive via the controller's pendingCert* properties
+/// Modal "Trust this cert?" prompt shared by SolPanel, IderPanel,
+/// KvmPanel, and SessionWindow's WSMAN power controller. Drive via the
+/// controller's pendingCert* properties
 /// and `awaitingTrust` flag; on accept, calls
 /// `controller.trustPendingCert(persist)`, on cancel `controller.close()`.
 ///
