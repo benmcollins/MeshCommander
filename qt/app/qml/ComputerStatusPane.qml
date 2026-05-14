@@ -111,6 +111,7 @@ Rectangle {
 
                 Section {
                     title: qsTr("POWER")
+                    accent: Colors.accent
                     Layout.fillWidth: true
                     Layout.leftMargin: 24
                     Layout.rightMargin: 24
