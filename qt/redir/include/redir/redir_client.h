@@ -63,6 +63,11 @@ public:
         AuthQuerying,
         AuthChallenging,
         AuthResponding,
+        // KVM has an extra round-trip between auth and the RFB banner:
+        // the client must send 0x40 and wait for an 0x41 reply before
+        // the firmware starts pushing application bytes. SOL and IDE-R
+        // skip this — they go straight to Authenticated.
+        KvmStarting,
         Authenticated,
         Failed,
     };

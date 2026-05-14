@@ -136,6 +136,19 @@ void RedirectionClient::drainInbox()
     while (!m_inbox.isEmpty()) {
         const unsigned char tag = static_cast<unsigned char>(m_inbox.at(0));
 
+        // KVM-only: 0x41 is the start-session reply for the 0x40 frame
+        // we sent right after authentication. The reply is 8 bytes; any
+        // bytes past those belong to the RFB protocol stream.
+        if (m_state == State::KvmStarting && tag == 0x41) {
+            if (m_inbox.size() < 8) return;
+            QByteArray leftover = m_inbox.mid(8);
+            m_inbox.clear();
+            setState(State::Authenticated);
+            emit authenticated();
+            if (!leftover.isEmpty()) emit rawBytes(leftover);
+            return;
+        }
+
         if (tag == 0x11) {
             StartSessionReply reply;
             int consumed = 0;
@@ -204,11 +217,27 @@ void RedirectionClient::drainInbox()
                     fail(QStringLiteral("authentication failed (status %1)").arg(reply.status));
                     return;
                 }
+                // KVM needs a redir-level 0x40 → 0x41 round-trip before
+                // the firmware will push the RFB version banner. SOL and
+                // IDE-R do not — they go straight to Authenticated and
+                // their session class drives any further negotiation.
+                if (m_protocol == Protocol::Kvm) {
+                    static const unsigned char kKvmStart[8] = {
+                        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    };
+                    if (m_socket->write(reinterpret_cast<const char *>(kKvmStart),
+                                        sizeof(kKvmStart)) < 0) {
+                        fail(m_socket->errorString());
+                        return;
+                    }
+                    setState(State::KvmStarting);
+                    continue;
+                }
                 setState(State::Authenticated);
                 emit authenticated();
                 // Any bytes still buffered after the 0x14 success belong
-                // to the application protocol — KVM's RFB banner, for
-                // example, can arrive in the same TCP read. Hand them
+                // to the application protocol — IDE-R's session opener,
+                // for example, can arrive in the same TCP read. Hand them
                 // off via rawBytes and stop parsing as auth frames.
                 if (!m_inbox.isEmpty()) {
                     const QByteArray leftover = m_inbox;
