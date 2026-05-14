@@ -56,6 +56,14 @@ AppWindow {
         controller: controller
     }
 
+    SecureErasePrompt {
+        id: secureErasePrompt
+        tlsActive: root.machineTls
+        onConfirmed: function(password, reset) {
+            controller.bootToSecureErase(reset, password);
+        }
+    }
+
     // Sidebar items. The `id` keys must match the value used by each
     // Loader/StackLayout currentIndex below.
     readonly property var sections: [
@@ -492,6 +500,20 @@ AppWindow {
                                     MenuItem { text: qsTr("Reset to IDE-R CDROM");    onTriggered: controller.bootToIderCdrom(true) }
                                     MenuItem { text: qsTr("Power on to IDE-R Floppy"); onTriggered: controller.bootToIderFloppy(false) }
                                     MenuItem { text: qsTr("Reset to IDE-R Floppy");    onTriggered: controller.bootToIderFloppy(true) }
+
+                                    MenuSeparator { visible: controller.capSecureErase; height: visible ? implicitHeight : 0 }
+                                    MenuItem {
+                                        visible: controller.capSecureErase
+                                        height: visible ? implicitHeight : 0
+                                        text: qsTr("Power on to Secure Erase…")
+                                        onTriggered: secureErasePrompt.openFor(false)
+                                    }
+                                    MenuItem {
+                                        visible: controller.capSecureErase
+                                        height: visible ? implicitHeight : 0
+                                        text: qsTr("Reset to Secure Erase…")
+                                        onTriggered: secureErasePrompt.openFor(true)
+                                    }
                                 }
                             }
 

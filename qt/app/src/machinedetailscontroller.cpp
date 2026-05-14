@@ -235,6 +235,24 @@ void MachineDetailsController::refreshOverview()
             }
             decInflight();
         });
+
+    incInflight();
+    qumesh::wsman::getBootCapabilities(m_client,
+        [this](qumesh::wsman::BootCapabilitiesResult r) {
+            if (r.ok) {
+                m_capBiosSetup          = r.biosSetup;
+                m_capBiosPause          = r.biosPause;
+                m_capSecureErase        = r.secureErase;
+                m_capPlatformErase      = r.platformErase;
+                m_capForceUefiHttpsBoot = r.forceUefiHttpsBoot;
+                emit bootCapabilitiesChanged();
+            } else if (!r.error.isEmpty()) {
+                // Capabilities are advisory — log but don't blame the
+                // user. Older firmware may not expose this resource.
+                setLastError(QStringLiteral("BootCapabilities: %1").arg(r.error));
+            }
+            decInflight();
+        });
 }
 
 void MachineDetailsController::refreshNetwork()
@@ -473,6 +491,35 @@ void MachineDetailsController::osPutToSleep()
                 return;
             }
             emit powerChangeCompleted(3, true, QString());
+            refreshPower();
+        });
+}
+
+void MachineDetailsController::bootToSecureErase(bool reset, const QString &password)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    setLastError({});
+    const int code = reset ? 10 : 2;
+    emit powerChangeRequested(code);
+    incInflight();
+    qumesh::wsman::BootActionParams p;
+    p.targetPowerState = code;
+    p.biosSetup = true;
+    p.secureErase = true;
+    p.rsePassword = password;
+    qumesh::wsman::performBootAction(m_client, p,
+        [this, code](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(QStringLiteral("Boot to Secure Erase: %1").arg(r.error));
+                emit powerChangeCompleted(code, false, r.error);
+                return;
+            }
+            emit powerChangeCompleted(code, true, QString());
             refreshPower();
         });
 }
