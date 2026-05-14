@@ -41,6 +41,7 @@ void MachineDetailsController::setSshConfig(const QVariantMap &cfg)
             m_sshSession = nullptr;
         }
         m_client->setSocketFactory({});
+        m_client->setSerializeRequests(false);
         m_sshTunnelStatus.clear();
         emit sshTunnelStateChanged();
         return;
@@ -48,6 +49,11 @@ void MachineDetailsController::setSshConfig(const QVariantMap &cfg)
 
     m_sshEnabled = true;
     m_sshConnecting = true;
+    // AMT typically only accepts ~2 concurrent HTTPS WSMAN sessions;
+    // over an SSH tunnel the extras silently stall instead of failing
+    // fast, so let the WsmanClient single-flight requests while the
+    // tunnel is active.
+    m_client->setSerializeRequests(true);
     if (m_sshSession == nullptr) {
         m_sshSession = new qumesh::ssh::SshSession(this);
         connect(m_sshSession, &qumesh::ssh::SshSession::stateChanged, this,

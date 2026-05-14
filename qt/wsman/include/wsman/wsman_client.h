@@ -104,6 +104,15 @@ public:
     using SocketFactory = std::function<qintptr()>;
     void setSocketFactory(SocketFactory factory);
 
+    /// Serialize outbound requests so at most one is in flight at a
+    /// time. AMT firmware typically only accepts ~2 concurrent HTTPS
+    /// WSMAN sessions; through an SSH tunnel the failure mode is
+    /// silent stall rather than fast TCP RST, so the
+    /// `MachineDetailsController` flips this on while the tunnel is
+    /// active. When false (the default) requests run in parallel —
+    /// the historical behavior over a direct connection.
+    void setSerializeRequests(bool serialize);
+
     [[nodiscard]] QUrl endpoint() const;
 
     /// POST the given SOAP envelope to the endpoint. Returned reply is

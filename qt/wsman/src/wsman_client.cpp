@@ -6,6 +6,7 @@
 #include <QCryptographicHash>
 #include <QLoggingCategory>
 #include <QPointer>
+#include <QQueue>
 #include <QRandomGenerator>
 #include <QSslCertificate>
 #include <QSslConfiguration>
@@ -176,6 +177,11 @@ struct WsmanClient::Private
     QByteArray digestAlgorithm;
     QByteArray digestOpaque;
     quint64 nc = 0;
+
+    // Single-flight queue used when `serializeRequests == true`.
+    bool serializeRequests = false;
+    QPointer<WsmanReply> currentRequest;
+    QQueue<QPointer<WsmanReply>> pendingQueue;
 };
 
 WsmanClient::WsmanClient(QObject *parent)
@@ -198,6 +204,10 @@ void WsmanClient::setTransferTimeoutMs(int ms) { d->timeoutMs = ms; }
 void WsmanClient::setSocketFactory(SocketFactory factory)
 {
     d->socketFactory = std::move(factory);
+}
+void WsmanClient::setSerializeRequests(bool serialize)
+{
+    d->serializeRequests = serialize;
 }
 QUrl WsmanClient::endpoint() const { return d->endpoint; }
 PeerCertSummary WsmanClient::pendingPeerCert() const { return d->pendingPeerCert; }
@@ -739,22 +749,56 @@ WsmanReply *WsmanClient::sendEnvelope(const QByteArray &envelope, const char *so
     auto *client = this;
     auto &cd = *d;
 
-    // If we already have a valid Digest challenge cached, send the
-    // first attempt pre-authed and skip the 401 round-trip.
-    if (cd.haveDigestChallenge && !cd.user.isEmpty()) {
-        // We still need a fresh socket; reuse retryWithDigest which
-        // does exactly that.
-        QObject::connect(rd.socket = nullptr, nullptr, reply, nullptr); // no-op
-        // Implementation note: retryWithDigest opens its own socket
-        // and writes the request. It will set rd.socket.
-        retryWithDigest(reply, client, cd, rd);
+    auto startNow = [reply, client, &cd, &rd]() {
+        // If we already have a valid Digest challenge cached, send the
+        // first attempt pre-authed and skip the 401 round-trip.
+        if (cd.haveDigestChallenge && !cd.user.isEmpty()) {
+            retryWithDigest(reply, client, cd, rd);
+            return;
+        }
+        startTransport(reply, client, cd, rd);
+        if (rd.socket != nullptr) {
+            QObject::connect(rd.socket, &QSslSocket::readyRead, reply,
+                             [reply, client, &cd, &rd]() { readMore(reply, client, cd, rd); });
+        }
+    };
+
+    if (!cd.serializeRequests) {
+        startNow();
         return reply;
     }
 
-    startTransport(reply, client, cd, rd);
-    if (rd.socket != nullptr) {
-        QObject::connect(rd.socket, &QSslSocket::readyRead, reply,
-                         [reply, client, &cd, &rd]() { readMore(reply, client, cd, rd); });
+    // Serialized mode: enqueue. The single-flight drainer picks the
+    // next reply off the queue when the in-flight one finishes.
+    cd.pendingQueue.enqueue(reply);
+    QObject::connect(reply, &WsmanReply::finished, client, [client]() {
+        auto &cd2 = *client->d;
+        cd2.currentRequest = nullptr;
+        while (!cd2.pendingQueue.isEmpty()) {
+            QPointer<WsmanReply> next = cd2.pendingQueue.dequeue();
+            if (next == nullptr) continue; // reply got destroyed while queued
+            cd2.currentRequest = next;
+            // The pending reply's `rd` already has envelope / path /
+            // host set from `sendEnvelope`; we just need to fire its
+            // transport via the same logic the un-serialized path uses.
+            auto &nrd = *next->d;
+            auto *c = client;
+            if (cd2.haveDigestChallenge && !cd2.user.isEmpty()) {
+                retryWithDigest(next, c, cd2, nrd);
+            } else {
+                startTransport(next, c, cd2, nrd);
+                if (nrd.socket != nullptr) {
+                    QObject::connect(nrd.socket, &QSslSocket::readyRead, next,
+                                     [next, c, &cd2, &nrd]() { readMore(next, c, cd2, nrd); });
+                }
+            }
+            return;
+        }
+    });
+
+    if (cd.currentRequest == nullptr) {
+        cd.currentRequest = cd.pendingQueue.dequeue();
+        startNow();
     }
     return reply;
 }
