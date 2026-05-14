@@ -117,16 +117,88 @@ Window {
             }
         }
 
-        ListView {
-            id: list
-            clip: true
+        Item {
+            id: listContainer
             Layout.fillWidth: true
             Layout.fillHeight: true
-            model: CertModel
-            currentIndex: root.selectedRow
 
-            delegate: Rectangle {
-                id: row
+            // Files dragged onto the window go straight through CertModel,
+            // mirroring the Import… dialog. PKCS#12 needs a password we
+            // can't infer, so route those through the existing prompt.
+            DropArea {
+                id: certDrop
+                anchors.fill: parent
+                keys: ["text/uri-list"]
+                onDropped: function(drop) {
+                    if (!drop.hasUrls) return;
+                    for (let i = 0; i < drop.urls.length; ++i) {
+                        const path = Qt.urlToLocalFile(drop.urls[i]);
+                        if (path.length === 0) continue;
+                        if (path.endsWith(".p12") || path.endsWith(".pfx")) {
+                            passwordPrompt.path = path;
+                            passwordPrompt.open();
+                        } else {
+                            CertModel.importFromFile(path, "");
+                        }
+                    }
+                    drop.accept();
+                }
+            }
+
+            // Empty state — dashed border + verbal cue. Hidden the moment
+            // the model has any rows; the underlying ListView takes over.
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 4
+                visible: CertModel.rowCount() === 0
+                color: certDrop.containsDrag ? Colors.accentSoft : "transparent"
+                radius: 12
+                border.width: 1
+                border.color: certDrop.containsDrag
+                    ? Colors.accent
+                    : Colors.borderMuted
+                Behavior on color { ColorAnimation { duration: Motion.fast } }
+                Behavior on border.color { ColorAnimation { duration: Motion.fast } }
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing: 8
+
+                    Text {
+                        text: qsTr("No certificates yet")
+                        color: Colors.text
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeL
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+                    Text {
+                        text: qsTr("Drag a .cer / .pem / .p12 here, or use Import…")
+                        color: Colors.textMuted
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeS
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+                    Button {
+                        text: qsTr("Import…")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeS
+                        highlighted: true
+                        Layout.alignment: Qt.AlignHCenter
+                        onClicked: importDialog.open()
+                    }
+                }
+            }
+
+            ListView {
+                id: list
+                clip: true
+                anchors.fill: parent
+                visible: CertModel.rowCount() > 0
+                model: CertModel
+                currentIndex: root.selectedRow
+
+                delegate: Rectangle {
+                    id: row
 
                 required property int index
                 required property string subject
@@ -200,12 +272,13 @@ Window {
                     }
                 }
 
-                Rectangle {
-                    color: Colors.borderMuted
-                    height: 1
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
+                    Rectangle {
+                        color: Colors.borderMuted
+                        height: 1
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                    }
                 }
             }
         }
