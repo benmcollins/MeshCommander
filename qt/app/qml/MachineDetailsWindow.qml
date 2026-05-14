@@ -41,6 +41,20 @@ Window {
         user: root.machineUser
         password: root.machinePass
         tls: root.machineTls
+        trustedFingerprints: root.machineTrustedFingerprints
+        onTrustedFingerprintAdded: function(fp) {
+            // Pass up to Main.qml so it lands in ComputerModel — SOL /
+            // KVM / IDE-R will then inherit the same pinned trust.
+            root.trustedFingerprintPersistRequested(fp);
+        }
+        onCloseRequested: root.close()
+    }
+
+    /// Trust-on-first-use prompt. The dialog is wired generically — it
+    /// reads `controller.awaitingTrust` and the `pendingCert*` props,
+    /// and calls `controller.trustPendingCert(persist)` / `close()`.
+    CertTrustDialog {
+        controller: controller
     }
 
     // Sidebar items. The `id` keys must match the value used by each

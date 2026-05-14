@@ -11,6 +11,8 @@ namespace qumesh::app {
 MachineDetailsController::MachineDetailsController(QObject *parent)
     : QObject(parent), m_client(new qumesh::wsman::WsmanClient(this))
 {
+    connect(m_client, &qumesh::wsman::WsmanClient::trustPromptRequired,
+            this, &MachineDetailsController::onTrustPromptRequired);
 }
 
 MachineDetailsController::~MachineDetailsController() = default;
@@ -47,6 +49,14 @@ void MachineDetailsController::setTls(bool v)
     rebuildEndpoint();
 }
 
+void MachineDetailsController::setTrustedFingerprints(QStringList v)
+{
+    if (v == m_trustedFingerprints) return;
+    m_trustedFingerprints = std::move(v);
+    m_client->setTrustedFingerprints(m_trustedFingerprints);
+    emit trustedFingerprintsChanged();
+}
+
 QString MachineDetailsController::powerStateLabel() const
 {
     switch (m_powerState) {
@@ -74,6 +84,63 @@ void MachineDetailsController::rebuildEndpoint()
     url.setPath(QStringLiteral("/wsman"));
     m_client->setEndpoint(url);
     m_client->setCredentials(m_user, m_password);
+    m_client->setTrustedFingerprints(m_trustedFingerprints);
+}
+
+void MachineDetailsController::onTrustPromptRequired(
+        const qumesh::wsman::PeerCertSummary &s)
+{
+    m_pendingCert = s;
+    if (!m_awaitingTrust) {
+        m_awaitingTrust = true;
+        emit awaitingTrustChanged();
+    }
+    emit pendingCertChanged();
+    // Suppress the SSL-handshake error message from the failed reply
+    // — the trust dialog is more informative than "SSL handshake
+    // failed: hostname mismatch".
+    if (!m_lastError.isEmpty()) {
+        m_lastError.clear();
+        emit lastErrorChanged();
+    }
+}
+
+void MachineDetailsController::close()
+{
+    if (m_awaitingTrust) {
+        m_pendingCert = {};
+        m_awaitingTrust = false;
+        emit awaitingTrustChanged();
+        emit pendingCertChanged();
+    }
+    emit closeRequested();
+}
+
+void MachineDetailsController::trustPendingCert(bool persist)
+{
+    if (!m_awaitingTrust) return;
+    const QString fp = m_pendingCert.fingerprintSha256;
+    m_client->trustPendingPeerCert();
+    if (!m_trustedFingerprints.contains(fp)) {
+        m_trustedFingerprints.append(fp);
+        emit trustedFingerprintsChanged();
+    }
+    m_pendingCert = {};
+    m_awaitingTrust = false;
+    emit awaitingTrustChanged();
+    emit pendingCertChanged();
+    if (persist && !fp.isEmpty()) emit trustedFingerprintAdded(fp);
+
+    // Resume whatever fetch was in flight when the prompt fired. If we
+    // weren't tracking one specifically, restart the overview — that's
+    // the section we open on first connect.
+    switch (m_pendingOp) {
+    case PendingOp::Overview: m_pendingOp = PendingOp::None; refreshOverview(); break;
+    case PendingOp::Power:    m_pendingOp = PendingOp::None; refreshPower();    break;
+    case PendingOp::Network:  m_pendingOp = PendingOp::None; refreshNetwork();  break;
+    case PendingOp::Time:     m_pendingOp = PendingOp::None; refreshTime();     break;
+    case PendingOp::None:     refreshOverview(); break;
+    }
 }
 
 void MachineDetailsController::incInflight()
@@ -92,8 +159,13 @@ void MachineDetailsController::decInflight()
 
 void MachineDetailsController::setLastError(const QString &e)
 {
-    if (e == m_lastError) return;
-    m_lastError = e;
+    // While we're prompting for trust the failed reply's "SSL handshake
+    // failed" text is noisier than the dialog itself; drop it.
+    QString filtered = e;
+    if (m_awaitingTrust && filtered.contains(QStringLiteral("SSL")))
+        filtered.clear();
+    if (filtered == m_lastError) return;
+    m_lastError = filtered;
     emit lastErrorChanged();
 }
 
@@ -105,6 +177,7 @@ void MachineDetailsController::refreshOverview()
         return;
     }
     setLastError({});
+    m_pendingOp = PendingOp::Overview;
 
     // identify — no credentials required.
     incInflight();
@@ -171,6 +244,7 @@ void MachineDetailsController::refreshNetwork()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingOp = PendingOp::Network;
     incInflight();
     qumesh::wsman::getEthernetSettings(m_client,
         [this](qumesh::wsman::EthernetSettingsResult r) {
@@ -197,6 +271,7 @@ void MachineDetailsController::refreshTime()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingOp = PendingOp::Time;
     incInflight();
     qumesh::wsman::getTimeSettings(m_client,
         [this](qumesh::wsman::TimeSettingsResult r) {
@@ -217,6 +292,7 @@ void MachineDetailsController::refreshPower()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingOp = PendingOp::Power;
     incInflight();
     qumesh::wsman::getPowerState(m_client, [this](qumesh::wsman::PowerStateResult r) {
         if (r.ok) {

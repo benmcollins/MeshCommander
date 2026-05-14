@@ -9,9 +9,7 @@
 #include <QStringList>
 #include <QUrl>
 
-namespace qumesh::wsman {
-class WsmanClient;
-}
+#include "wsman/wsman_client.h" // for PeerCertSummary
 
 namespace qumesh::app {
 
@@ -29,6 +27,18 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(QString user READ user WRITE setUser NOTIFY userChanged)
     Q_PROPERTY(QString password READ password WRITE setPassword NOTIFY passwordChanged)
     Q_PROPERTY(bool tls READ tls WRITE setTls NOTIFY tlsChanged)
+    Q_PROPERTY(QStringList trustedFingerprints READ trustedFingerprints
+                   WRITE setTrustedFingerprints NOTIFY trustedFingerprintsChanged)
+
+    // Trust-on-first-use surface for CertTrustDialog. Mirrors the shape
+    // SolController / KvmController already expose so the same dialog
+    // can render us.
+    Q_PROPERTY(bool awaitingTrust READ awaitingTrust NOTIFY awaitingTrustChanged)
+    Q_PROPERTY(QString pendingCertSubject READ pendingCertSubject NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertIssuer READ pendingCertIssuer NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertFingerprint READ pendingCertFingerprint NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertNotBefore READ pendingCertNotBefore NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertNotAfter READ pendingCertNotAfter NOTIFY pendingCertChanged)
 
     // Overview / power.
     Q_PROPERTY(int powerState READ powerState NOTIFY powerStateChanged)
@@ -73,10 +83,19 @@ public:
     [[nodiscard]] QString user() const { return m_user; }
     [[nodiscard]] QString password() const { return m_password; }
     [[nodiscard]] bool    tls()  const { return m_tls; }
+    [[nodiscard]] QStringList trustedFingerprints() const { return m_trustedFingerprints; }
     void setHost(const QString &v);
     void setUser(const QString &v);
     void setPassword(const QString &v);
     void setTls(bool v);
+    void setTrustedFingerprints(QStringList v);
+
+    [[nodiscard]] bool awaitingTrust() const { return m_awaitingTrust; }
+    [[nodiscard]] QString pendingCertSubject() const { return m_pendingCert.subject; }
+    [[nodiscard]] QString pendingCertIssuer() const { return m_pendingCert.issuer; }
+    [[nodiscard]] QString pendingCertFingerprint() const { return m_pendingCert.fingerprintSha256; }
+    [[nodiscard]] QString pendingCertNotBefore() const { return m_pendingCert.notBefore; }
+    [[nodiscard]] QString pendingCertNotAfter() const { return m_pendingCert.notAfter; }
 
     [[nodiscard]] int powerState() const { return m_powerState; }
     [[nodiscard]] QString powerStateLabel() const;
@@ -129,11 +148,23 @@ public:
     Q_INVOKABLE void powerResetGraceful(){ changePowerState(10); }
     Q_INVOKABLE void powerOffSoft()      { changePowerState(12); }
 
+    /// Called by the QML trust prompt. On accept, the pending cert's
+    /// fingerprint is promoted into the trusted list, the trust state
+    /// clears, and the operation that triggered the prompt is retried.
+    /// When `persist` is true we also emit `trustedFingerprintAdded`
+    /// so the QML layer can write the fingerprint back to ComputerModel.
+    Q_INVOKABLE void trustPendingCert(bool persist);
+
+    /// Called by CertTrustDialog when the user declines the prompt.
+    /// Clears pending trust state and asks the QML window to close.
+    Q_INVOKABLE void close();
+
 signals:
     void hostChanged();
     void userChanged();
     void passwordChanged();
     void tlsChanged();
+    void trustedFingerprintsChanged();
     void busyChanged();
     void lastErrorChanged();
     void powerStateChanged();
@@ -142,8 +173,16 @@ signals:
     void computerSystemChanged();
     void ethernetChanged();
     void timeChanged();
+    void awaitingTrustChanged();
+    void pendingCertChanged();
     void powerChangeRequested(int state);
     void powerChangeCompleted(int state, bool ok, const QString &error);
+    /// Emitted after `trustPendingCert(true)` — the QML layer persists
+    /// the fingerprint into ComputerModel.
+    void trustedFingerprintAdded(const QString &fingerprint);
+    /// Emitted from `close()`; the QML window listens and dismisses
+    /// itself.
+    void closeRequested();
 
 private:
     void rebuildEndpoint();
@@ -151,12 +190,21 @@ private:
     void incInflight();
     void decInflight();
     void setLastError(const QString &e);
+    void onTrustPromptRequired(const qumesh::wsman::PeerCertSummary &s);
+    /// Remember which top-level fetch was in flight when the trust
+    /// prompt fired, so we can resume it once the user accepts. -1
+    /// means "the section the user is currently looking at".
+    enum class PendingOp { None, Overview, Power, Network, Time };
+    PendingOp m_pendingOp = PendingOp::None;
 
     qumesh::wsman::WsmanClient *m_client = nullptr;
     QString m_host;
     QString m_user;
     QString m_password;
     bool m_tls = false;
+    QStringList m_trustedFingerprints;
+    qumesh::wsman::PeerCertSummary m_pendingCert;
+    bool m_awaitingTrust = false;
 
     int m_powerState = 0;
     int m_inflight = 0;
