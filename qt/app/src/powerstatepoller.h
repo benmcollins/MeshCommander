@@ -50,7 +50,6 @@ public:
     [[nodiscard]] int intervalMs() const { return m_intervalMs; }
 
     void setHost(const QString &host);
-    void setPort(quint16 port);
     void setTls(bool tls);
     void setCredentials(const QString &user, const QString &pass);
     void setIntervalMs(int ms);
@@ -78,7 +77,6 @@ private:
     qumesh::wsman::WsmanClient *m_client;
     QTimer *m_timer;
     QString m_host;
-    quint16 m_port = 16992;
     bool m_tls = false;
     QString m_user;
     QString m_pass;

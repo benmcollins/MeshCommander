@@ -65,7 +65,6 @@ Rectangle {
                 required property int index
                 required property string name
                 required property string host
-                required property int port
                 required property int powerState
 
                 width: list.width
@@ -126,7 +125,7 @@ Rectangle {
                         }
 
                         Text {
-                            text: "%1:%2".arg(rowItem.host).arg(rowItem.port)
+                            text: rowItem.host
                             color: Colors.textMuted
                             font.family: Type.mono
                             font.pixelSize: Type.sizeXs

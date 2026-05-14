@@ -28,7 +28,6 @@ struct Computer
     QString id; // synthetic uuid for QML stable identity
     QString name;
     QString host;
-    int port = 16992;
     QString user;
     QString pass;
     bool tls = false;
@@ -61,7 +60,6 @@ public:
         IdRole = Qt::UserRole + 1,
         NameRole,
         HostRole,
-        PortRole,
         UserRole,
         PassRole,
         TlsRole,
@@ -100,7 +98,7 @@ public:
 
     /// Append a new computer and persist. Returns the new row index, or -1
     /// on save failure (the row is rolled back).
-    Q_INVOKABLE int addComputer(const QString &name, const QString &host, int port,
+    Q_INVOKABLE int addComputer(const QString &name, const QString &host,
                                 const QString &user, const QString &pass, bool tls);
 
     /// Delete the computer at `row`. Returns false (and leaves state intact)

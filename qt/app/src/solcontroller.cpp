@@ -27,13 +27,6 @@ void SolController::setHost(const QString &v)
     emit hostChanged();
 }
 
-void SolController::setPort(quint16 v)
-{
-    if (v == m_port) return;
-    m_port = v;
-    emit portChanged();
-}
-
 void SolController::setUser(const QString &v)
 {
     if (v == m_user) return;
@@ -149,7 +142,11 @@ void SolController::open()
 
     setLastError({});
     setState(State::Connecting);
-    m_client->connectTo(m_host, m_port);
+    // AMT redirection: 16994 plain / 16995 TLS — fixed by the protocol.
+    // Tests can override via setPortForTest(); production always derives.
+    const quint16 port = m_portOverride != 0 ? m_portOverride
+                                              : (m_tls ? 16995 : 16994);
+    m_client->connectTo(m_host, port);
 }
 
 void SolController::close()

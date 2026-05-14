@@ -15,7 +15,6 @@ Window {
     id: root
 
     property string targetHost
-    property int targetPort: 16994
     property string user
     property string password
     property bool tls: false
@@ -26,7 +25,6 @@ Window {
 
     function start() {
         controller.host = root.targetHost;
-        controller.port = root.targetPort;
         controller.user = root.user;
         controller.password = root.password;
         controller.tls = root.tls;

@@ -20,7 +20,6 @@ QJsonObject Computer::toJson() const
         {QStringLiteral("id"), id},
         {QStringLiteral("name"), name},
         {QStringLiteral("host"), host},
-        {QStringLiteral("port"), port},
         {QStringLiteral("user"), user},
         {QStringLiteral("pass"), pass},
         {QStringLiteral("tls"), tls},
@@ -36,7 +35,6 @@ Computer Computer::fromJson(const QJsonObject &obj)
     if (c.id.isEmpty()) c.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     c.name = obj.value(QStringLiteral("name")).toString();
     c.host = obj.value(QStringLiteral("host")).toString();
-    c.port = obj.value(QStringLiteral("port")).toInt(16992);
     c.user = obj.value(QStringLiteral("user")).toString();
     c.pass = obj.value(QStringLiteral("pass")).toString();
     c.tls = obj.value(QStringLiteral("tls")).toBool();
@@ -89,8 +87,6 @@ QVariant ComputerModel::data(const QModelIndex &index, int role) const
         return c.name;
     case HostRole:
         return c.host;
-    case PortRole:
-        return c.port;
     case UserRole:
         return c.user;
     case PassRole:
@@ -121,9 +117,6 @@ bool ComputerModel::setData(const QModelIndex &index, const QVariant &value, int
         break;
     case HostRole:
         c.host = value.toString();
-        break;
-    case PortRole:
-        c.port = value.toInt();
         break;
     case UserRole:
         c.user = value.toString();
@@ -164,7 +157,6 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
         {IdRole, QByteArrayLiteral("id")},
         {NameRole, QByteArrayLiteral("name")},
         {HostRole, QByteArrayLiteral("host")},
-        {PortRole, QByteArrayLiteral("port")},
         {UserRole, QByteArrayLiteral("user")},
         {PassRole, QByteArrayLiteral("pass")},
         {TlsRole, QByteArrayLiteral("tls")},
@@ -191,14 +183,13 @@ bool ComputerModel::addTrustedFingerprint(int row, const QString &fingerprint)
     return true;
 }
 
-int ComputerModel::addComputer(const QString &name, const QString &host, int port,
+int ComputerModel::addComputer(const QString &name, const QString &host,
                                const QString &user, const QString &pass, bool tls)
 {
     Computer c;
     c.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     c.name = name;
     c.host = host;
-    c.port = port;
     c.user = user;
     c.pass = pass;
     c.tls = tls;
@@ -326,7 +317,6 @@ void ComputerModel::rebuildPollers()
                     });
         }
         p->setHost(c.host);
-        p->setPort(static_cast<quint16>(c.port));
         p->setTls(c.tls);
         p->setCredentials(c.user, c.pass);
         p->start();

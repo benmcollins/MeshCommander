@@ -17,7 +17,6 @@ Window {
     id: root
 
     property string targetHost
-    property int targetPort: 16994
     property string user
     property string password
     property bool tls: false
@@ -36,7 +35,6 @@ Window {
     IderController {
         id: controller
         host: root.targetHost
-        port: root.targetPort
         user: root.user
         password: root.password
         tls: root.tls
