@@ -30,6 +30,7 @@ set_source_files_properties(
     qml/Theme/Type.qml
     qml/Theme/Motion.qml
     qml/Theme/ThemePalette.qml
+    qml/Theme/ActivityHeartbeat.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -72,6 +73,8 @@ qt_add_qml_module(qumesh
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
         qml/Theme/ThemePalette.qml
+        qml/Theme/ActivityHeartbeat.qml
+        qml/HeartbeatBar.qml
     RESOURCES
         qml/fonts/IBMPlexSans-Regular.ttf
         qml/fonts/IBMPlexSans-Medium.ttf

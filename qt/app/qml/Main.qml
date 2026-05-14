@@ -70,6 +70,14 @@ ApplicationWindow {
             }
         }
 
+        HeartbeatBar {
+            Layout.fillWidth: true
+            ToolTip.visible: ActivityHeartbeat.lastFailure.length > 0
+                              && hoverHandler.hovered
+            ToolTip.text: ActivityHeartbeat.lastFailure
+            HoverHandler { id: hoverHandler }
+        }
+
         MigrationBanner {
             Layout.fillWidth: true
         }

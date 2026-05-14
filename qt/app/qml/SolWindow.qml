@@ -44,6 +44,11 @@ AppWindow {
             root.trustedFingerprintPersistRequested(fp);
         }
         onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+        onStateChanged: {
+            if (state === SolController.Connected) ActivityHeartbeat.reportSuccess();
+            else if (state === SolController.Failed)
+                ActivityHeartbeat.reportFailure(qsTr("SOL: %1").arg(lastError));
+        }
     }
 
     /// Per-window WSMAN controller, used only for the Power ▾ menu.
@@ -60,6 +65,14 @@ AppWindow {
             root.trustedFingerprintPersistRequested(fp);
         }
         onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+        onPowerChangeCompleted: function(state, ok, error) {
+            if (ok) ActivityHeartbeat.reportSuccess();
+            else    ActivityHeartbeat.reportFailure(error);
+        }
+        onLastErrorChanged: {
+            if (lastError.length > 0)
+                ActivityHeartbeat.reportFailure(lastError);
+        }
     }
 
     /// Brief "pinned certificate verified" badge — flashes whenever
