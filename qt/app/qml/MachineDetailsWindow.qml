@@ -88,9 +88,15 @@ Window {
 
     // Auto-refresh whenever the user moves between sections, or the
     // host becomes non-empty for the first time (i.e. once the parent
-    // Loader has finished populating us).
+    // Loader has finished populating us). On the very first host
+    // assignment the `host: root.machineHost` binding on the
+    // MachineDetailsController has not necessarily propagated into
+    // C++ yet — fire `refreshCurrent` via `Qt.callLater` so we run
+    // after the binding engine catches up, otherwise the controller
+    // reads `m_host == ""` and surfaces "Host is empty — cannot
+    // refresh" until the user clicks a sidebar entry.
     onCurrentSectionChanged: refreshCurrent()
-    onMachineHostChanged: if (machineHost.length > 0) refreshCurrent()
+    onMachineHostChanged: if (machineHost.length > 0) Qt.callLater(refreshCurrent)
 
     RowLayout {
         anchors.fill: parent
