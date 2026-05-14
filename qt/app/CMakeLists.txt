@@ -67,6 +67,7 @@ qt_add_qml_module(qumesh
         qml/AppWindow.qml
         qml/CertPinFlash.qml
         qml/FlatButton.qml
+        qml/HttpsBootPrompt.qml
         qml/PlatformErasePrompt.qml
         qml/SecureErasePrompt.qml
         qml/Theme/Colors.qml

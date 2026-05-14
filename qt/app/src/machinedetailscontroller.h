@@ -215,6 +215,12 @@ public:
                                           const QString &psid,
                                           const QString &ssdPassword);
 
+    /// Boot to an arbitrary HTTPS-hosted ISO. AMT does the download
+    /// itself, so `url` must be a reachable HTTPS endpoint. Gated in
+    /// the UI on `capForceUefiHttpsBoot` + the connection being TLS
+    /// (otherwise the firmware refuses).
+    Q_INVOKABLE void bootToHttpsBootUrl(bool reset, const QString &url);
+
     /// Called by the QML trust prompt. On accept, the pending cert's
     /// fingerprint is promoted into the trusted list, the trust state
     /// clears, and the operation that triggered the prompt is retried.

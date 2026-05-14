@@ -103,6 +103,14 @@ AppWindow {
         }
     }
 
+    HttpsBootPrompt {
+        id: httpsBootPrompt
+        tlsActive: root.machineTls
+        onConfirmed: function(url, reset) {
+            controller.bootToHttpsBootUrl(reset, url);
+        }
+    }
+
     // Sidebar items. The `id` keys must match the value used by each
     // Loader/StackLayout currentIndex below.
     readonly property var sections: [
@@ -569,6 +577,20 @@ AppWindow {
                                         height: visible ? implicitHeight : 0
                                         text: qsTr("Reset to Platform Erase…")
                                         onTriggered: platformErasePrompt.openFor(true)
+                                    }
+
+                                    MenuSeparator { visible: controller.capForceUefiHttpsBoot; height: visible ? implicitHeight : 0 }
+                                    MenuItem {
+                                        visible: controller.capForceUefiHttpsBoot
+                                        height: visible ? implicitHeight : 0
+                                        text: qsTr("Power on to HTTPS URL…")
+                                        onTriggered: httpsBootPrompt.openFor(false)
+                                    }
+                                    MenuItem {
+                                        visible: controller.capForceUefiHttpsBoot
+                                        height: visible ? implicitHeight : 0
+                                        text: qsTr("Reset to HTTPS URL…")
+                                        onTriggered: httpsBootPrompt.openFor(true)
                                     }
                                 }
                             }
