@@ -65,6 +65,7 @@ qt_add_qml_module(qumesh
         qml/AppMark.qml
         qml/AppWindow.qml
         qml/FlatButton.qml
+        qml/PlatformErasePrompt.qml
         qml/SecureErasePrompt.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml

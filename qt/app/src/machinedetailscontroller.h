@@ -85,6 +85,9 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capSecureErase READ capSecureErase NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capPlatformErase READ capPlatformErase NOTIFY bootCapabilitiesChanged)
+    /// Raw `AMT_BootCapabilities.PlatformErase` bitmask the QML uses to
+    /// build the per-sub-action checkbox list.
+    Q_PROPERTY(int capPlatformEraseMask READ capPlatformEraseMask NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capForceUefiHttpsBoot READ capForceUefiHttpsBoot NOTIFY bootCapabilitiesChanged)
 
 public:
@@ -143,6 +146,9 @@ public:
     [[nodiscard]] bool capBiosPause() const { return m_capBiosPause; }
     [[nodiscard]] bool capSecureErase() const { return m_capSecureErase; }
     [[nodiscard]] bool capPlatformErase() const { return m_capPlatformErase; }
+    [[nodiscard]] int  capPlatformEraseMask() const {
+        return static_cast<int>(m_capPlatformEraseMask);
+    }
     [[nodiscard]] bool capForceUefiHttpsBoot() const { return m_capForceUefiHttpsBoot; }
 
     /// Fetch the overview bundle (identify + general settings + system +
@@ -188,6 +194,14 @@ public:
     /// it. Pass empty when not configured. Gated in the UI on
     /// `capSecureErase`.
     Q_INVOKABLE void bootToSecureErase(bool reset, const QString &password);
+
+    /// Boot to Platform Erase. `flags` is a subset of
+    /// `capPlatformEraseMask` — the bits the user ticked in the
+    /// modal. `psid` only applies when bit 1 (Pyrite Revert) is set;
+    /// `ssdPassword` only when bit 2 (Secure Erase All SSDs) is set.
+    Q_INVOKABLE void bootToPlatformErase(bool reset, int flags,
+                                          const QString &psid,
+                                          const QString &ssdPassword);
 
     /// Called by the QML trust prompt. On accept, the pending cert's
     /// fingerprint is promoted into the trusted list, the trust state
@@ -280,6 +294,7 @@ private:
     bool m_capBiosPause = false;
     bool m_capSecureErase = false;
     bool m_capPlatformErase = false;
+    quint32 m_capPlatformEraseMask = 0;
     bool m_capForceUefiHttpsBoot = false;
 };
 

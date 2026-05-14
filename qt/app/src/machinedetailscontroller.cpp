@@ -244,6 +244,7 @@ void MachineDetailsController::refreshOverview()
                 m_capBiosPause          = r.biosPause;
                 m_capSecureErase        = r.secureErase;
                 m_capPlatformErase      = r.platformErase;
+                m_capPlatformEraseMask  = r.platformEraseMask;
                 m_capForceUefiHttpsBoot = r.forceUefiHttpsBoot;
                 emit bootCapabilitiesChanged();
             } else if (!r.error.isEmpty()) {
@@ -516,6 +517,44 @@ void MachineDetailsController::bootToSecureErase(bool reset, const QString &pass
             decInflight();
             if (!r.ok) {
                 setLastError(QStringLiteral("Boot to Secure Erase: %1").arg(r.error));
+                emit powerChangeCompleted(code, false, r.error);
+                return;
+            }
+            emit powerChangeCompleted(code, true, QString());
+            refreshPower();
+        });
+}
+
+void MachineDetailsController::bootToPlatformErase(bool reset, int flagsIn,
+                                                    const QString &psid,
+                                                    const QString &ssdPassword)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    if (flagsIn == 0) {
+        setLastError(QStringLiteral("Platform Erase: no sub-actions selected"));
+        return;
+    }
+    setLastError({});
+    const int code = reset ? 10 : 2;
+    emit powerChangeRequested(code);
+    incInflight();
+    qumesh::wsman::BootActionParams p;
+    p.targetPowerState = code;
+    p.platformErase = true;
+    int tlvCount = 0;
+    const QByteArray tlv = qumesh::wsman::buildPlatformEraseTlv(
+        static_cast<quint32>(flagsIn), psid, ssdPassword, &tlvCount);
+    p.platformEraseTlvBase64 = QString::fromLatin1(tlv.toBase64());
+    p.platformEraseTlvCount = tlvCount;
+    qumesh::wsman::performBootAction(m_client, p,
+        [this, code](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(QStringLiteral("Boot to Platform Erase: %1").arg(r.error));
                 emit powerChangeCompleted(code, false, r.error);
                 return;
             }
