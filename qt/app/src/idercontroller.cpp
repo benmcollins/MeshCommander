@@ -109,6 +109,8 @@ void IderController::open()
     m_session = new IderSession(m_client, this);
     m_session->setIsoPath(m_isoPath);
 
+    connect(m_client.data(), &RedirectionClient::peerCertVerifiedByPin, this,
+            &IderController::peerCertVerifiedByPin);
     connect(m_client.data(), &RedirectionClient::trustPromptRequired, this,
             [this](const qumesh::redir::PeerCertSummary &summary) {
                 m_pendingCert = summary;

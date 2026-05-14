@@ -89,6 +89,8 @@ void SolController::open()
 
     m_session = new SolSession(m_client, this);
 
+    connect(m_client.data(), &RedirectionClient::peerCertVerifiedByPin, this,
+            &SolController::peerCertVerifiedByPin);
     connect(m_client.data(), &RedirectionClient::trustPromptRequired, this,
             [this](const qumesh::redir::PeerCertSummary &summary) {
                 m_pendingCert = summary;

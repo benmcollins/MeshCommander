@@ -47,6 +47,16 @@ AppWindow {
             root.trustedFingerprintPersistRequested(fp);
         }
         onCloseRequested: root.close()
+        onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+    }
+
+    CertPinFlash {
+        id: certPinFlash
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: 12
+        anchors.rightMargin: 12
+        z: 1000
     }
 
     /// Trust-on-first-use prompt. The dialog is wired generically — it

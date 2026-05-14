@@ -276,6 +276,9 @@ void RedirectionClient::handleEncrypted()
     const PeerCertSummary summary = summarize(cert);
     if (m_trustedFingerprints.contains(summary.fingerprintSha256)) {
         // Fingerprint pinned — proceed with the redirection selector.
+        // Signal the consumer so it can surface a small "verified
+        // against your pinned certificate" affordance.
+        emit peerCertVerifiedByPin(summary.fingerprintSha256);
         handleConnected();
         return;
     }

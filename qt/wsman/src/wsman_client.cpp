@@ -106,6 +106,7 @@ void WsmanClient::handleSslErrors(QNetworkReply *reply, const QList<QSslError> &
     const QString fp = fingerprintFor(leaf);
 
     if (m_trustedFingerprints.contains(fp)) {
+        emit peerCertVerifiedByPin(fp);
         reply->ignoreSslErrors(errors);
         return;
     }
