@@ -16,6 +16,7 @@ Rectangle {
     function setCurrentRow(row) { list.currentIndex = row; }
 
     signal addRequested
+    signal openDetailsRequested(int row)
 
     color: Colors.bg
 
@@ -65,7 +66,6 @@ Rectangle {
                 required property int index
                 required property string name
                 required property string host
-                required property int powerState
 
                 width: list.width
                 height: 48
@@ -76,7 +76,10 @@ Rectangle {
                 Behavior on color { ColorAnimation { duration: Motion.fast } }
 
                 HoverHandler { id: hoverHandler }
-                TapHandler { onTapped: list.currentIndex = rowItem.index }
+                TapHandler {
+                    onTapped: list.currentIndex = rowItem.index
+                    onDoubleTapped: root.openDetailsRequested(rowItem.index)
+                }
 
                 Rectangle {
                     color: Colors.accent
@@ -87,51 +90,33 @@ Rectangle {
                     anchors.bottom: parent.bottom
                 }
 
-                RowLayout {
-                    spacing: 12
+                ColumnLayout {
+                    spacing: 1
                     anchors.fill: parent
                     anchors.leftMargin: 16
                     anchors.rightMargin: 12
+                    anchors.topMargin: 6
+                    anchors.bottomMargin: 6
 
-                    StatusLed {
-                        ledState: {
-                            // PowerStatePoller::State: 0=Unknown, 1=On, 2=Off,
-                            // 3=Standby, 4=Hibernate, 5=Unreachable
-                            switch (rowItem.powerState) {
-                            case 1: return "on";
-                            case 2: return "off";
-                            case 3:
-                            case 4: return "standby";
-                            case 5: return "error";
-                            default: return "unknown";
-                            }
-                        }
+                    Text {
+                        text: rowItem.name.length > 0
+                              ? rowItem.name
+                              : qsTr("Unnamed")
+                        color: Colors.text
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeM
+                        font.weight: Font.Medium
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
                     }
 
-                    ColumnLayout {
-                        spacing: 1
+                    Text {
+                        text: rowItem.host
+                        color: Colors.textMuted
+                        font.family: Type.mono
+                        font.pixelSize: Type.sizeXs
+                        elide: Text.ElideRight
                         Layout.fillWidth: true
-
-                        Text {
-                            text: rowItem.name.length > 0
-                                  ? rowItem.name
-                                  : qsTr("Unnamed")
-                            color: Colors.text
-                            font.family: Type.sans
-                            font.pixelSize: Type.sizeM
-                            font.weight: Font.Medium
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-
-                        Text {
-                            text: rowItem.host
-                            color: Colors.textMuted
-                            font.family: Type.mono
-                            font.pixelSize: Type.sizeXs
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
                     }
                 }
 

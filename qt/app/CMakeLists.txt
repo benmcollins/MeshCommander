@@ -7,6 +7,8 @@ qt_add_executable(qumesh
     src/configstore.h
     src/computermodel.cpp
     src/computermodel.h
+    src/machinedetailscontroller.cpp
+    src/machinedetailscontroller.h
     src/migrationcontroller.cpp
     src/migrationcontroller.h
     src/solcontroller.cpp
@@ -21,8 +23,6 @@ qt_add_executable(qumesh
     src/kvmviewer.h
     src/certmodel.cpp
     src/certmodel.h
-    src/powerstatepoller.cpp
-    src/powerstatepoller.h
 )
 
 set_source_files_properties(
@@ -57,6 +57,7 @@ qt_add_qml_module(qumesh
         qml/SolWindow.qml
         qml/IderWindow.qml
         qml/KvmWindow.qml
+        qml/MachineDetailsWindow.qml
         qml/CertificatesWindow.qml
         qml/CertTrustDialog.qml
         qml/AppMark.qml

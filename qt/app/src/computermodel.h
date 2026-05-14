@@ -4,25 +4,21 @@
 #pragma once
 
 #include <QAbstractListModel>
-#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QList>
 #include <QString>
+
 namespace qumesh::config {
 class ConfigStore;
-}
-
-namespace qumesh::app {
-class PowerStatePoller;
 }
 
 namespace qumesh::model {
 
 /// In-memory representation of one row in `ComputerModel`. Mirrors the
-/// subset of fields the legacy app stored under `computers[i]` that we
-/// have UI for in Phase 2. New fields are added here, in `roleNames()`,
-/// in `data()`, and in `setData()` — model contract has to stay in sync.
+/// subset of fields the legacy app stored under `computers[i]`. New
+/// fields are added here, in `roleNames()`, in `data()`, and in
+/// `setData()` — model contract has to stay in sync.
 struct Computer
 {
     QString id; // synthetic uuid for QML stable identity
@@ -39,22 +35,12 @@ struct Computer
 };
 
 /// QAbstractListModel that exposes the computer list to QML and persists
-/// every mutation through a `ConfigStore`.
-///
-/// The model owns a backing `QList<Computer>` initialised from
-/// `ConfigStore::loadComputers()`. Every mutating call emits the correct
-/// `beginInsertRows`/`endInsertRows` (or `beginRemoveRows`/`endRemoveRows`
-/// or `dataChanged`) wrap, then writes the new array through the store.
-/// Persistence is best-effort: if a save fails, `lastError()` is set and
-/// the model state is rolled back to the pre-mutation snapshot.
+/// every mutation through a `ConfigStore`. Pure storage — no live
+/// polling. The detail window opens an explicit, per-machine WSMAN
+/// session on user request; the model itself never connects.
 class ComputerModel : public QAbstractListModel
 {
     Q_OBJECT
-    Q_PROPERTY(int countOn READ countOn NOTIFY fleetCountsChanged)
-    Q_PROPERTY(int countOff READ countOff NOTIFY fleetCountsChanged)
-    Q_PROPERTY(int countStandby READ countStandby NOTIFY fleetCountsChanged)
-    Q_PROPERTY(int countUnreachable READ countUnreachable NOTIFY fleetCountsChanged)
-    Q_PROPERTY(int countUnknown READ countUnknown NOTIFY fleetCountsChanged)
 public:
     enum Role : int {
         IdRole = Qt::UserRole + 1,
@@ -65,7 +51,6 @@ public:
         TlsRole,
         DigestRealmRole,
         TrustedFingerprintsRole,
-        PowerStateRole,           ///< Live, set by per-row PowerStatePoller.
     };
     Q_ENUM(Role)
 
@@ -78,16 +63,6 @@ public:
 
     [[nodiscard]] config::ConfigStore *store() const { return m_store; }
     [[nodiscard]] QString lastError() const { return m_lastError; }
-
-    /// Fleet-aggregate accessors: count of rows currently in each
-    /// `PowerStatePoller::State`. Updated together by the same poller
-    /// signal that pushes per-row `PowerStateRole` updates, so the
-    /// counts and per-row data stay coherent.
-    [[nodiscard]] int countOn() const;
-    [[nodiscard]] int countOff() const;
-    [[nodiscard]] int countStandby() const;
-    [[nodiscard]] int countUnreachable() const;
-    [[nodiscard]] int countUnknown() const;
 
     // QAbstractListModel
     [[nodiscard]] int rowCount(const QModelIndex &parent = {}) const override;
@@ -113,30 +88,12 @@ public:
     /// Read-only accessor for tests / dialog state.
     [[nodiscard]] Computer at(int row) const;
 
-signals:
-    void fleetCountsChanged();
-
 private:
     [[nodiscard]] bool persist();
-    /// Recompute the fleet-aggregate counts from m_powerStates and
-    /// emit `fleetCountsChanged` if anything moved.
-    void recomputeFleetCounts();
-    /// Build / refresh the per-row poller fleet to match the current
-    /// computer list. Idempotent.
-    void rebuildPollers();
-    /// Disconnect + delete every poller.
-    void tearDownPollers();
 
     config::ConfigStore *m_store = nullptr;
     QList<Computer> m_computers;
     QString m_lastError;
-    QHash<QString, app::PowerStatePoller *> m_pollers;
-    QHash<QString, int> m_powerStates; ///< id → poller State (cast to int)
-    int m_countOn = 0;
-    int m_countOff = 0;
-    int m_countStandby = 0;
-    int m_countUnreachable = 0;
-    int m_countUnknown = 0;
 };
 
 } // namespace qumesh::model
