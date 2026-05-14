@@ -795,7 +795,7 @@ AppWindow {
                             AccentButton {
                                 text: qsTr("Open SOL")
 enabled: root.machineHost.length > 0 && root.machineUser.length > 0
-                                onClicked: solLoader.launch()
+                                onClicked: sessionLoader.launchAt(0)
                             }
                         }
                     }
@@ -819,7 +819,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             AccentButton {
                                 text: qsTr("Open KVM")
 enabled: root.machineHost.length > 0 && root.machineUser.length > 0
-                                onClicked: kvmLoader.launch()
+                                onClicked: sessionLoader.launchAt(1)
                             }
                         }
                     }
@@ -844,7 +844,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             AccentButton {
                                 text: qsTr("Mount ISO…")
 enabled: root.machineHost.length > 0 && root.machineUser.length > 0
-                                onClicked: iderLoader.launch()
+                                onClicked: sessionLoader.launchAt(2)
                             }
                         }
                     }
@@ -1117,36 +1117,26 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
     }
 
     // -- Embedded session windows ------------------------------------
+    /// Single tabbed session window. Each "Open SOL / KVM / IDE-R"
+    /// button on the Remote-access page funnels into this Loader and
+    /// sets the initial tab before launching, so the existing UX of
+    /// "click the verb you want" still picks the right pane while
+    /// keeping all three sessions in one OS window per machine.
     Loader {
-        id: solLoader
+        id: sessionLoader
         active: false
         asynchronous: true
-        function launch() { active = false; active = true }
-        function openWindow() {
-            if (item === null) return;
-            item.targetHost = root.machineHost;
-            item.user = root.machineUser;
-            item.password = root.machinePass;
-            item.tls = root.machineTls;
-            item.trustedFingerprints = root.machineTrustedFingerprints;
-            item.label = root.machineName.length > 0 ? root.machineName : root.machineHost;
-            item.visible = true;
-            item.start();
-        }
-        onStatusChanged: if (status === Loader.Ready) openWindow()
-        sourceComponent: SolWindow {
-            onClosing: solLoader.active = false
-            onTrustedFingerprintPersistRequested: function(fp) {
-                root.trustedFingerprintPersistRequested(fp);
+        property int pendingTab: 0
+        function launchAt(tab) {
+            if (active && item !== null && item.visible) {
+                item.openTab(tab);
+                item.raise();
+                return;
             }
+            pendingTab = tab;
+            active = false;
+            active = true;
         }
-    }
-
-    Loader {
-        id: iderLoader
-        active: false
-        asynchronous: true
-        function launch() { active = false; active = true }
         function openWindow() {
             if (item === null) return;
             item.targetHost = root.machineHost;
@@ -1155,36 +1145,12 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
             item.tls = root.machineTls;
             item.trustedFingerprints = root.machineTrustedFingerprints;
             item.label = root.machineName.length > 0 ? root.machineName : root.machineHost;
+            item.initialTab = pendingTab;
             item.visible = true;
         }
         onStatusChanged: if (status === Loader.Ready) openWindow()
-        sourceComponent: IderWindow {
-            onClosing: iderLoader.active = false
-            onTrustedFingerprintPersistRequested: function(fp) {
-                root.trustedFingerprintPersistRequested(fp);
-            }
-        }
-    }
-
-    Loader {
-        id: kvmLoader
-        active: false
-        asynchronous: true
-        function launch() { active = false; active = true }
-        function openWindow() {
-            if (item === null) return;
-            item.targetHost = root.machineHost;
-            item.user = root.machineUser;
-            item.password = root.machinePass;
-            item.tls = root.machineTls;
-            item.trustedFingerprints = root.machineTrustedFingerprints;
-            item.label = root.machineName.length > 0 ? root.machineName : root.machineHost;
-            item.visible = true;
-            item.start();
-        }
-        onStatusChanged: if (status === Loader.Ready) openWindow()
-        sourceComponent: KvmWindow {
-            onClosing: kvmLoader.active = false
+        sourceComponent: SessionWindow {
+            onClosing: sessionLoader.active = false
             onTrustedFingerprintPersistRequested: function(fp) {
                 root.trustedFingerprintPersistRequested(fp);
             }

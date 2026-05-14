@@ -1,0 +1,255 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Controls.Basic
+import QtQuick.Layouts
+import QuMesh
+
+/// Single per-machine session window. Hosts SOL / KVM / IDE-R as tabs
+/// instead of three independent windows so the operator only juggles
+/// one OS window per managed machine. The shared `MachineDetailsController`
+/// in the title bar drives the Power ▾ menu via one WSMAN connection
+/// instead of one-per-panel.
+AppWindow {
+    id: root
+
+    property string targetHost
+    property string user
+    property string password
+    property bool tls: false
+    property var trustedFingerprints: []
+    property string label: qsTr("Session")
+
+    /// Initial tab to show: 0 = SOL, 1 = KVM, 2 = IDE-R. Each panel
+    /// auto-`start()`s the first time it becomes the active tab.
+    property int initialTab: 0
+
+    signal trustedFingerprintPersistRequested(string fingerprint)
+
+    function openTab(idx) {
+        bar.currentIndex = idx;
+        if (root.visible) startActive();
+    }
+    function startActive() {
+        const items = [solPanel, kvmPanel, iderPanel];
+        const it = items[bar.currentIndex];
+        if (it !== null && it.start) it.start();
+    }
+
+    width: 1024
+    height: 720
+    minimumWidth: 640
+    minimumHeight: 420
+    title: qsTr("QuMesh — %1 — %2 — %3")
+        .arg(root.label)
+        .arg(root.targetHost)
+        .arg(bar.currentIndex === 0 ? qsTr("Serial Console")
+            : bar.currentIndex === 1 ? qsTr("Remote Desktop")
+            : qsTr("IDE Redirection"))
+
+    MachineDetailsController {
+        id: powerController
+        host: root.targetHost
+        user: root.user
+        password: root.password
+        tls: root.tls
+        trustedFingerprints: root.trustedFingerprints
+        onTrustedFingerprintAdded: function(fp) {
+            root.trustedFingerprintPersistRequested(fp);
+        }
+        onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+        onPowerChangeCompleted: function(state, ok, error) {
+            if (ok) ActivityHeartbeat.reportSuccess();
+            else    ActivityHeartbeat.reportFailure(error);
+        }
+        onLastErrorChanged: {
+            if (lastError.length > 0)
+                ActivityHeartbeat.reportFailure(lastError);
+        }
+    }
+
+    CertTrustDialog {
+        controller: powerController
+    }
+
+    CertPinFlash {
+        id: certPinFlash
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: 12
+        anchors.rightMargin: 12
+        z: 1000
+    }
+
+    onClosing: {
+        solPanel.stop();
+        kvmPanel.stop();
+        iderPanel.stop();
+    }
+
+    /// Track which tabs we've already started so the panel's controller
+    /// isn't re-opened every time the user flips back to a connected
+    /// tab. Re-starting after the user has explicitly disconnected is
+    /// handled by the panel's own Reconnect button.
+    property var _started: ({})
+    Connections {
+        target: bar
+        function onCurrentIndexChanged() {
+            if (!root._started[bar.currentIndex]) {
+                root._started[bar.currentIndex] = true;
+                root.startActive();
+            }
+        }
+    }
+
+    Component.onCompleted: {
+        bar.currentIndex = root.initialTab;
+        root._started[root.initialTab] = true;
+        Qt.callLater(root.startActive);
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 0
+
+        // -- Title bar with Power ▾ ------------------------------------
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 44
+            color: Colors.surface
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 10
+
+                Text {
+                    text: root.label
+                    color: Colors.text
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeM
+                    font.weight: Font.Medium
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+
+                Button {
+                    text: qsTr("Power ▾")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    enabled: !powerController.busy
+                    onClicked: powerMenu.popup()
+
+                    Menu {
+                        id: powerMenu
+                        MenuItem { text: qsTr("Power on");           onTriggered: powerController.powerOn() }
+                        MenuItem { text: qsTr("Reset");              onTriggered: powerController.powerReset() }
+                        MenuItem { text: qsTr("Reset (graceful)");   onTriggered: powerController.powerResetGraceful() }
+                        MenuItem { text: qsTr("Power off (soft)");   onTriggered: powerController.powerOffSoft() }
+                        MenuItem { text: qsTr("Power off (hard)");   onTriggered: powerController.powerOffHard() }
+                        MenuSeparator {}
+                        MenuItem {
+                            visible: powerController.amtVersionMajor >= 10
+                            height: visible ? implicitHeight : 0
+                            text: qsTr("Wake OS")
+                            onTriggered: powerController.osWakeFromSleep()
+                        }
+                        MenuItem {
+                            visible: powerController.amtVersionMajor >= 10
+                            height: visible ? implicitHeight : 0
+                            text: qsTr("Sleep OS")
+                            onTriggered: powerController.osPutToSleep()
+                        }
+                        MenuSeparator { visible: powerController.amtVersionMajor >= 10; height: visible ? implicitHeight : 0 }
+                        MenuItem { text: qsTr("Power on to BIOS Setup"); onTriggered: powerController.bootToBios(false) }
+                        MenuItem { text: qsTr("Reset to BIOS Setup");    onTriggered: powerController.bootToBios(true) }
+                        MenuSeparator {}
+                        MenuItem { text: qsTr("Power on to PXE");        onTriggered: powerController.bootToPxe(false) }
+                        MenuItem { text: qsTr("Reset to PXE");           onTriggered: powerController.bootToPxe(true) }
+                        MenuSeparator {}
+                        MenuItem { text: qsTr("Power on to IDE-R CDROM"); onTriggered: powerController.bootToIderCdrom(false) }
+                        MenuItem { text: qsTr("Reset to IDE-R CDROM");    onTriggered: powerController.bootToIderCdrom(true) }
+                        MenuItem { text: qsTr("Power on to IDE-R Floppy"); onTriggered: powerController.bootToIderFloppy(false) }
+                        MenuItem { text: qsTr("Reset to IDE-R Floppy");    onTriggered: powerController.bootToIderFloppy(true) }
+                    }
+                }
+            }
+
+            Rectangle {
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                implicitHeight: 1
+                color: Colors.border
+            }
+        }
+
+        TabBar {
+            id: bar
+            Layout.fillWidth: true
+            TabButton {
+                text: qsTr("Serial Console")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+            }
+            TabButton {
+                text: qsTr("Remote Desktop")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+            }
+            TabButton {
+                text: qsTr("IDE Redirection")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+            }
+        }
+
+        StackLayout {
+            id: stack
+            currentIndex: bar.currentIndex
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            SolPanel {
+                id: solPanel
+                targetHost: root.targetHost
+                user: root.user
+                password: root.password
+                tls: root.tls
+                trustedFingerprints: root.trustedFingerprints
+                onTrustedFingerprintPersistRequested: function(fp) {
+                    root.trustedFingerprintPersistRequested(fp);
+                }
+                onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+            }
+            KvmPanel {
+                id: kvmPanel
+                targetHost: root.targetHost
+                user: root.user
+                password: root.password
+                tls: root.tls
+                trustedFingerprints: root.trustedFingerprints
+                onTrustedFingerprintPersistRequested: function(fp) {
+                    root.trustedFingerprintPersistRequested(fp);
+                }
+                onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+            }
+            IderPanel {
+                id: iderPanel
+                targetHost: root.targetHost
+                user: root.user
+                password: root.password
+                tls: root.tls
+                trustedFingerprints: root.trustedFingerprints
+                onTrustedFingerprintPersistRequested: function(fp) {
+                    root.trustedFingerprintPersistRequested(fp);
+                }
+                onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+            }
+        }
+    }
+}

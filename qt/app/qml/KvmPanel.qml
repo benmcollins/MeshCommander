@@ -8,8 +8,10 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QuMesh
 
-/// Detached window hosting one KVM session.
-AppWindow {
+/// Embeddable KVM viewer pane. Owns its own `KvmController`; the
+/// containing window drives connect/disconnect through `start()` /
+/// `stop()`. Used by `SessionWindow.qml` as one of its tabs.
+Item {
     id: root
 
     property string targetHost
@@ -17,9 +19,9 @@ AppWindow {
     property string password
     property bool tls: false
     property var trustedFingerprints: []
-    property string label: qsTr("Remote Desktop")
 
     signal trustedFingerprintPersistRequested(string fingerprint)
+    signal peerCertVerifiedByPin(string fingerprint)
 
     function start() {
         controller.host = root.targetHost;
@@ -29,38 +31,32 @@ AppWindow {
         controller.trustedFingerprints = root.trustedFingerprints;
         controller.open();
     }
+    function stop() { controller.close() }
 
-    // X11 keysyms used by the Send-keys menu. Mirror the constants in
-    // kvmviewer.cpp; the menu reaches them via `root.kXk*`.
+    function focusViewer() { viewer.forceActiveFocus() }
+
+    // X11 keysyms used by the Send-keys menu.
     readonly property int kXkLAlt: 0xFFE9
     readonly property int kXkLCtrl: 0xFFE3
-    readonly property int kXkLMeta: 0xFFE7   // Windows / Super_L
+    readonly property int kXkLMeta: 0xFFE7
     readonly property int kXkLShift: 0xFFE1
     readonly property int kXkEscape: 0xFF1B
     readonly property int kXkTab: 0xFF09
     readonly property int kXkF1Base: 0xFFBE
 
     function chord(keys) {
-        // Press each key in order, release in reverse — modifiers wrap
-        // the inner key the way AMT expects.
         for (let i = 0; i < keys.length; ++i)
             controller.sendKey(keys[i], true);
         for (let i = keys.length - 1; i >= 0; --i)
             controller.sendKey(keys[i], false);
     }
 
-    width: 1024
-    height: 720
-    minimumWidth: 640
-    minimumHeight: 400
-    title: qsTr("QuMesh — %1 — %2").arg(root.label).arg(root.targetHost)
-
     KvmController {
         id: controller
         onTrustedFingerprintAdded: function(fp) {
             root.trustedFingerprintPersistRequested(fp);
         }
-        onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+        onPeerCertVerifiedByPin: function(fp) { root.peerCertVerifiedByPin(fp) }
         onStateChanged: {
             if (state === KvmController.Connected) ActivityHeartbeat.reportSuccess();
             else if (state === KvmController.Failed)
@@ -68,46 +64,9 @@ AppWindow {
         }
     }
 
-    /// Per-window WSMAN controller for the Power ▾ menu — same auth /
-    /// pinned cert, separate TCP session against the WSMAN port.
-    MachineDetailsController {
-        id: powerController
-        host: root.targetHost
-        user: root.user
-        password: root.password
-        tls: root.tls
-        trustedFingerprints: root.trustedFingerprints
-        onTrustedFingerprintAdded: function(fp) {
-            root.trustedFingerprintPersistRequested(fp);
-        }
-        onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
-        onPowerChangeCompleted: function(state, ok, error) {
-            if (ok) ActivityHeartbeat.reportSuccess();
-            else    ActivityHeartbeat.reportFailure(error);
-        }
-        onLastErrorChanged: {
-            if (lastError.length > 0)
-                ActivityHeartbeat.reportFailure(lastError);
-        }
-    }
-
-    CertPinFlash {
-        id: certPinFlash
-        anchors.top: parent.top
-        anchors.right: parent.right
-        anchors.topMargin: 12
-        anchors.rightMargin: 12
-        z: 1000
-    }
-
     CertTrustDialog {
         controller: controller
     }
-    CertTrustDialog {
-        controller: powerController
-    }
-
-    onClosing: controller.close()
 
     ColumnLayout {
         anchors.fill: parent
@@ -151,47 +110,6 @@ AppWindow {
             Item { Layout.fillWidth: true }
 
             Button {
-                text: qsTr("Power ▾")
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-                enabled: !powerController.busy
-                onClicked: powerMenu.popup()
-
-                Menu {
-                    id: powerMenu
-                    MenuItem { text: qsTr("Power on");           onTriggered: powerController.powerOn() }
-                    MenuItem { text: qsTr("Reset");              onTriggered: powerController.powerReset() }
-                    MenuItem { text: qsTr("Reset (graceful)");   onTriggered: powerController.powerResetGraceful() }
-                    MenuItem { text: qsTr("Power off (soft)");   onTriggered: powerController.powerOffSoft() }
-                    MenuItem { text: qsTr("Power off (hard)");   onTriggered: powerController.powerOffHard() }
-                    MenuSeparator {}
-                    MenuItem {
-                        visible: powerController.amtVersionMajor >= 10
-                        height: visible ? implicitHeight : 0
-                        text: qsTr("Wake OS")
-                        onTriggered: powerController.osWakeFromSleep()
-                    }
-                    MenuItem {
-                        visible: powerController.amtVersionMajor >= 10
-                        height: visible ? implicitHeight : 0
-                        text: qsTr("Sleep OS")
-                        onTriggered: powerController.osPutToSleep()
-                    }
-                    MenuSeparator { visible: powerController.amtVersionMajor >= 10; height: visible ? implicitHeight : 0 }
-                    MenuItem { text: qsTr("Power on to BIOS Setup"); onTriggered: powerController.bootToBios(false) }
-                    MenuItem { text: qsTr("Reset to BIOS Setup");    onTriggered: powerController.bootToBios(true) }
-                    MenuSeparator {}
-                    MenuItem { text: qsTr("Power on to PXE");        onTriggered: powerController.bootToPxe(false) }
-                    MenuItem { text: qsTr("Reset to PXE");           onTriggered: powerController.bootToPxe(true) }
-                    MenuSeparator {}
-                    MenuItem { text: qsTr("Power on to IDE-R CDROM"); onTriggered: powerController.bootToIderCdrom(false) }
-                    MenuItem { text: qsTr("Reset to IDE-R CDROM");    onTriggered: powerController.bootToIderCdrom(true) }
-                    MenuItem { text: qsTr("Power on to IDE-R Floppy"); onTriggered: powerController.bootToIderFloppy(false) }
-                    MenuItem { text: qsTr("Reset to IDE-R Floppy");    onTriggered: powerController.bootToIderFloppy(true) }
-                }
-            }
-
-            Button {
                 text: qsTr("Send keys ▾")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeXs
@@ -224,25 +142,23 @@ AppWindow {
                     }
                     MenuItem {
                         text: qsTr("Win+L (lock)")
-                        onTriggered: root.chord([root.kXkLMeta, 0x6C])  // 'l'
+                        onTriggered: root.chord([root.kXkLMeta, 0x6C])
                     }
                     MenuItem {
                         text: qsTr("Win+R (run)")
-                        onTriggered: root.chord([root.kXkLMeta, 0x72])  // 'r'
+                        onTriggered: root.chord([root.kXkLMeta, 0x72])
                     }
                     MenuItem {
                         text: qsTr("Win+E (explorer)")
-                        onTriggered: root.chord([root.kXkLMeta, 0x65])  // 'e'
+                        onTriggered: root.chord([root.kXkLMeta, 0x65])
                     }
                     MenuItem {
                         text: qsTr("Win+D (desktop)")
-                        onTriggered: root.chord([root.kXkLMeta, 0x64])  // 'd'
+                        onTriggered: root.chord([root.kXkLMeta, 0x64])
                     }
                     MenuSeparator {}
                     Menu {
                         title: qsTr("Function keys")
-                        // F1..F12 — useful when macOS intercepts the
-                        // physical F-keys for brightness / volume.
                         Repeater {
                             model: 12
                             delegate: MenuItem {
@@ -281,5 +197,6 @@ AppWindow {
         }
     }
 
-    Component.onCompleted: viewer.forceActiveFocus()
+    onVisibleChanged: if (visible) viewer.forceActiveFocus()
+    Component.onCompleted: if (visible) viewer.forceActiveFocus()
 }
