@@ -88,6 +88,7 @@ Window {
                 color: controller.state === KvmController.Failed ? Colors.error : Colors.textMuted
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
+                font.features: ({ "tnum": 1 })
             }
 
             Item { Layout.fillWidth: true }

@@ -190,6 +190,7 @@ Window {
                     color: Colors.text
                     font.family: Type.mono
                     font.pixelSize: Type.sizeM
+                    font.features: ({ "tnum": 1 })
                 }
                 Text {
                     text: qsTr("Received")
@@ -202,6 +203,7 @@ Window {
                     color: Colors.text
                     font.family: Type.mono
                     font.pixelSize: Type.sizeM
+                    font.features: ({ "tnum": 1 })
                 }
             }
         }
