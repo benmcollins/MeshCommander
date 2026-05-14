@@ -634,6 +634,8 @@ void readMore(WsmanReply *reply, WsmanClient *client,
         // 401 → parse challenge and retry on a new socket.
         if (rd.httpStatus == 401) {
             const QByteArray wwwAuth = rd.responseHeaders.value("www-authenticate");
+            qCWarning(qumeshWsmanXport) << "readMore[" << rd.seq << "] got 401, www-auth ="
+                                        << wwwAuth;
             if (wwwAuth.isEmpty()) {
                 finishReply(reply, rd, QStringLiteral("401 without WWW-Authenticate"));
                 return;
@@ -641,7 +643,20 @@ void readMore(WsmanReply *reply, WsmanClient *client,
             const auto params = parseDigestChallenge(wwwAuth);
             cd.digestRealm = params.value("realm");
             cd.digestNonce = params.value("nonce");
-            cd.digestQop = params.value("qop");
+            // AMT sometimes advertises `qop="auth,auth-int"`. We have
+            // to pick a single value and send THAT back in the
+            // Authorization header (and use it in the response hash)
+            // — sending the whole comma-joined string makes the
+            // server's hash diverge from ours and the auth fails.
+            const QByteArray rawQop = params.value("qop");
+            cd.digestQop = QByteArrayLiteral("auth");
+            if (!rawQop.isEmpty()) {
+                bool foundAuth = false;
+                for (const QByteArray &p : rawQop.split(',')) {
+                    if (p.trimmed() == "auth") { foundAuth = true; break; }
+                }
+                if (!foundAuth) cd.digestQop = rawQop.split(',').first().trimmed();
+            }
             cd.digestAlgorithm = params.value("algorithm");
             cd.digestOpaque = params.value("opaque");
             cd.haveDigestChallenge = !cd.digestRealm.isEmpty() && !cd.digestNonce.isEmpty();
