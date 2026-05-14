@@ -24,7 +24,12 @@ if(NOT ZLIB_FOUND)
         GIT_REPOSITORY https://github.com/madler/zlib.git
         GIT_TAG       v1.3.1
         GIT_SHALLOW   TRUE
+        EXCLUDE_FROM_ALL
     )
+    # EXCLUDE_FROM_ALL above also suppresses zlib's own install()
+    # rules. Without this, CPack on Windows refuses to package the
+    # bundle because zlib's CMakeLists installs zlib.lib to an
+    # absolute path under "C:/Program Files (x86)/QuMesh/lib".
     FetchContent_MakeAvailable(zlib)
     # zlib's CMake exports targets `zlib` (shared) and `zlibstatic`.
     # Alias one of them as ZLIB::ZLIB so the link statement below
