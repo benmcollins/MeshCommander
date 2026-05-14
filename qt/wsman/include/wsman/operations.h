@@ -111,4 +111,40 @@ void getTimeSettings(WsmanClient *client,
 void requestPowerStateChange(WsmanClient *client, int powerState,
                              std::function<void(InvokeResult)> callback);
 
+/// Inputs to a single power-to-X action. Set by the controller from
+/// the per-action presets and consumed by `performBootAction` below.
+struct BootActionParams
+{
+    /// CIM RequestPowerStateChange code — 2 = power on, 10 = reset
+    /// graceful, 5 = reset immediate, etc.
+    int targetPowerState = 2;
+
+    /// AMT-side InstanceID of the CIM_BootSourceSetting to use (the
+    /// "Intel(r) AMT: " prefix is added by the codec). Empty string
+    /// means "no boot-source override" — used for BIOS-Setup-only.
+    QString amtBootSource;
+
+    /// AMT_BootSettingData fields. AMT requires us to send the entire
+    /// boot setting record on Put; the firmware defaults the rest if
+    /// we omit them, so we only set the bits the per-action preset
+    /// cares about.
+    bool biosSetup = false;
+    bool biosPause = false;
+    bool useIder = false;
+    /// 0 = floppy / 1 = CD-ROM in the IDE-R bus.
+    int iderBootDevice = 0;
+    bool useSol = false;
+};
+
+/// Run the full boot-source-override chain:
+///   1. ChangeBootOrder(null)   — clear the boot order
+///   2. Put AMT_BootSettingData — write the action's flags
+///   3. SetBootConfigRole(1)    — mark this config as the next-boot one
+///   4. ChangeBootOrder(source) — when `amtBootSource` is non-empty
+///   5. RequestPowerStateChange — apply the power action
+/// `callback` fires once with the final result; intermediate failures
+/// short-circuit and surface their own error string.
+void performBootAction(WsmanClient *client, BootActionParams params,
+                       std::function<void(InvokeResult)> callback);
+
 } // namespace qumesh::wsman

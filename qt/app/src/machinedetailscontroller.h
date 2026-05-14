@@ -148,6 +148,16 @@ public:
     Q_INVOKABLE void powerResetGraceful(){ changePowerState(10); }
     Q_INVOKABLE void powerOffSoft()      { changePowerState(12); }
 
+    /// Boot-source-override actions. Each chains
+    /// ChangeBootOrder(clear) → Put AMT_BootSettingData →
+    /// SetBootConfigRole(1) → (optionally) ChangeBootOrder(source) →
+    /// RequestPowerStateChange. `reset` selects between power-on
+    /// (false → CIM state 2) and graceful-reset (true → CIM state 10).
+    Q_INVOKABLE void bootToBios(bool reset);
+    Q_INVOKABLE void bootToPxe(bool reset);
+    Q_INVOKABLE void bootToIderCdrom(bool reset);
+    Q_INVOKABLE void bootToIderFloppy(bool reset);
+
     /// Called by the QML trust prompt. On accept, the pending cert's
     /// fingerprint is promoted into the trusted list, the trust state
     /// clears, and the operation that triggered the prompt is retried.
