@@ -55,47 +55,6 @@ Rectangle {
             font.pixelSize: Type.sizeXs
         }
 
-        // Fleet-health chips — only the non-zero states render, so an
-        // all-offline fleet doesn't show a stale "0 on" placeholder.
-        Repeater {
-            model: [
-                { count: ComputerModel.countOn,
-                  color: Colors.on,
-                  label: qsTr("on") },
-                { count: ComputerModel.countOff,
-                  color: Colors.off,
-                  label: qsTr("off") },
-                { count: ComputerModel.countStandby,
-                  color: Colors.standby,
-                  label: qsTr("standby") },
-                { count: ComputerModel.countUnreachable,
-                  color: Colors.error,
-                  label: qsTr("unreachable") },
-            ]
-
-            delegate: Row {
-                id: chip
-                required property var modelData
-                spacing: 4
-                visible: chip.modelData.count > 0
-
-                Rectangle {
-                    width: 8
-                    height: 8
-                    radius: 4
-                    color: chip.modelData.color
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                Text {
-                    text: "%1 %2".arg(chip.modelData.count).arg(chip.modelData.label)
-                    color: Colors.textMuted
-                    font.family: Type.mono
-                    font.pixelSize: Type.sizeXs
-                    font.features: ({ "tnum": 1 })
-                }
-            }
-        }
-
         Item { Layout.fillWidth: true }
 
         FlatButton {

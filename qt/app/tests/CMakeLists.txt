@@ -10,8 +10,6 @@ function(qumesh_app_test name)
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/computermodel.h
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/migrationcontroller.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/migrationcontroller.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/../src/powerstatepoller.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../src/powerstatepoller.h
     )
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
     target_link_libraries(${name} PRIVATE

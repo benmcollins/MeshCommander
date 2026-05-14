@@ -4,13 +4,10 @@
 #include "computermodel.h"
 
 #include "configstore.h"
-#include "powerstatepoller.h"
 
 #include <QUuid>
 
 namespace qumesh::model {
-
-using app::PowerStatePoller;
 
 QJsonObject Computer::toJson() const
 {
@@ -54,7 +51,6 @@ ComputerModel::ComputerModel(QObject *parent)
 void ComputerModel::setStore(config::ConfigStore *store)
 {
     beginResetModel();
-    tearDownPollers();
     m_store = store;
     m_computers.clear();
     if (m_store != nullptr) {
@@ -65,7 +61,6 @@ void ComputerModel::setStore(config::ConfigStore *store)
         }
     }
     endResetModel();
-    rebuildPollers();
 }
 
 int ComputerModel::rowCount(const QModelIndex &parent) const
@@ -97,8 +92,6 @@ QVariant ComputerModel::data(const QModelIndex &index, int role) const
         return c.digestRealm;
     case TrustedFingerprintsRole:
         return c.trustedFingerprints;
-    case PowerStateRole:
-        return m_powerStates.value(c.id, 0); // 0 = PowerStatePoller::State::Unknown
     }
     return {};
 }
@@ -162,7 +155,6 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
         {TlsRole, QByteArrayLiteral("tls")},
         {DigestRealmRole, QByteArrayLiteral("digestrealm")},
         {TrustedFingerprintsRole, QByteArrayLiteral("trustedFingerprints")},
-        {PowerStateRole, QByteArrayLiteral("powerState")},
     };
 }
 
@@ -243,93 +235,7 @@ bool ComputerModel::persist()
         return false;
     }
     m_lastError.clear();
-    rebuildPollers();
     return true;
-}
-
-int ComputerModel::countOn() const { return m_countOn; }
-int ComputerModel::countOff() const { return m_countOff; }
-int ComputerModel::countStandby() const { return m_countStandby; }
-int ComputerModel::countUnreachable() const { return m_countUnreachable; }
-int ComputerModel::countUnknown() const { return m_countUnknown; }
-
-void ComputerModel::recomputeFleetCounts()
-{
-    int on = 0, off = 0, standby = 0, unreachable = 0, unknown = 0;
-    for (const Computer &c : m_computers) {
-        const int s = m_powerStates.value(c.id, 0);
-        switch (static_cast<PowerStatePoller::State>(s)) {
-        case PowerStatePoller::State::On:          ++on; break;
-        case PowerStatePoller::State::Off:         ++off; break;
-        case PowerStatePoller::State::Standby:
-        case PowerStatePoller::State::Hibernate:   ++standby; break;
-        case PowerStatePoller::State::Unreachable: ++unreachable; break;
-        case PowerStatePoller::State::Unknown:     ++unknown; break;
-        }
-    }
-    if (on == m_countOn && off == m_countOff && standby == m_countStandby
-        && unreachable == m_countUnreachable && unknown == m_countUnknown) {
-        return;
-    }
-    m_countOn = on;
-    m_countOff = off;
-    m_countStandby = standby;
-    m_countUnreachable = unreachable;
-    m_countUnknown = unknown;
-    emit fleetCountsChanged();
-}
-
-void ComputerModel::tearDownPollers()
-{
-    for (auto *p : std::as_const(m_pollers)) p->deleteLater();
-    m_pollers.clear();
-    m_powerStates.clear();
-    recomputeFleetCounts();
-}
-
-void ComputerModel::rebuildPollers()
-{
-    // Track which existing pollers are still valid; drop those whose
-    // computer has been removed or whose host/auth has changed.
-    QHash<QString, PowerStatePoller *> next;
-    for (int row = 0; row < m_computers.size(); ++row) {
-        const Computer &c = m_computers.at(row);
-        if (c.host.isEmpty() || c.user.isEmpty()) {
-            // Without credentials we can't poll; drop any prior poller.
-            if (auto *old = m_pollers.take(c.id)) old->deleteLater();
-            continue;
-        }
-        PowerStatePoller *p = m_pollers.take(c.id);
-        if (p == nullptr) {
-            p = new PowerStatePoller(this);
-            const QString id = c.id;
-            connect(p, &PowerStatePoller::stateChanged, this,
-                    [this, id](PowerStatePoller::State s) {
-                        m_powerStates[id] = static_cast<int>(s);
-                        for (int r = 0; r < m_computers.size(); ++r) {
-                            if (m_computers.at(r).id == id) {
-                                const QModelIndex idx = index(r, 0);
-                                emit dataChanged(idx, idx, {PowerStateRole});
-                                break;
-                            }
-                        }
-                        recomputeFleetCounts();
-                    });
-        }
-        p->setHost(c.host);
-        p->setTls(c.tls);
-        p->setCredentials(c.user, c.pass);
-        p->start();
-        next.insert(c.id, p);
-    }
-    // Anything left in m_pollers belongs to a deleted/orphaned computer.
-    // Drop their cached state so fleet counts shrink with the fleet.
-    for (auto it = m_pollers.cbegin(); it != m_pollers.cend(); ++it) {
-        m_powerStates.remove(it.key());
-        it.value()->deleteLater();
-    }
-    m_pollers = std::move(next);
-    recomputeFleetCounts();
 }
 
 } // namespace qumesh::model

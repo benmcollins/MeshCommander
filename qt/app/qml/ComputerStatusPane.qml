@@ -8,9 +8,10 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QuMesh
 
-/// Right-side pane: shows the live status and metadata for the
-/// currently-selected machine plus action buttons (Open SOL, Mount
-/// ISO, Open KVM) and an Edit settings action.
+/// Right-side pane: shows the static metadata for the currently
+/// selected machine (the JSON we have on disk), plus Edit / Delete.
+/// No connection is attempted — that only happens when the user
+/// double-clicks the row and opens the details window.
 Rectangle {
     id: root
 
@@ -25,35 +26,14 @@ Rectangle {
     readonly property string machineHost: hasSelection ? (_read(ComputerModel.HostRole) || "") : ""
     readonly property string machineUser: hasSelection ? (_read(ComputerModel.UserRole) || "") : ""
     readonly property string machinePass: hasSelection ? (_read(ComputerModel.PassRole) || "") : ""
-    readonly property bool machineTls: hasSelection ? (_read(ComputerModel.TlsRole) || false) : false
-    readonly property var machineTrustedFingerprints: hasSelection
-        ? (_read(ComputerModel.TrustedFingerprintsRole) || [])
-        : []
-    readonly property int machinePowerState: hasSelection
-        ? (_read(ComputerModel.PowerStateRole) || 0) : 0
-
-    readonly property string powerLabel: {
-        switch (machinePowerState) {
-        case 1: return qsTr("On");
-        case 2: return qsTr("Off");
-        case 3: return qsTr("Standby");
-        case 4: return qsTr("Hibernate");
-        case 5: return qsTr("Unreachable");
-        default: return qsTr("Unknown");
-        }
-    }
-    readonly property string powerLed: {
-        switch (machinePowerState) {
-        case 1: return "on";
-        case 2: return "off";
-        case 3:
-        case 4: return "standby";
-        case 5: return "error";
-        default: return "unknown";
-        }
-    }
+    readonly property bool   machineTls:  hasSelection ? (_read(ComputerModel.TlsRole)  || false) : false
+    readonly property string machineDigestRealm: hasSelection
+        ? (_read(ComputerModel.DigestRealmRole) || "") : ""
+    readonly property var    machineTrustedFingerprints: hasSelection
+        ? (_read(ComputerModel.TrustedFingerprintsRole) || []) : []
 
     signal addRequested
+    signal openDetailsRequested(int row)
 
     color: Colors.bg
 
@@ -106,37 +86,14 @@ Rectangle {
                         font.family: Type.mono
                         font.pixelSize: Type.sizeS
                     }
-                }
-
-                Section {
-                    title: qsTr("POWER")
-                    accent: Colors.accent
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 24
-                    Layout.rightMargin: 24
-
-                    RowLayout {
-                        spacing: 10
-                        Layout.fillWidth: true
-
-                        StatusLed {
-                            ledState: root.powerLed
-                            implicitWidth: 14
-                            implicitHeight: 14
-                        }
-                        Text {
-                            text: root.powerLabel
-                            color: Colors.text
-                            font.family: Type.sans
-                            font.pixelSize: Type.sizeM
-                        }
-                        Item { Layout.fillWidth: true }
-                        Text {
-                            text: qsTr("Polled every 10 s")
-                            color: Colors.textFaint
-                            font.family: Type.sans
-                            font.pixelSize: Type.sizeXs
-                        }
+                    Text {
+                        // Hint that selection alone never touches the
+                        // machine. Double-click is the explicit connect.
+                        text: qsTr("Double-click to open machine details.")
+                        color: Colors.textFaint
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        Layout.topMargin: 4
                     }
                 }
 
@@ -199,22 +156,57 @@ Rectangle {
                         }
 
                         Text {
-                            text: qsTr("Trusted certs")
+                            text: qsTr("Realm")
                             color: Colors.textMuted
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
-                            visible: root.machineTls
+                            visible: root.machineDigestRealm.length > 0
                         }
                         Text {
+                            text: root.machineDigestRealm
+                            color: Colors.textMuted
+                            font.family: Type.mono
+                            font.pixelSize: Type.sizeS
+                            visible: root.machineDigestRealm.length > 0
+                            Layout.fillWidth: true
+                            wrapMode: Text.WrapAnywhere
+                        }
+                    }
+                }
+
+                Section {
+                    title: qsTr("TLS CERTIFICATE PINS")
+                    visible: root.machineTls
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 24
+                    Layout.rightMargin: 24
+
+                    ColumnLayout {
+                        spacing: 6
+                        Layout.fillWidth: true
+
+                        Text {
                             text: root.machineTrustedFingerprints.length === 0
-                                  ? qsTr("None pinned")
-                                  : qsTr("%1 fingerprint(s) pinned")
+                                  ? qsTr("No certificate pinned — the next connection will prompt for trust.")
+                                  : qsTr("%1 fingerprint(s) trusted on first use:")
                                       .arg(root.machineTrustedFingerprints.length)
                             color: Colors.textMuted
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
-                            visible: root.machineTls
+                            wrapMode: Text.WordWrap
                             Layout.fillWidth: true
+                        }
+                        Repeater {
+                            model: root.machineTrustedFingerprints
+                            delegate: Text {
+                                required property string modelData
+                                text: modelData
+                                color: Colors.textFaint
+                                font.family: Type.mono
+                                font.pixelSize: Type.sizeXs
+                                elide: Text.ElideMiddle
+                                Layout.fillWidth: true
+                            }
                         }
                     }
                 }
@@ -231,25 +223,12 @@ Rectangle {
                         Layout.fillWidth: true
 
                         Button {
-                            text: qsTr("Open SOL")
+                            text: qsTr("Open details…")
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
+                            highlighted: true
                             enabled: root.machineHost.length > 0 && root.machineUser.length > 0
-                            onClicked: solLoader.launch()
-                        }
-                        Button {
-                            text: qsTr("Mount ISO")
-                            font.family: Type.sans
-                            font.pixelSize: Type.sizeS
-                            enabled: root.machineHost.length > 0 && root.machineUser.length > 0
-                            onClicked: iderLoader.launch()
-                        }
-                        Button {
-                            text: qsTr("Open KVM")
-                            font.family: Type.sans
-                            font.pixelSize: Type.sizeS
-                            enabled: root.machineHost.length > 0 && root.machineUser.length > 0
-                            onClicked: kvmLoader.launch()
+                            onClicked: root.openDetailsRequested(root.row)
                         }
                         FlatButton {
                             text: qsTr("Edit settings…")
@@ -324,86 +303,6 @@ Rectangle {
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: 12
             onClicked: root.addRequested()
-        }
-    }
-
-    Loader {
-        id: solLoader
-        active: false
-        asynchronous: true
-        property int targetRow: -1
-        function launch() { targetRow = root.row; active = false; active = true; }
-        function openWindow() {
-            if (item === null) return;
-            item.targetHost = root.machineHost;
-            item.user = root.machineUser;
-            item.password = root.machinePass;
-            item.tls = root.machineTls;
-            item.trustedFingerprints = root.machineTrustedFingerprints;
-            item.label = root.machineName.length > 0 ? root.machineName : root.machineHost;
-            item.visible = true;
-            item.start();
-        }
-        onStatusChanged: if (status === Loader.Ready) openWindow()
-        sourceComponent: SolWindow {
-            onClosing: solLoader.active = false
-            onTrustedFingerprintPersistRequested: function(fp) {
-                if (solLoader.targetRow >= 0)
-                    ComputerModel.addTrustedFingerprint(solLoader.targetRow, fp);
-            }
-        }
-    }
-
-    Loader {
-        id: iderLoader
-        active: false
-        asynchronous: true
-        property int targetRow: -1
-        function launch() { targetRow = root.row; active = false; active = true; }
-        function openWindow() {
-            if (item === null) return;
-            item.targetHost = root.machineHost;
-            item.user = root.machineUser;
-            item.password = root.machinePass;
-            item.tls = root.machineTls;
-            item.trustedFingerprints = root.machineTrustedFingerprints;
-            item.label = root.machineName.length > 0 ? root.machineName : root.machineHost;
-            item.visible = true;
-        }
-        onStatusChanged: if (status === Loader.Ready) openWindow()
-        sourceComponent: IderWindow {
-            onClosing: iderLoader.active = false
-            onTrustedFingerprintPersistRequested: function(fp) {
-                if (iderLoader.targetRow >= 0)
-                    ComputerModel.addTrustedFingerprint(iderLoader.targetRow, fp);
-            }
-        }
-    }
-
-    Loader {
-        id: kvmLoader
-        active: false
-        asynchronous: true
-        property int targetRow: -1
-        function launch() { targetRow = root.row; active = false; active = true; }
-        function openWindow() {
-            if (item === null) return;
-            item.targetHost = root.machineHost;
-            item.user = root.machineUser;
-            item.password = root.machinePass;
-            item.tls = root.machineTls;
-            item.trustedFingerprints = root.machineTrustedFingerprints;
-            item.label = root.machineName.length > 0 ? root.machineName : root.machineHost;
-            item.visible = true;
-            item.start();
-        }
-        onStatusChanged: if (status === Loader.Ready) openWindow()
-        sourceComponent: KvmWindow {
-            onClosing: kvmLoader.active = false
-            onTrustedFingerprintPersistRequested: function(fp) {
-                if (kvmLoader.targetRow >= 0)
-                    ComputerModel.addTrustedFingerprint(kvmLoader.targetRow, fp);
-            }
         }
     }
 }

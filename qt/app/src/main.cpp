@@ -8,6 +8,7 @@
 #include "kvmcontroller.h"
 #include "kvmframebuffer.h"
 #include "kvmviewer.h"
+#include "machinedetailscontroller.h"
 #include "migrationcontroller.h"
 #include "solcontroller.h"
 #include "terminal/terminalscreen.h"
@@ -101,6 +102,8 @@ int main(int argc, char *argv[])
     qmlRegisterType<qumesh::app::IderController>("QuMesh", 1, 0, "IderController");
     qmlRegisterType<qumesh::app::KvmController>("QuMesh", 1, 0, "KvmController");
     qmlRegisterType<qumesh::app::KvmViewer>("QuMesh", 1, 0, "KvmViewer");
+    qmlRegisterType<qumesh::app::MachineDetailsController>(
+        "QuMesh", 1, 0, "MachineDetailsController");
     qmlRegisterUncreatableType<qumesh::terminal::TerminalScreen>(
         "QuMesh", 1, 0, "TerminalScreen",
         QStringLiteral("Owned by SolController"));

@@ -35,6 +35,17 @@ namespace qumesh::wsman {
                                           const QString &to,
                                           const QString &messageId);
 
+/// Build a WS-Eventing/Transfer custom-action `Invoke` envelope. The body
+/// contains the named method element with the provided parameter
+/// key/value pairs. The full action URI is `<resourceUri>/<methodName>`,
+/// which is what AMT expects.
+[[nodiscard]] QByteArray buildInvokeEnvelope(const QString &resourceUri,
+                                              const QString &methodName,
+                                              const QHash<QString, QString> &selectors,
+                                              const QHash<QString, QString> &parameters,
+                                              const QString &to,
+                                              const QString &messageId);
+
 /// Parsed SOAP response. `bodyXml` is the raw `<s:Body>` content (without
 /// the outer Envelope/Header); `fault` is non-empty if a `s:Fault` was
 /// detected at the SOAP layer.

@@ -66,6 +66,7 @@ ApplicationWindow {
                 SplitView.minimumWidth: 280
                 onCurrentRowChanged: root.selectedRow = listView.currentRow
                 onAddRequested: statusPane.addRequested()
+                onOpenDetailsRequested: function(row) { detailsLoader.launchFor(row) }
             }
 
             ComputerStatusPane {
@@ -74,6 +75,7 @@ ApplicationWindow {
                 SplitView.fillWidth: true
                 SplitView.minimumWidth: 420
                 onAddRequested: addDialog.openFor(-1)
+                onOpenDetailsRequested: function(row) { detailsLoader.launchFor(row) }
             }
         }
 
@@ -104,6 +106,43 @@ ApplicationWindow {
 
         sourceComponent: CertificatesWindow {
             onClosing: certificatesLoader.active = false
+        }
+    }
+
+    Loader {
+        id: detailsLoader
+        active: false
+        asynchronous: true
+        property int targetRow: -1
+
+        function launchFor(row) {
+            targetRow = row;
+            active = false;
+            active = true;
+        }
+
+        function applyMachine() {
+            if (item === null || targetRow < 0) return;
+            const idx = ComputerModel.index(targetRow, 0);
+            item.targetRow = targetRow;
+            item.machineName = ComputerModel.data(idx, ComputerModel.NameRole) || "";
+            item.machineHost = ComputerModel.data(idx, ComputerModel.HostRole) || "";
+            item.machineUser = ComputerModel.data(idx, ComputerModel.UserRole) || "";
+            item.machinePass = ComputerModel.data(idx, ComputerModel.PassRole) || "";
+            item.machineTls  = ComputerModel.data(idx, ComputerModel.TlsRole)  || false;
+            item.machineTrustedFingerprints =
+                ComputerModel.data(idx, ComputerModel.TrustedFingerprintsRole) || [];
+            item.visible = true;
+        }
+
+        onStatusChanged: if (status === Loader.Ready) applyMachine()
+
+        sourceComponent: MachineDetailsWindow {
+            onClosing: detailsLoader.active = false
+            onTrustedFingerprintPersistRequested: function(fp) {
+                if (detailsLoader.targetRow >= 0)
+                    ComputerModel.addTrustedFingerprint(detailsLoader.targetRow, fp);
+            }
         }
     }
 }
