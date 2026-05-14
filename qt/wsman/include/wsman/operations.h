@@ -111,6 +111,12 @@ void getTimeSettings(WsmanClient *client,
 void requestPowerStateChange(WsmanClient *client, int powerState,
                              std::function<void(InvokeResult)> callback);
 
+/// Invoke `IPS_PowerManagementService.RequestOSPowerStateChange`. AMT
+/// 10+ only — older firmware doesn't expose this service. `osPowerState`
+/// uses 2 = wake from sleep / OS resume, 3 = put OS to sleep.
+void requestOsPowerStateChange(WsmanClient *client, int osPowerState,
+                               std::function<void(InvokeResult)> callback);
+
 /// Inputs to a single power-to-X action. Set by the controller from
 /// the per-action presets and consumed by `performBootAction` below.
 struct BootActionParams

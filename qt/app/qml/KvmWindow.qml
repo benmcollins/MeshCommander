@@ -141,6 +141,19 @@ AppWindow {
                     MenuItem { text: qsTr("Power off (soft)");   onTriggered: powerController.powerOffSoft() }
                     MenuItem { text: qsTr("Power off (hard)");   onTriggered: powerController.powerOffHard() }
                     MenuSeparator {}
+                    MenuItem {
+                        visible: powerController.amtVersionMajor >= 10
+                        height: visible ? implicitHeight : 0
+                        text: qsTr("Wake OS")
+                        onTriggered: powerController.osWakeFromSleep()
+                    }
+                    MenuItem {
+                        visible: powerController.amtVersionMajor >= 10
+                        height: visible ? implicitHeight : 0
+                        text: qsTr("Sleep OS")
+                        onTriggered: powerController.osPutToSleep()
+                    }
+                    MenuSeparator { visible: powerController.amtVersionMajor >= 10; height: visible ? implicitHeight : 0 }
                     MenuItem { text: qsTr("Power on to BIOS Setup"); onTriggered: powerController.bootToBios(false) }
                     MenuItem { text: qsTr("Reset to BIOS Setup");    onTriggered: powerController.bootToBios(true) }
                     MenuSeparator {}

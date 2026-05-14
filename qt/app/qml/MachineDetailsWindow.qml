@@ -462,6 +462,20 @@ AppWindow {
                             }
 
                             Button {
+                                // OS-level wake/sleep is AMT 10+ only.
+                                visible: controller.amtVersionMajor >= 10
+                                text: qsTr("Wake OS")
+                                enabled: !controller.busy
+                                onClicked: controller.osWakeFromSleep()
+                            }
+                            Button {
+                                visible: controller.amtVersionMajor >= 10
+                                text: qsTr("Sleep OS")
+                                enabled: !controller.busy
+                                onClicked: controller.osPutToSleep()
+                            }
+
+                            Button {
                                 text: qsTr("Boot to… ▾")
                                 enabled: !controller.busy
                                 onClicked: bootMenu.popup()
