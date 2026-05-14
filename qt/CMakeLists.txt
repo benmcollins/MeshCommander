@@ -20,7 +20,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-find_package(Qt6 6.6 REQUIRED COMPONENTS Core Gui Quick QuickControls2 Network Test LinguistTools)
+find_package(Qt6 6.6 REQUIRED COMPONENTS Core Gui Quick QuickControls2 Network Svg Test LinguistTools)
 find_package(Qt6 6.6 OPTIONAL_COMPONENTS HttpServer)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 

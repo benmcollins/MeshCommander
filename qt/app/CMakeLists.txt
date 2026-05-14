@@ -59,6 +59,7 @@ qt_add_qml_module(qumesh
         qml/KvmWindow.qml
         qml/CertificatesWindow.qml
         qml/CertTrustDialog.qml
+        qml/AppMark.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
@@ -78,6 +79,7 @@ target_link_libraries(qumesh PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Network
+    Qt6::Svg
     qumesh_migrate
     qumesh_redir
     qumesh_terminal
@@ -87,6 +89,54 @@ target_link_libraries(qumesh PRIVATE
     qumesh_wsman
 )
 
+# --- Branding -------------------------------------------------------
+#
+# The master SVGs in qt/branding/svg/ use `currentColor` so they pick
+# up the surrounding text colour in CSS — but Qt's SVG renderer
+# resolves it to black. Bake two variants at configure time (slate
+# for the light theme, near-white for the dark) and let `AppMark.qml`
+# pick the right one based on the active palette.
+
+set(_branding_dir "${CMAKE_SOURCE_DIR}/branding")
+set(_baked_icons_dir "${CMAKE_CURRENT_BINARY_DIR}/icons")
+file(MAKE_DIRECTORY "${_baked_icons_dir}")
+
+foreach(_svg_name IN ITEMS qumesh-mark qumesh-mark-small)
+    file(READ "${_branding_dir}/svg/${_svg_name}.svg" _svg_src)
+    string(REPLACE "currentColor" "#1e293b" _svg_slate "${_svg_src}")
+    string(REPLACE "currentColor" "#E6EDF3" _svg_light "${_svg_src}")
+    file(WRITE "${_baked_icons_dir}/${_svg_name}-slate.svg" "${_svg_slate}")
+    file(WRITE "${_baked_icons_dir}/${_svg_name}-light.svg" "${_svg_light}")
+endforeach()
+
+qt_add_resources(qumesh "qumesh_icons"
+    PREFIX "/icons"
+    BASE   "${_baked_icons_dir}"
+    FILES
+        "${_baked_icons_dir}/qumesh-mark-slate.svg"
+        "${_baked_icons_dir}/qumesh-mark-light.svg"
+        "${_baked_icons_dir}/qumesh-mark-small-slate.svg"
+        "${_baked_icons_dir}/qumesh-mark-small-light.svg"
+)
+
+# Platform app icons (already pre-built under branding/build/).
+if(APPLE)
+    set(_macos_icns "${_branding_dir}/build/qumesh.icns")
+    set_source_files_properties("${_macos_icns}"
+        PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+    target_sources(qumesh PRIVATE "${_macos_icns}")
+endif()
+
+if(WIN32)
+    set(_win_ico "${_branding_dir}/build/qumesh.ico")
+    file(TO_NATIVE_PATH "${_win_ico}" _win_ico_native)
+    string(REPLACE "\\" "\\\\" _win_ico_native "${_win_ico_native}")
+    set(_win_rc "${CMAKE_CURRENT_BINARY_DIR}/qumesh.rc")
+    file(WRITE "${_win_rc}"
+        "IDI_ICON1 ICON \"${_win_ico_native}\"\n")
+    target_sources(qumesh PRIVATE "${_win_rc}")
+endif()
+
 set_target_properties(qumesh PROPERTIES
     OUTPUT_NAME "QuMesh"
     MACOSX_BUNDLE TRUE
@@ -94,6 +144,7 @@ set_target_properties(qumesh PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.insynergy.QuMesh"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_ICON_FILE "qumesh.icns"
     WIN32_EXECUTABLE TRUE
 )
 
