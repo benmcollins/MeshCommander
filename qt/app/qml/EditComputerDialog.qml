@@ -19,7 +19,6 @@ Dialog {
 
     property string draftName
     property string draftHost
-    property int draftPort: 16992
     property string draftUser
     property string draftPass
     property bool draftTls: false
@@ -31,14 +30,12 @@ Dialog {
             const idx = ComputerModel.index(targetRow, 0);
             draftName = ComputerModel.data(idx, ComputerModel.NameRole) || "";
             draftHost = ComputerModel.data(idx, ComputerModel.HostRole) || "";
-            draftPort = ComputerModel.data(idx, ComputerModel.PortRole) || 16992;
             draftUser = ComputerModel.data(idx, ComputerModel.UserRole) || "";
             draftPass = ComputerModel.data(idx, ComputerModel.PassRole) || "";
             draftTls  = ComputerModel.data(idx, ComputerModel.TlsRole) || false;
         } else {
             draftName = "";
             draftHost = "";
-            draftPort = 16992;
             draftUser = "";
             draftPass = "";
             draftTls = false;
@@ -113,23 +110,6 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftHost = text
-                }
-
-                Text {
-                    text: qsTr("Port")
-                    color: Colors.textMuted
-                    font.family: Type.sans
-                    font.pixelSize: Type.sizeS
-                    Layout.preferredWidth: 80
-                }
-                SpinBox {
-                    from: 1
-                    to: 65535
-                    value: root.draftPort
-                    editable: true
-                    font.family: Type.mono
-                    font.pixelSize: Type.sizeM
-                    onValueModified: root.draftPort = value
                 }
 
                 Text {
@@ -226,14 +206,13 @@ Dialog {
                     let savedRow = root.row;
                     if (root.isNew) {
                         savedRow = ComputerModel.addComputer(root.draftName,
-                            root.draftHost, root.draftPort,
+                            root.draftHost,
                             root.draftUser, root.draftPass, root.draftTls);
                         if (savedRow < 0) return;
                     } else if (root.row >= 0) {
                         const idx = ComputerModel.index(root.row, 0);
                         ComputerModel.setData(idx, root.draftName, ComputerModel.NameRole);
                         ComputerModel.setData(idx, root.draftHost, ComputerModel.HostRole);
-                        ComputerModel.setData(idx, root.draftPort, ComputerModel.PortRole);
                         ComputerModel.setData(idx, root.draftUser, ComputerModel.UserRole);
                         ComputerModel.setData(idx, root.draftPass, ComputerModel.PassRole);
                         ComputerModel.setData(idx, root.draftTls, ComputerModel.TlsRole);

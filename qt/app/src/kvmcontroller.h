@@ -25,7 +25,6 @@ class KvmController : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QString host READ host WRITE setHost NOTIFY hostChanged)
-    Q_PROPERTY(quint16 port READ port WRITE setPort NOTIFY portChanged)
     Q_PROPERTY(QString user READ user WRITE setUser NOTIFY userChanged)
     Q_PROPERTY(QString password READ password WRITE setPassword NOTIFY passwordChanged)
     Q_PROPERTY(State state READ state NOTIFY stateChanged)
@@ -59,7 +58,6 @@ public:
     ~KvmController() override;
 
     [[nodiscard]] QString host() const { return m_host; }
-    [[nodiscard]] quint16 port() const { return m_port; }
     [[nodiscard]] QString user() const { return m_user; }
     [[nodiscard]] QString password() const { return m_password; }
     [[nodiscard]] State state() const { return m_state; }
@@ -77,7 +75,9 @@ public:
     [[nodiscard]] QString pendingCertNotAfter() const { return m_pendingCert.notAfter; }
 
     void setHost(const QString &v);
-    void setPort(quint16 v);
+    /// Override the redirection port. Tests only — production derives
+    /// 16994 / 16995 from `tls`. Not exposed to QML.
+    void setPortForTest(quint16 v) { m_portOverride = v; }
     void setUser(const QString &v);
     void setPassword(const QString &v);
     void setTls(bool v);
@@ -96,7 +96,6 @@ public:
 
 signals:
     void hostChanged();
-    void portChanged();
     void userChanged();
     void passwordChanged();
     void stateChanged();
@@ -114,7 +113,7 @@ private:
     void teardown();
 
     QString m_host;
-    quint16 m_port = 16994;
+    quint16 m_portOverride = 0;
     QString m_user;
     QString m_password;
     State m_state = State::Disconnected;

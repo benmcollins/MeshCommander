@@ -30,13 +30,6 @@ void PowerStatePoller::setHost(const QString &host)
     rebuildEndpoint();
 }
 
-void PowerStatePoller::setPort(quint16 port)
-{
-    if (port == m_port) return;
-    m_port = port;
-    rebuildEndpoint();
-}
-
 void PowerStatePoller::setTls(bool tls)
 {
     if (tls == m_tls) return;
@@ -81,10 +74,13 @@ void PowerStatePoller::stop()
 void PowerStatePoller::rebuildEndpoint()
 {
     if (m_host.isEmpty()) return;
+    // AMT WSMAN is always 16992 (plain) or 16993 (TLS); the per-machine
+    // port setting was retired because there's no scenario where AMT
+    // ships these on anything else.
     QUrl url;
     url.setScheme(m_tls ? QStringLiteral("https") : QStringLiteral("http"));
     url.setHost(m_host);
-    url.setPort(m_port);
+    url.setPort(m_tls ? 16993 : 16992);
     url.setPath(QStringLiteral("/wsman"));
     m_client->setEndpoint(url);
 }

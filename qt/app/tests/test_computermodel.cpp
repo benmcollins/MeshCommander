@@ -34,7 +34,7 @@ void TestComputerModel::contractWithItemModelTester()
     ComputerModel model;
     model.setStore(&store);
     QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
-    QCOMPARE(model.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"), 16992,
+    QCOMPARE(model.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"),
                                 QStringLiteral("u"), QStringLiteral("p"), false),
              0);
     QCOMPARE(model.rowCount(), 1);
@@ -49,7 +49,6 @@ void TestComputerModel::rolesNameMatchEnum()
     QCOMPARE(roles.value(ComputerModel::IdRole), QByteArrayLiteral("id"));
     QCOMPARE(roles.value(ComputerModel::NameRole), QByteArrayLiteral("name"));
     QCOMPARE(roles.value(ComputerModel::HostRole), QByteArrayLiteral("host"));
-    QCOMPARE(roles.value(ComputerModel::PortRole), QByteArrayLiteral("port"));
     QCOMPARE(roles.value(ComputerModel::UserRole), QByteArrayLiteral("user"));
     QCOMPARE(roles.value(ComputerModel::PassRole), QByteArrayLiteral("pass"));
     QCOMPARE(roles.value(ComputerModel::TlsRole), QByteArrayLiteral("tls"));
@@ -68,7 +67,7 @@ void TestComputerModel::addEmitsRowsInsertedAndPersists()
     QSignalSpy endSpy(&model, &QAbstractListModel::rowsInserted);
 
     const int row = model.addComputer(QStringLiteral("amt-01"), QStringLiteral("10.0.0.5"),
-                                      16992, QStringLiteral("admin"),
+                                      QStringLiteral("admin"),
                                       QStringLiteral("secret"), true);
     QCOMPARE(row, 0);
     QCOMPARE(beginSpy.size(), 1);
@@ -88,7 +87,7 @@ void TestComputerModel::removeEmitsRowsRemovedAndPersists()
     ConfigStore store(tmp.path());
     ComputerModel model;
     model.setStore(&store);
-    model.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"), 16992,
+    model.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"),
                       QStringLiteral("u"), QStringLiteral("p"), false);
 
     QSignalSpy removedSpy(&model, &QAbstractListModel::rowsRemoved);
@@ -107,7 +106,7 @@ void TestComputerModel::setDataEmitsDataChanged()
     ConfigStore store(tmp.path());
     ComputerModel model;
     model.setStore(&store);
-    model.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"), 16992,
+    model.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"),
                       QStringLiteral("u"), QStringLiteral("p"), false);
 
     QSignalSpy changedSpy(&model, &QAbstractListModel::dataChanged);
@@ -136,7 +135,7 @@ void TestComputerModel::persistFailureRollsBack()
     ComputerModel model;
     model.setStore(&store);
 
-    QCOMPARE(model.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"), 16992,
+    QCOMPARE(model.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"),
                                 QStringLiteral("u"), QStringLiteral("p"), false),
              -1);
     QCOMPARE(model.rowCount(), 0);
@@ -151,7 +150,7 @@ void TestComputerModel::reloadFromStoreOnSetStore()
         ConfigStore store(tmp.path());
         ComputerModel m;
         m.setStore(&store);
-        m.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"), 16992,
+        m.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"),
                        QStringLiteral("u"), QStringLiteral("p"), false);
     }
     ConfigStore store(tmp.path());

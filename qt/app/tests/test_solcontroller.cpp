@@ -184,7 +184,7 @@ void TestSolController::connectAndReceiveData()
 
     SolController c;
     c.setHost(QStringLiteral("127.0.0.1"));
-    c.setPort(server.port());
+    c.setPortForTest(server.port());
     c.setUser(QStringLiteral("admin"));
     c.setPassword(QStringLiteral("p"));
     c.open();

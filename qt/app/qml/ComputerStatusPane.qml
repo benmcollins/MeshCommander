@@ -23,7 +23,6 @@ Rectangle {
 
     readonly property string machineName: hasSelection ? (_read(ComputerModel.NameRole) || "") : ""
     readonly property string machineHost: hasSelection ? (_read(ComputerModel.HostRole) || "") : ""
-    readonly property int machinePort: hasSelection ? (_read(ComputerModel.PortRole) || 16992) : 16992
     readonly property string machineUser: hasSelection ? (_read(ComputerModel.UserRole) || "") : ""
     readonly property string machinePass: hasSelection ? (_read(ComputerModel.PassRole) || "") : ""
     readonly property bool machineTls: hasSelection ? (_read(ComputerModel.TlsRole) || false) : false
@@ -102,7 +101,7 @@ Rectangle {
                         Layout.fillWidth: true
                     }
                     Text {
-                        text: "%1:%2".arg(root.machineHost).arg(root.machinePort)
+                        text: root.machineHost
                         color: Colors.textMuted
                         font.family: Type.mono
                         font.pixelSize: Type.sizeS
@@ -154,15 +153,13 @@ Rectangle {
                         Layout.fillWidth: true
 
                         Text {
-                            text: qsTr("Endpoint")
+                            text: qsTr("Host")
                             color: Colors.textMuted
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
                         }
                         Text {
-                            text: "%1://%2:%3"
-                                .arg(root.machineTls ? "https" : "http")
-                                .arg(root.machineHost).arg(root.machinePort)
+                            text: root.machineHost
                             color: Colors.text
                             font.family: Type.mono
                             font.pixelSize: Type.sizeS
@@ -177,7 +174,7 @@ Rectangle {
                         }
                         Text {
                             text: root.machineTls
-                                  ? qsTr("Enabled (port 16995 for redirection)")
+                                  ? qsTr("Enabled")
                                   : qsTr("Disabled (plaintext)")
                             color: root.machineTls ? Colors.on : Colors.textMuted
                             font.family: Type.sans
@@ -339,7 +336,6 @@ Rectangle {
         function openWindow() {
             if (item === null) return;
             item.targetHost = root.machineHost;
-            item.targetPort = root.machineTls ? 16995 : 16994;
             item.user = root.machineUser;
             item.password = root.machinePass;
             item.tls = root.machineTls;
@@ -367,7 +363,6 @@ Rectangle {
         function openWindow() {
             if (item === null) return;
             item.targetHost = root.machineHost;
-            item.targetPort = root.machineTls ? 16995 : 16994;
             item.user = root.machineUser;
             item.password = root.machinePass;
             item.tls = root.machineTls;
@@ -394,7 +389,6 @@ Rectangle {
         function openWindow() {
             if (item === null) return;
             item.targetHost = root.machineHost;
-            item.targetPort = root.machineTls ? 16995 : 16994;
             item.user = root.machineUser;
             item.password = root.machinePass;
             item.tls = root.machineTls;
