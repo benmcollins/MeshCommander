@@ -627,6 +627,39 @@ void MachineDetailsController::bootToPlatformErase(bool reset, int flagsIn,
         });
 }
 
+void MachineDetailsController::bootToHttpsBootUrl(bool reset, const QString &url)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    if (!url.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive)) {
+        setLastError(QStringLiteral("HTTPS Boot: URL must start with https://"));
+        return;
+    }
+    setLastError({});
+    const int code = reset ? 10 : 2;
+    emit powerChangeRequested(code);
+    incInflight();
+    qumesh::wsman::BootActionParams p;
+    p.targetPowerState = code;
+    p.amtBootSource = QStringLiteral("Force OCR UEFI HTTPS Boot");
+    p.httpsBootUrl = true;
+    p.httpsBootUrlStr = url;
+    qumesh::wsman::performBootAction(m_client, p,
+        [this, code](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(QStringLiteral("Boot to HTTPS URL: %1").arg(r.error));
+                emit powerChangeCompleted(code, false, r.error);
+                return;
+            }
+            emit powerChangeCompleted(code, true, QString());
+            refreshPower();
+        });
+}
+
 void MachineDetailsController::changePowerState(int code)
 {
     rebuildEndpoint();

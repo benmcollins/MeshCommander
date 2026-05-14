@@ -183,6 +183,12 @@ struct BootActionParams
     bool platformErase = false;
     QString platformEraseTlvBase64;
     int platformEraseTlvCount = 0;
+
+    /// HTTPS Boot via URL (legacy bootSourceIndex == 7). When set, the
+    /// chain selects "Force OCR UEFI HTTPS Boot" and the Put writes
+    /// a base64 TLV blob built from `httpsBootUrl` plus the count.
+    bool httpsBootUrl = false;
+    QString httpsBootUrlStr;
 };
 
 /// Build the `UefiBootParametersArray` TLV blob for a Platform Erase
@@ -197,6 +203,14 @@ struct BootActionParams
 [[nodiscard]] QByteArray buildPlatformEraseTlv(quint32 flags, const QString &psid,
                                                 const QString &ssdPassword,
                                                 int *tlvCount);
+
+/// Build the `UefiBootParametersArray` TLV blob for an OCR HTTPS-Boot
+/// request against a pre-hosted ISO at `url`. Same TLV framing as the
+/// platform-erase builder. Three entries:
+///   * type 1  — URL bytes
+///   * type 20 — 1-byte "sync root CA" flag (1)
+///   * type 30 — 2-byte HTTPS request timeout (0 = firmware default)
+[[nodiscard]] QByteArray buildHttpsBootUrlTlv(const QString &url, int *tlvCount);
 
 struct EventLogEntry
 {

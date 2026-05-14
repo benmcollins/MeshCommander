@@ -292,6 +292,23 @@ QByteArray u32LeBytes(quint32 v)
 
 } // namespace
 
+QByteArray buildHttpsBootUrlTlv(const QString &url, int *tlvCount)
+{
+    constexpr quint16 kVendorIntel = 0x8086;
+    int count = 0;
+    QByteArray blob;
+    appendTlv(blob, kVendorIntel, /*type*/ 1, url.toUtf8());
+    ++count;
+    QByteArray syncOne; syncOne.append(char(0x01));
+    appendTlv(blob, kVendorIntel, /*type*/ 20, syncOne);
+    ++count;
+    QByteArray timeoutZero(2, '\0');
+    appendTlv(blob, kVendorIntel, /*type*/ 30, timeoutZero);
+    ++count;
+    if (tlvCount != nullptr) *tlvCount = count;
+    return blob;
+}
+
 QByteArray buildPlatformEraseTlv(quint32 flags, const QString &psid,
                                   const QString &ssdPassword, int *tlvCount)
 {
@@ -593,6 +610,18 @@ void runPerformBootAction(WsmanClient *client, const BootActionParams &p,
             }
         } else {
             props.insert(QStringLiteral("PlatformErase"), QStringLiteral("false"));
+        }
+        if (p.httpsBootUrl && !p.httpsBootUrlStr.isEmpty()) {
+            int httpsTlvCount = 0;
+            const QByteArray httpsTlv =
+                buildHttpsBootUrlTlv(p.httpsBootUrlStr, &httpsTlvCount);
+            props.insert(QStringLiteral("UefiBootParametersArray"),
+                         QString::fromLatin1(httpsTlv.toBase64()));
+            props.insert(QStringLiteral("UefiBootNumberOfParams"),
+                         QString::number(httpsTlvCount));
+            // BootMediaIndex must be 0 for OCR — anything else makes
+            // AMT prefer the legacy CD-ROM order over the URL boot.
+            props.insert(QStringLiteral("BootMediaIndex"), QStringLiteral("0"));
         }
 
         QHash<QString, QString> selectors;
