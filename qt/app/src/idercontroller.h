@@ -14,6 +14,8 @@ namespace qumesh::ider {
 class IderSession;
 }
 
+namespace qumesh::ssh { class SshSession; }
+
 namespace qumesh::app {
 
 /// QML-facing controller for one IDE-R session. Owns the redirection
@@ -95,6 +97,7 @@ public:
     void setStartOption(StartOption v);
     void setTls(bool v);
     void setTrustedFingerprints(QStringList v);
+    void setSshSession(qumesh::ssh::SshSession *session) { m_sshSession = session; }
 
     Q_INVOKABLE void open();
     Q_INVOKABLE void close();
@@ -143,6 +146,7 @@ private:
 
     QPointer<qumesh::redir::RedirectionClient> m_client;
     QPointer<qumesh::ider::IderSession> m_session;
+    qumesh::ssh::SshSession *m_sshSession = nullptr;
 };
 
 } // namespace qumesh::app

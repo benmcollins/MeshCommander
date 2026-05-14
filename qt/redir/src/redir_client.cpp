@@ -42,6 +42,17 @@ void RedirectionClient::setCredentials(QString user, QString pass)
 
 void RedirectionClient::connectTo(const QString &host, quint16 port)
 {
+    if (m_tunnelOpener) {
+        const qintptr fd = m_tunnelOpener(host, port);
+        if (fd < 0) {
+            fail(QStringLiteral("SSH tunnel could not be opened to %1:%2")
+                     .arg(host).arg(port));
+            return;
+        }
+        connectViaSocketDescriptor(fd);
+        return;
+    }
+
     m_inbox.clear();
     m_lastError.clear();
     m_startStatus = StartSessionStatus::UnknownError;
@@ -82,6 +93,60 @@ void RedirectionClient::connectTo(const QString &host, quint16 port)
         m_sslSocket->connectToHostEncrypted(host, port);
     } else {
         m_socket->connectToHost(host, port);
+    }
+}
+
+void RedirectionClient::connectViaSocketDescriptor(qintptr fd)
+{
+    m_inbox.clear();
+    m_lastError.clear();
+    m_startStatus = StartSessionStatus::UnknownError;
+    m_oemData.clear();
+    m_pendingPeerCert = {};
+    m_awaitingTrust = false;
+
+    if (m_socket != nullptr) {
+        m_socket->disconnect(this);
+        m_socket->deleteLater();
+        m_socket = nullptr;
+        m_sslSocket = nullptr;
+    }
+
+    if (m_tls) {
+        m_sslSocket = new QSslSocket(this);
+        QSslConfiguration cfg = m_sslSocket->sslConfiguration();
+        cfg.setPeerVerifyMode(QSslSocket::VerifyNone);
+        m_sslSocket->setSslConfiguration(cfg);
+        m_socket = m_sslSocket;
+        connect(m_sslSocket, &QSslSocket::encrypted, this,
+                &RedirectionClient::handleEncrypted);
+    } else {
+        QTcpSocket *tcp = new QTcpSocket(this);
+        m_socket = tcp;
+    }
+    connect(m_socket, &QAbstractSocket::readyRead, this,
+            &RedirectionClient::handleReadyRead);
+    connect(m_socket, &QAbstractSocket::errorOccurred, this,
+            &RedirectionClient::handleSocketError);
+
+    if (!m_socket->setSocketDescriptor(fd, QAbstractSocket::ConnectedState)) {
+        fail(QStringLiteral("setSocketDescriptor failed: %1").arg(m_socket->errorString()));
+        return;
+    }
+
+    setState(State::Connecting);
+    if (m_tls) {
+        // SSH tunnel terminates at the AMT side, but TLS still
+        // terminates locally; do the handshake on the adopted fd.
+        m_sslSocket->startClientEncryption();
+    } else {
+        // For plain TCP-over-SSH-tunnel we never saw a `connected`
+        // signal because the socket was already in `ConnectedState`
+        // before we attached the slot. Drive `handleConnected` manually
+        // on the next event loop tick so the selector + state machine
+        // start.
+        QMetaObject::invokeMethod(this, &RedirectionClient::handleConnected,
+                                   Qt::QueuedConnection);
     }
 }
 

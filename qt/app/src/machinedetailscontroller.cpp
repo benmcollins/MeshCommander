@@ -6,6 +6,10 @@
 #include "wsman/operations.h"
 #include "wsman/wsman_client.h"
 
+#include "ssh/ssh_session.h"
+#include "ssh/ssh_tunnel.h"
+#include "ssh_tunnel_opener.h"
+
 namespace qumesh::app {
 
 MachineDetailsController::MachineDetailsController(QObject *parent)
@@ -18,6 +22,104 @@ MachineDetailsController::MachineDetailsController(QObject *parent)
 }
 
 MachineDetailsController::~MachineDetailsController() = default;
+
+bool MachineDetailsController::sshTunnelActive() const
+{
+    return m_sshEnabled
+        && m_sshSession != nullptr
+        && m_sshSession->state() == qumesh::ssh::SshSession::Connected;
+}
+
+void MachineDetailsController::setSshConfig(const QVariantMap &cfg)
+{
+    const bool enabled = cfg.value(QStringLiteral("enabled")).toBool();
+    if (!enabled) {
+        m_sshEnabled = false;
+        if (m_sshSession != nullptr) {
+            m_sshSession->close();
+            m_sshSession->deleteLater();
+            m_sshSession = nullptr;
+        }
+        m_client->setSocketFactory({});
+        m_sshTunnelStatus.clear();
+        emit sshTunnelStateChanged();
+        return;
+    }
+
+    m_sshEnabled = true;
+    if (m_sshSession == nullptr) {
+        m_sshSession = new qumesh::ssh::SshSession(this);
+        connect(m_sshSession, &qumesh::ssh::SshSession::stateChanged, this,
+                [this](qumesh::ssh::SshSession::State s) {
+                    switch (s) {
+                    case qumesh::ssh::SshSession::Connecting:
+                        m_sshTunnelStatus = QStringLiteral("Connecting…"); break;
+                    case qumesh::ssh::SshSession::Authenticating:
+                        m_sshTunnelStatus = QStringLiteral("Authenticating…"); break;
+                    case qumesh::ssh::SshSession::NeedsHostKeyTrust:
+                        m_sshTunnelStatus = QStringLiteral("Awaiting host-key trust"); break;
+                    case qumesh::ssh::SshSession::Connected:
+                        m_sshTunnelStatus = QStringLiteral("via SSH"); break;
+                    case qumesh::ssh::SshSession::Failed:
+                        m_sshTunnelStatus = QStringLiteral("SSH failed: %1")
+                                                .arg(m_sshSession->lastError()); break;
+                    case qumesh::ssh::SshSession::Disconnected:
+                        m_sshTunnelStatus.clear(); break;
+                    }
+                    emit sshTunnelStateChanged();
+                });
+        connect(m_sshSession, &qumesh::ssh::SshSession::hostKeyPromptRequired, this,
+                [this](const QString &fp, const QString &keyType) {
+                    m_pendingSshHostKey = fp;
+                    m_pendingSshHostKeyType = keyType;
+                    m_awaitingSshHostKeyTrust = true;
+                    // Auto-pin on first connect (TOFU). The
+                    // fingerprint is then persisted into ComputerModel
+                    // via `trustedSshHostKeyAdded`, so subsequent
+                    // connects must match — protecting against
+                    // post-first-connect MITM / key rotation.
+                    emit sshHostKeyPromptRequired(fp, keyType);
+                    trustPendingSshHostKey(true);
+                });
+    }
+
+    qumesh::ssh::SshSession::Params p;
+    p.host = cfg.value(QStringLiteral("host")).toString();
+    p.port = static_cast<quint16>(cfg.value(QStringLiteral("port"), 22).toInt());
+    p.user = cfg.value(QStringLiteral("user")).toString();
+    p.authMode = cfg.value(QStringLiteral("authMode")).toInt()
+                     == int(qumesh::ssh::SshSession::AuthKey)
+                     ? qumesh::ssh::SshSession::AuthKey
+                     : qumesh::ssh::SshSession::AuthPassword;
+    p.password = cfg.value(QStringLiteral("password")).toString();
+    p.privateKeyPath = cfg.value(QStringLiteral("keyPath")).toString();
+    p.privateKeyPassphrase = cfg.value(QStringLiteral("keyPassphrase")).toString();
+    const QVariantList fps = cfg.value(QStringLiteral("trustedHostKeyFingerprints"))
+                                  .toList();
+    for (const QVariant &v : fps) p.trustedHostKeyFingerprints.append(v.toString());
+
+    // Each WSMAN request opens a fresh SshTunnel; the channel is short-
+    // lived (the WsmanClient closes the socket once the response body
+    // is consumed). Channel-create cost over an already-authenticated
+    // SSH session is ~1 ms, well below user-perceptible.
+    m_client->setSocketFactory(makeSshSocketFactory(
+        m_sshSession, m_host,
+        static_cast<quint16>(m_tls ? 16993 : 16992)));
+
+    m_sshSession->open(p);
+    emit sshTunnelStateChanged();
+}
+
+void MachineDetailsController::trustPendingSshHostKey(bool persist)
+{
+    if (!m_awaitingSshHostKeyTrust) return;
+    const QString fp = m_pendingSshHostKey;
+    m_pendingSshHostKey.clear();
+    m_pendingSshHostKeyType.clear();
+    m_awaitingSshHostKeyTrust = false;
+    if (m_sshSession != nullptr) m_sshSession->trustPendingHostKey();
+    if (persist) emit trustedSshHostKeyAdded(fp);
+}
 
 void MachineDetailsController::setHost(const QString &v)
 {

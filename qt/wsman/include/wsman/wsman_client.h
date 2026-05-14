@@ -5,15 +5,12 @@
 
 #include <QByteArray>
 #include <QList>
-#include <QNetworkReply>
 #include <QObject>
-#include <QSslError>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
 
-class QNetworkAccessManager;
-class QAuthenticator;
+#include <functional>
 
 namespace qumesh::wsman {
 
@@ -31,87 +28,112 @@ struct PeerCertSummary
     QByteArray der;
 };
 
+class WsmanClient;
+
+/// One in-flight WSMAN request. Mirrors the pieces of `QNetworkReply`
+/// the existing `operations.cpp` helpers consume: a `finished()` signal
+/// plus accessors for the response body and any error.
+class WsmanReply : public QObject
+{
+    Q_OBJECT
+public:
+    explicit WsmanReply(QObject *parent = nullptr);
+    ~WsmanReply() override;
+
+    [[nodiscard]] QByteArray readAll() const;
+    [[nodiscard]] bool hasError() const;
+    [[nodiscard]] QString errorString() const;
+    [[nodiscard]] int httpStatus() const;
+
+    void abort();
+
+    // Exposed for use by `wsman_client.cpp` internal helpers; not part
+    // of the API. `Private` is defined only in the .cpp file.
+    struct Private;
+    std::unique_ptr<Private> d;
+
+signals:
+    void finished();
+};
+
 /// Transport layer for WSMAN/SOAP requests against an AMT device.
 ///
-/// Owns a `QNetworkAccessManager` and feeds it credentials when the server
-/// challenges (HTTP Digest, which AMT uses by default on the WSMAN port).
-/// Each call to `sendEnvelope` returns the raw `QNetworkReply`; callers
-/// connect to `QNetworkReply::finished` and read the body themselves.
-/// The client deliberately does not consume the body itself so it never
-/// races with the caller's handler.
+/// Hand-rolled HTTP/1.1 client on top of QSslSocket (used as a plain
+/// QTcpSocket for `http://` endpoints and with `startClientEncryption()`
+/// for `https://`). The previous QNetworkAccessManager-based implementation
+/// would not let us inject a pre-connected socket; this rewrite is what
+/// makes routing every byte through an SSH tunnel possible.
+///
+/// Authentication: HTTP Digest (RFC 7616 with MD5; AMT firmware does not
+/// require MD5-sess or SHA-256 yet). Request flow:
+///   1. POST without Authorization
+///   2. On 401 with `WWW-Authenticate: Digest`, parse the challenge,
+///      compute the response, and re-POST with `Authorization: Digest`
+///   3. Read the response body via `Content-Length` or chunked transfer
 class WsmanClient : public QObject
 {
     Q_OBJECT
 public:
     explicit WsmanClient(QObject *parent = nullptr);
+    ~WsmanClient() override;
 
     /// Set the device's WSMAN endpoint URL, e.g.
-    /// `http://10.0.0.5:16992/wsman` or `https://.../wsman`.
+    /// `http://10.0.0.5:16992/wsman` or `https://.../wsman`. The host and
+    /// port are used as the `Host` header and the TLS SNI; the path is
+    /// used as the request URI.
     void setEndpoint(QUrl endpoint);
 
-    /// Credentials to satisfy HTTP Digest challenges. Empty user disables
-    /// auto-authentication (requests will fail with 401 if the server
-    /// requires authentication).
+    /// Credentials for HTTP Digest.
     void setCredentials(QString user, QString pass);
 
     /// Pinned peer-cert fingerprints. When TLS is in use, the SHA-256
     /// fingerprint of the presented cert is compared against this list
     /// during the handshake; on match, hostname-mismatch / chain-of-trust
-    /// SSL errors are silenced (AMT firmware ships self-signed certs
-    /// whose CN never matches port-forwarded localhost endpoints). When
-    /// empty, only Qt's default validation applies.
+    /// SSL errors are silenced (AMT firmware ships self-signed certs).
     void setTrustedFingerprints(QStringList fingerprints);
 
     /// Per-request transfer timeout. Default 30 s. Pass 0 to disable.
     void setTransferTimeoutMs(int ms);
 
-    [[nodiscard]] QUrl endpoint() const { return m_endpoint; }
+    /// Optional socket factory. When set, each new request takes its
+    /// transport socket from this callback (one fresh fd per reply)
+    /// instead of opening a fresh TCP connection to the endpoint's
+    /// host/port. Used by the per-machine SSH tunnel: the factory
+    /// opens a new `SshTunnel` for each WSMAN call and returns the
+    /// Qt-side fd of its socketpair. Returning -1 fails the request.
+    using SocketFactory = std::function<qintptr()>;
+    void setSocketFactory(SocketFactory factory);
 
-    /// POST the given SOAP envelope to the endpoint. The returned reply is
+    [[nodiscard]] QUrl endpoint() const;
+
+    /// POST the given SOAP envelope to the endpoint. Returned reply is
     /// owned by Qt; the caller should connect to `finished` and call
-    /// `deleteLater()` when done. The optional `soapAction` is set as the
-    /// `SOAPAction` HTTP header.
-    QNetworkReply *sendEnvelope(const QByteArray &envelope,
-                                const char *soapAction = nullptr);
+    /// `deleteLater()` when done.
+    WsmanReply *sendEnvelope(const QByteArray &envelope,
+                              const char *soapAction = nullptr);
 
-    /// The cert captured during the most recent `trustPromptRequired`
-    /// emission. Valid until the controller calls `trustPendingPeerCert()`
-    /// or clears it.
-    [[nodiscard]] PeerCertSummary pendingPeerCert() const { return m_pendingPeerCert; }
-    [[nodiscard]] bool awaitingTrust() const { return m_awaitingTrust; }
+    [[nodiscard]] PeerCertSummary pendingPeerCert() const;
+    [[nodiscard]] bool awaitingTrust() const;
 
-    /// Promote the pending cert's fingerprint into the trusted list and
-    /// clear the pending state. Caller is responsible for retrying the
-    /// failed request — this method does not re-send anything.
+    /// Promote the pending cert's fingerprint into the trusted list.
     void trustPendingPeerCert();
 
+    // Exposed for use by `wsman_client.cpp` internal helpers; not part
+    // of the API.
+    struct Private;
+    std::unique_ptr<Private> d;
+
 signals:
-    /// Emitted from inside the `sslErrors` handler when the presented
-    /// peer cert is not in `m_trustedFingerprints`. The reply that
-    /// triggered the prompt will fail with `SslHandshakeFailedError`;
-    /// the controller is expected to surface a trust prompt to the user
-    /// and call `trustPendingPeerCert()` if accepted.
+    /// Emitted from inside the TLS handshake when the presented peer
+    /// cert is not in `m_trustedFingerprints`. The triggering reply
+    /// fails with an SSL handshake error; the controller surfaces a
+    /// trust prompt and calls `trustPendingPeerCert()` on accept, then
+    /// retries the request.
     void trustPromptRequired(const qumesh::wsman::PeerCertSummary &summary);
 
     /// Emitted when the cert presented during the handshake matches a
-    /// pinned fingerprint — the reverse of the prompt case. Lets the
-    /// controller surface a small "verified" badge on subsequent
-    /// successful reconnects.
+    /// pinned fingerprint.
     void peerCertVerifiedByPin(const QString &fingerprint);
-
-private:
-    void handleAuthenticationRequired(QNetworkReply *reply, QAuthenticator *auth);
-
-    void handleSslErrors(QNetworkReply *reply, const QList<QSslError> &errors);
-
-    QNetworkAccessManager *m_nam = nullptr;
-    QUrl m_endpoint;
-    QString m_user;
-    QString m_pass;
-    QStringList m_trustedFingerprints;
-    PeerCertSummary m_pendingPeerCert;
-    bool m_awaitingTrust = false;
-    int m_transferTimeoutMs = 30000;
 };
 
 } // namespace qumesh::wsman

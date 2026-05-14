@@ -5,6 +5,10 @@ qt_add_executable(qumesh
     src/main.cpp
     src/configstore.cpp
     src/configstore.h
+    src/secret_codec.cpp
+    src/secret_codec.h
+    src/ssh_tunnel_opener.cpp
+    src/ssh_tunnel_opener.h
     src/computermodel.cpp
     src/computermodel.h
     src/machinedetailscontroller.cpp
@@ -101,6 +105,7 @@ target_link_libraries(qumesh PRIVATE
     qumesh_kvm
     qumesh_certs
     qumesh_wsman
+    qumesh_ssh
 )
 
 # --- Branding -------------------------------------------------------

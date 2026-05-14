@@ -24,6 +24,13 @@ find_package(Qt6 6.6 REQUIRED COMPONENTS Core Gui Quick QuickControls2 Network S
 find_package(Qt6 6.6 OPTIONAL_COMPONENTS HttpServer)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
+# libssh — required for the per-machine SSH tunnel feature. On macOS we
+# pick up Homebrew's keg; on Windows the release workflow vendors a
+# prebuilt set of headers + libssh.dll alongside Qt/OpenSSL. Pinning
+# REQUIRED here keeps the dep visible: if a developer is missing libssh
+# the configure step fails loudly with the install command.
+find_package(libssh CONFIG REQUIRED)
+
 qt_standard_project_setup(REQUIRES 6.6)
 qt_policy(SET QTP0004 NEW)
 
@@ -44,6 +51,7 @@ include(CTest)
 
 add_subdirectory(terminal)
 add_subdirectory(certs)
+add_subdirectory(ssh)
 add_subdirectory(app)
 add_subdirectory(migrate)
 add_subdirectory(wsman)

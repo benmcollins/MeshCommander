@@ -4,6 +4,7 @@
 #include "computermodel.h"
 
 #include "configstore.h"
+#include "secret_codec.h"
 
 #include <QUuid>
 
@@ -13,15 +14,26 @@ QJsonObject Computer::toJson() const
 {
     QJsonArray fps;
     for (const QString &fp : trustedFingerprints) fps.push_back(fp);
+    QJsonArray sshFps;
+    for (const QString &fp : sshTrustedHostKeyFingerprints) sshFps.push_back(fp);
     return QJsonObject{
         {QStringLiteral("id"), id},
         {QStringLiteral("name"), name},
         {QStringLiteral("host"), host},
         {QStringLiteral("user"), user},
-        {QStringLiteral("pass"), pass},
+        {QStringLiteral("pass"), app::SecretCodec::encode(pass)},
         {QStringLiteral("tls"), tls},
         {QStringLiteral("digestrealm"), digestRealm},
         {QStringLiteral("trustedFingerprints"), fps},
+        {QStringLiteral("sshTunnelEnabled"), sshTunnelEnabled},
+        {QStringLiteral("sshHost"), sshHost},
+        {QStringLiteral("sshPort"), int(sshPort)},
+        {QStringLiteral("sshUser"), sshUser},
+        {QStringLiteral("sshAuthMode"), int(sshAuthMode)},
+        {QStringLiteral("sshPassword"), app::SecretCodec::encode(sshPassword)},
+        {QStringLiteral("sshKeyPath"), sshKeyPath},
+        {QStringLiteral("sshKeyPassphrase"), app::SecretCodec::encode(sshKeyPassphrase)},
+        {QStringLiteral("sshTrustedHostKeyFingerprints"), sshFps},
     };
 }
 
@@ -33,12 +45,28 @@ Computer Computer::fromJson(const QJsonObject &obj)
     c.name = obj.value(QStringLiteral("name")).toString();
     c.host = obj.value(QStringLiteral("host")).toString();
     c.user = obj.value(QStringLiteral("user")).toString();
-    c.pass = obj.value(QStringLiteral("pass")).toString();
+    c.pass = app::SecretCodec::decode(obj.value(QStringLiteral("pass")).toString());
     c.tls = obj.value(QStringLiteral("tls")).toBool();
     c.digestRealm = obj.value(QStringLiteral("digestrealm")).toString();
     const QJsonArray fps = obj.value(QStringLiteral("trustedFingerprints")).toArray();
     for (const QJsonValue &v : fps) {
         if (v.isString()) c.trustedFingerprints.push_back(v.toString());
+    }
+    c.sshTunnelEnabled = obj.value(QStringLiteral("sshTunnelEnabled")).toBool();
+    c.sshHost = obj.value(QStringLiteral("sshHost")).toString();
+    const int port = obj.value(QStringLiteral("sshPort")).toInt(22);
+    c.sshPort = static_cast<quint16>(port > 0 && port <= 65535 ? port : 22);
+    c.sshUser = obj.value(QStringLiteral("sshUser")).toString();
+    const int mode = obj.value(QStringLiteral("sshAuthMode")).toInt(0);
+    c.sshAuthMode = (mode == int(SshAuthKey)) ? SshAuthKey : SshAuthPassword;
+    c.sshPassword = app::SecretCodec::decode(
+        obj.value(QStringLiteral("sshPassword")).toString());
+    c.sshKeyPath = obj.value(QStringLiteral("sshKeyPath")).toString();
+    c.sshKeyPassphrase = app::SecretCodec::decode(
+        obj.value(QStringLiteral("sshKeyPassphrase")).toString());
+    const QJsonArray sshFps = obj.value(QStringLiteral("sshTrustedHostKeyFingerprints")).toArray();
+    for (const QJsonValue &v : sshFps) {
+        if (v.isString()) c.sshTrustedHostKeyFingerprints.push_back(v.toString());
     }
     return c;
 }
@@ -172,6 +200,65 @@ bool ComputerModel::addTrustedFingerprint(int row, const QString &fingerprint)
     }
     const QModelIndex idx = index(row, 0);
     emit dataChanged(idx, idx, {TrustedFingerprintsRole});
+    return true;
+}
+
+QVariantMap ComputerModel::sshConfigFor(int row) const
+{
+    if (row < 0 || row >= m_computers.size()) return {};
+    const Computer &c = m_computers[row];
+    QVariantList fps;
+    for (const QString &fp : c.sshTrustedHostKeyFingerprints) fps.push_back(fp);
+    return {
+        {QStringLiteral("enabled"), c.sshTunnelEnabled},
+        {QStringLiteral("host"), c.sshHost},
+        {QStringLiteral("port"), int(c.sshPort)},
+        {QStringLiteral("user"), c.sshUser},
+        {QStringLiteral("authMode"), int(c.sshAuthMode)},
+        {QStringLiteral("password"), c.sshPassword},
+        {QStringLiteral("keyPath"), c.sshKeyPath},
+        {QStringLiteral("keyPassphrase"), c.sshKeyPassphrase},
+        {QStringLiteral("trustedHostKeyFingerprints"), fps},
+    };
+}
+
+bool ComputerModel::setSshConfig(int row, const QVariantMap &cfg)
+{
+    if (row < 0 || row >= m_computers.size()) return false;
+    Computer &c = m_computers[row];
+    Computer snapshot = c;
+    c.sshTunnelEnabled = cfg.value(QStringLiteral("enabled")).toBool();
+    c.sshHost = cfg.value(QStringLiteral("host")).toString();
+    const int port = cfg.value(QStringLiteral("port"), 22).toInt();
+    c.sshPort = static_cast<quint16>(port > 0 && port <= 65535 ? port : 22);
+    c.sshUser = cfg.value(QStringLiteral("user")).toString();
+    const int mode = cfg.value(QStringLiteral("authMode")).toInt();
+    c.sshAuthMode = (mode == int(Computer::SshAuthKey))
+                       ? Computer::SshAuthKey
+                       : Computer::SshAuthPassword;
+    c.sshPassword = cfg.value(QStringLiteral("password")).toString();
+    c.sshKeyPath = cfg.value(QStringLiteral("keyPath")).toString();
+    c.sshKeyPassphrase = cfg.value(QStringLiteral("keyPassphrase")).toString();
+    // trustedHostKeyFingerprints is intentionally not overwritten by
+    // the edit pane — it grows only via addTrustedSshHostKey (TOFU).
+    if (!persist()) {
+        c = snapshot;
+        return false;
+    }
+    return true;
+}
+
+bool ComputerModel::addTrustedSshHostKey(int row, const QString &fingerprint)
+{
+    if (row < 0 || row >= m_computers.size()) return false;
+    Computer &c = m_computers[row];
+    if (c.sshTrustedHostKeyFingerprints.contains(fingerprint)) return true;
+    Computer snapshot = c;
+    c.sshTrustedHostKeyFingerprints.append(fingerprint);
+    if (!persist()) {
+        c = snapshot;
+        return false;
+    }
     return true;
 }
 

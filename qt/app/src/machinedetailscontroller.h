@@ -12,6 +12,10 @@
 
 #include "wsman/wsman_client.h" // for PeerCertSummary
 
+#include <QVariantMap>
+
+namespace qumesh::ssh { class SshSession; }
+
 namespace qumesh::app {
 
 /// QML-creatable controller for one Machine Details window. Owns a
@@ -30,6 +34,13 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(bool tls READ tls WRITE setTls NOTIFY tlsChanged)
     Q_PROPERTY(QStringList trustedFingerprints READ trustedFingerprints
                    WRITE setTrustedFingerprints NOTIFY trustedFingerprintsChanged)
+
+    // SSH tunnel — `true` when the saved machine config asks us to route
+    // every byte through an SSH session. The actual SSH parameters are
+    // pushed via `setSshConfig`; this bool is the cheap "is tunneling
+    // active?" indicator the QML side binds to for the title-bar badge.
+    Q_PROPERTY(bool sshTunnelActive READ sshTunnelActive NOTIFY sshTunnelStateChanged)
+    Q_PROPERTY(QString sshTunnelStatus READ sshTunnelStatus NOTIFY sshTunnelStateChanged)
 
     // Trust-on-first-use surface for CertTrustDialog. Mirrors the shape
     // SolController / KvmController already expose so the same dialog
@@ -111,6 +122,16 @@ public:
     void setPassword(const QString &v);
     void setTls(bool v);
     void setTrustedFingerprints(QStringList v);
+
+    [[nodiscard]] bool sshTunnelActive() const;
+    [[nodiscard]] QString sshTunnelStatus() const { return m_sshTunnelStatus; }
+
+    /// Apply the per-machine SSH config (as produced by
+    /// `ComputerModel::sshConfigFor`). When `cfg["enabled"]` is true the
+    /// controller routes every WSMAN request through the SSH tunnel by
+    /// installing a socket factory on the underlying `WsmanClient`.
+    /// Passing an empty / disabled map tears any existing tunnel down.
+    Q_INVOKABLE void setSshConfig(const QVariantMap &cfg);
 
     [[nodiscard]] bool awaitingTrust() const { return m_awaitingTrust; }
     [[nodiscard]] QString pendingCertSubject() const { return m_pendingCert.subject; }
@@ -228,6 +249,11 @@ public:
     /// so the QML layer can write the fingerprint back to ComputerModel.
     Q_INVOKABLE void trustPendingCert(bool persist);
 
+    /// Called by the SSH host-key trust prompt. On accept, the
+    /// pending SSH key fingerprint is promoted into the trusted list
+    /// and the in-flight SSH session resumes its auth step.
+    Q_INVOKABLE void trustPendingSshHostKey(bool persist);
+
     /// Called by CertTrustDialog when the user declines the prompt.
     /// Clears pending trust state and asks the QML window to close.
     Q_INVOKABLE void close();
@@ -263,6 +289,18 @@ signals:
     /// Emitted from `close()`; the QML window listens and dismisses
     /// itself.
     void closeRequested();
+    /// SSH-tunnel state change. The QML title bar listens and lights
+    /// the "via SSH" badge / error state.
+    void sshTunnelStateChanged();
+    /// Emitted when the operator must confirm an SSH host key on first
+    /// connect (or after a key rotation). The QML side surfaces a
+    /// confirm-and-pin dialog and either calls `trustPendingSshHostKey`
+    /// or `close()`.
+    void sshHostKeyPromptRequired(const QString &fingerprint,
+                                   const QString &keyType);
+    /// Emitted after `trustPendingSshHostKey()` — the QML layer
+    /// persists the fingerprint into ComputerModel.
+    void trustedSshHostKeyAdded(const QString &fingerprint);
 
 private:
     void rebuildEndpoint();
@@ -285,6 +323,18 @@ private:
     QStringList m_trustedFingerprints;
     qumesh::wsman::PeerCertSummary m_pendingCert;
     bool m_awaitingTrust = false;
+
+    // SSH tunnel state. The session is lazily created when
+    // `setSshConfig(...enabled=true)` is called; per-request
+    // SshTunnels are then handed to the WsmanClient via its socket
+    // factory. The status string is what the QML title-bar badge
+    // displays ("connecting…", "via SSH", error text).
+    qumesh::ssh::SshSession *m_sshSession = nullptr;
+    bool m_sshEnabled = false;
+    QString m_sshTunnelStatus;
+    QString m_pendingSshHostKey;
+    QString m_pendingSshHostKeyType;
+    bool m_awaitingSshHostKeyTrust = false;
 
     int m_powerState = 0;
     int m_inflight = 0;

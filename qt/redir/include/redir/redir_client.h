@@ -12,6 +12,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
 class QAbstractSocket;
 class QSslSocket;
 class QTcpSocket;
@@ -99,6 +101,22 @@ public:
     [[nodiscard]] PeerCertSummary pendingPeerCert() const { return m_pendingPeerCert; }
 
     void connectTo(const QString &host, quint16 port);
+
+    /// Adopt an already-connected socket descriptor (e.g. one end of a
+    /// `socketpair()` that the SSH tunnel feeds). Bypasses the TCP
+    /// `connectToHost` step; if `setTls(true)` was called the client
+    /// performs the TLS handshake on the adopted fd. Ownership of `fd`
+    /// transfers to the client.
+    void connectViaSocketDescriptor(qintptr fd);
+
+    /// Install a callback that returns a pre-connected socket fd given
+    /// the AMT host + port. When set, `connectTo()` calls the opener
+    /// instead of opening a TCP connection — same code path as
+    /// `connectViaSocketDescriptor`. Used by the SSH-tunnel controllers
+    /// so they can keep the existing `connectTo(host, port)` API.
+    using TunnelOpener = std::function<qintptr(const QString &host, quint16 port)>;
+    void setTunnelOpener(TunnelOpener opener) { m_tunnelOpener = std::move(opener); }
+
     void disconnectFromHost();
 
     /// Called by the consumer (the controller / QML layer) after the
@@ -154,6 +172,7 @@ private:
 
     Protocol m_protocol = Protocol::Sol;
     bool m_tls = false;
+    TunnelOpener m_tunnelOpener;
     QString m_user;
     QString m_pass;
     QString m_authUri = QStringLiteral("/RedirectionService");
