@@ -142,11 +142,21 @@ private:
                     m_authStage = 1;
                 } else {
                     m_socket->write(frame14(0, 4, {}));
-                    // Auth complete — switch to KVM-script mode and
-                    // push the RFB ProtocolVersion banner.
-                    m_kvmActive = true;
-                    m_socket->write(QByteArrayLiteral("RFB 003.008\n"));
+                    // Auth complete — now expect the client's 8-byte
+                    // 0x40 KVM-start frame, then reply with 0x41 + the
+                    // RFB banner. Without that round-trip the firmware
+                    // never pushes RFB bytes.
+                    m_awaitingKvmStart = true;
                 }
+            } else if (m_awaitingKvmStart && tag == 0x40) {
+                if (m_inbox.size() < 8) return;
+                m_inbox.remove(0, 8);
+                m_awaitingKvmStart = false;
+                m_kvmActive = true;
+                QByteArray reply(8, '\0');
+                reply[0] = 0x41;
+                m_socket->write(reply);
+                m_socket->write(QByteArrayLiteral("RFB 003.008\n"));
             } else {
                 received.append(m_inbox);
                 m_inbox.clear();
@@ -157,6 +167,7 @@ private:
 
     QByteArray m_inbox;
     int m_authStage = 0;
+    bool m_awaitingKvmStart = false;
     bool m_kvmActive = false;
     QTcpServer *m_server;
 };
