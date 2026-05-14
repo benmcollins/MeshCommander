@@ -35,6 +35,39 @@ namespace qumesh::wsman {
                                           const QString &to,
                                           const QString &messageId);
 
+/// Build a WS-Enumeration `Enumerate` envelope. AMT replies with an
+/// `<EnumerationContext>` token the caller feeds back to
+/// `buildPullEnvelope` (potentially many times) to walk the collection.
+[[nodiscard]] QByteArray buildEnumerateEnvelope(const QString &resourceUri,
+                                                 const QString &to,
+                                                 const QString &messageId);
+
+/// Build a WS-Enumeration `Pull` envelope. `enumerationContext` is the
+/// token returned by the previous Enumerate / Pull response;
+/// `maxElements` caps the page size (64 is a sensible default for AMT).
+[[nodiscard]] QByteArray buildPullEnvelope(const QString &resourceUri,
+                                            const QString &enumerationContext,
+                                            int maxElements,
+                                            const QString &to,
+                                            const QString &messageId);
+
+/// Output of `parsePullResponse`. `items` is a list of inner-XML
+/// strings — one per row returned by AMT — that the caller can feed
+/// back through `findScalar` to pluck out specific field values.
+struct PullChunk
+{
+    QList<QByteArray> items;
+    QString enumerationContext;
+    bool endOfSequence = false;
+};
+
+/// Extract the `EnumerationContext` from an `EnumerateResponse` body.
+[[nodiscard]] QString parseEnumerateContext(const QByteArray &bodyXml);
+
+/// Pull out the per-item XML bodies, the (possibly empty) continuation
+/// context, and the EndOfSequence flag from a `PullResponse` body.
+[[nodiscard]] PullChunk parsePullResponse(const QByteArray &bodyXml);
+
 /// Build a WS-Eventing/Transfer custom-action `Invoke` envelope. The body
 /// contains the named method element with the provided parameter
 /// key/value pairs. The full action URI is `<resourceUri>/<methodName>`,

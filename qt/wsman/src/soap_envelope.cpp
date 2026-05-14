@@ -6,6 +6,8 @@
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
+#include <memory>
+
 namespace qumesh::wsman {
 
 namespace {
@@ -22,6 +24,11 @@ constexpr char kAnonymousReplyTo[] =
 
 constexpr char kActionGet[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get";
 constexpr char kActionPut[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Put";
+constexpr char kActionEnumerate[] =
+    "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Enumerate";
+constexpr char kActionPull[] =
+    "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Pull";
+constexpr char kNsEnumeration[] = "http://schemas.xmlsoap.org/ws/2004/09/enumeration";
 
 constexpr char kBootConfigResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_BootConfigSetting";
@@ -210,6 +217,156 @@ QByteArray buildChangeBootOrderEnvelope(const QString &amtBootSourceInstanceId,
     w.writeEndElement(); // Body
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
+    return out;
+}
+
+QByteArray buildEnumerateEnvelope(const QString &resourceUri, const QString &to,
+                                   const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap), QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman), QStringLiteral("w"));
+    w.writeNamespace(QString::fromLatin1(kNsEnumeration), QStringLiteral("e"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+    writeAddressingHeader(w, QString::fromLatin1(kActionEnumerate), to, messageId,
+                            resourceUri, {});
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeEmptyElement(QString::fromLatin1(kNsEnumeration),
+                         QStringLiteral("Enumerate"));
+    w.writeEndElement(); // Body
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+QByteArray buildPullEnvelope(const QString &resourceUri,
+                              const QString &enumerationContext, int maxElements,
+                              const QString &to, const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap), QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman), QStringLiteral("w"));
+    w.writeNamespace(QString::fromLatin1(kNsEnumeration), QStringLiteral("e"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+    writeAddressingHeader(w, QString::fromLatin1(kActionPull), to, messageId,
+                            resourceUri, {});
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(QString::fromLatin1(kNsEnumeration), QStringLiteral("Pull"));
+    w.writeTextElement(QString::fromLatin1(kNsEnumeration),
+                        QStringLiteral("EnumerationContext"), enumerationContext);
+    w.writeTextElement(QString::fromLatin1(kNsEnumeration),
+                        QStringLiteral("MaxElements"),
+                        QString::number(maxElements > 0 ? maxElements : 64));
+    w.writeEndElement(); // Pull
+    w.writeEndElement(); // Body
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+QString parseEnumerateContext(const QByteArray &bodyXml)
+{
+    return findScalar(bodyXml, QStringLiteral("EnumerationContext"));
+}
+
+PullChunk parsePullResponse(const QByteArray &bodyXml)
+{
+    PullChunk out;
+    QXmlStreamReader r(bodyXml);
+    int depth = 0;
+    int itemsDepth = -1; // Depth at which we're inside <Items>.
+    int itemDepth = -1;  // Depth at which we're capturing a single item.
+
+    QByteArray itemBuf;
+    // QXmlStreamWriter is non-copyable / non-assignable; re-create
+    // through a smart-pointer for each item so we can target a fresh
+    // QByteArray without juggling lifetimes.
+    std::unique_ptr<QXmlStreamWriter> itemWriter;
+
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement()) {
+            ++depth;
+            const QStringView ns = r.namespaceUri();
+            const QStringView ln = r.name();
+
+            if (itemsDepth < 0 && ns == QString::fromLatin1(kNsEnumeration)
+                && ln == QStringLiteral("Items")) {
+                itemsDepth = depth;
+                continue;
+            }
+            if (ns == QString::fromLatin1(kNsEnumeration)
+                && ln == QStringLiteral("EnumerationContext")) {
+                out.enumerationContext = r.readElementText();
+                --depth;
+                continue;
+            }
+            if (ns == QString::fromLatin1(kNsEnumeration)
+                && ln == QStringLiteral("EndOfSequence")) {
+                out.endOfSequence = true;
+                // self-closing; don't expect content
+                continue;
+            }
+            if (itemsDepth > 0 && depth == itemsDepth + 1) {
+                // Starting a new item. Capture under a fresh writer.
+                itemBuf.clear();
+                itemWriter = std::make_unique<QXmlStreamWriter>(&itemBuf);
+                itemWriter->setAutoFormatting(false);
+                itemDepth = depth;
+                itemWriter->writeStartElement(ns.toString(), ln.toString());
+                const auto attrs = r.attributes();
+                for (const auto &a : attrs) {
+                    if (a.namespaceUri().isEmpty()) {
+                        itemWriter->writeAttribute(a.name().toString(), a.value().toString());
+                    } else {
+                        itemWriter->writeAttribute(a.namespaceUri().toString(),
+                                                    a.name().toString(),
+                                                    a.value().toString());
+                    }
+                }
+                continue;
+            }
+            if (itemWriter && itemDepth > 0 && depth > itemDepth) {
+                itemWriter->writeStartElement(ns.toString(), ln.toString());
+                const auto attrs = r.attributes();
+                for (const auto &a : attrs) {
+                    if (a.namespaceUri().isEmpty()) {
+                        itemWriter->writeAttribute(a.name().toString(), a.value().toString());
+                    } else {
+                        itemWriter->writeAttribute(a.namespaceUri().toString(),
+                                                    a.name().toString(),
+                                                    a.value().toString());
+                    }
+                }
+            }
+        } else if (r.isCharacters() && itemWriter && itemDepth > 0 && depth >= itemDepth) {
+            itemWriter->writeCharacters(r.text().toString());
+        } else if (r.isEndElement()) {
+            if (itemWriter && itemDepth > 0 && depth > itemDepth) {
+                itemWriter->writeEndElement();
+            } else if (itemWriter && itemDepth > 0 && depth == itemDepth) {
+                itemWriter->writeEndElement();
+                itemWriter.reset();
+                out.items.append(itemBuf);
+                itemBuf.clear();
+                itemDepth = -1;
+            }
+            if (itemsDepth > 0 && depth == itemsDepth) itemsDepth = -1;
+            --depth;
+        }
+    }
     return out;
 }
 

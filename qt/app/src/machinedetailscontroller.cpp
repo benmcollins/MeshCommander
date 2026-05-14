@@ -304,6 +304,68 @@ void MachineDetailsController::refreshTime()
         });
 }
 
+void MachineDetailsController::refreshEventLog()
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::enumerateEventLog(m_client,
+        [this](qumesh::wsman::EventLogResult r) {
+            decInflight();
+            if (!r.ok) {
+                if (!r.error.isEmpty())
+                    setLastError(QStringLiteral("Event log: %1").arg(r.error));
+                return;
+            }
+            QVariantList list;
+            list.reserve(r.entries.size());
+            for (const auto &e : r.entries) {
+                QVariantMap m;
+                m.insert(QStringLiteral("recordId"),  e.recordId);
+                m.insert(QStringLiteral("timestamp"), e.timestamp);
+                m.insert(QStringLiteral("severity"),  e.severity);
+                m.insert(QStringLiteral("message"),   e.message);
+                list.append(m);
+            }
+            m_eventLog = std::move(list);
+            emit eventLogChanged();
+        });
+}
+
+void MachineDetailsController::refreshUserAccounts()
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::enumerateUserAccounts(m_client,
+        [this](qumesh::wsman::UserAccountsResult r) {
+            decInflight();
+            if (!r.ok) {
+                if (!r.error.isEmpty())
+                    setLastError(QStringLiteral("User accounts: %1").arg(r.error));
+                return;
+            }
+            QVariantList list;
+            list.reserve(r.accounts.size());
+            for (const auto &u : r.accounts) {
+                QVariantMap m;
+                m.insert(QStringLiteral("instanceID"),  u.instanceID);
+                m.insert(QStringLiteral("name"),        u.name);
+                m.insert(QStringLiteral("elementName"), u.elementName);
+                m.insert(QStringLiteral("enabled"),     u.enabled);
+                list.append(m);
+            }
+            m_userAccounts = std::move(list);
+            emit userAccountsChanged();
+        });
+}
+
 void MachineDetailsController::refreshPower()
 {
     rebuildEndpoint();

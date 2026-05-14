@@ -8,6 +8,7 @@
 #include <QString>
 #include <QStringList>
 #include <QUrl>
+#include <QVariantList>
 
 #include "wsman/wsman_client.h" // for PeerCertSummary
 
@@ -80,6 +81,12 @@ class MachineDetailsController : public QObject
     // Time.
     Q_PROPERTY(qint64 amtEpoch READ amtEpoch NOTIFY timeChanged)
 
+    // Event log — list of QVariantMaps for the QML ListView.
+    Q_PROPERTY(QVariantList eventLog READ eventLog NOTIFY eventLogChanged)
+
+    // User accounts — list of QVariantMaps.
+    Q_PROPERTY(QVariantList userAccounts READ userAccounts NOTIFY userAccountsChanged)
+
     // Boot capabilities — which power-to-X menu entries we show.
     Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
@@ -151,6 +158,9 @@ public:
     }
     [[nodiscard]] bool capForceUefiHttpsBoot() const { return m_capForceUefiHttpsBoot; }
 
+    [[nodiscard]] QVariantList eventLog() const { return m_eventLog; }
+    [[nodiscard]] QVariantList userAccounts() const { return m_userAccounts; }
+
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
     /// reacts to whichever property changes.
@@ -160,6 +170,8 @@ public:
     Q_INVOKABLE void refreshNetwork();
     Q_INVOKABLE void refreshTime();
     Q_INVOKABLE void refreshPower();
+    Q_INVOKABLE void refreshEventLog();
+    Q_INVOKABLE void refreshUserAccounts();
 
     /// CIM power-state codes:
     ///   2  = Power On
@@ -231,6 +243,8 @@ signals:
     void awaitingTrustChanged();
     void pendingCertChanged();
     void bootCapabilitiesChanged();
+    void eventLogChanged();
+    void userAccountsChanged();
     void powerChangeRequested(int state);
     void powerChangeCompleted(int state, bool ok, const QString &error);
     /// Emitted after `trustPendingCert(true)` — the QML layer persists
@@ -296,6 +310,9 @@ private:
     bool m_capPlatformErase = false;
     quint32 m_capPlatformEraseMask = 0;
     bool m_capForceUefiHttpsBoot = false;
+
+    QVariantList m_eventLog;
+    QVariantList m_userAccounts;
 };
 
 } // namespace qumesh::app

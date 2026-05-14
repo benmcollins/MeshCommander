@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <QByteArray>
+#include <QList>
 #include <QString>
 #include <functional>
 
@@ -195,6 +197,50 @@ struct BootActionParams
 [[nodiscard]] QByteArray buildPlatformEraseTlv(quint32 flags, const QString &psid,
                                                 const QString &ssdPassword,
                                                 int *tlvCount);
+
+struct EventLogEntry
+{
+    QString recordId;
+    QString timestamp;     ///< AMT-formatted hex string; QML formats it.
+    QString severity;      ///< CIM severity enum as text.
+    QString message;
+};
+
+struct EventLogResult
+{
+    bool ok = false;
+    QString error;
+    QList<EventLogEntry> entries;
+};
+
+struct UserAccount
+{
+    QString instanceID;
+    QString name;
+    QString elementName;
+    bool enabled = true;
+};
+
+struct UserAccountsResult
+{
+    bool ok = false;
+    QString error;
+    QList<UserAccount> accounts;
+};
+
+/// Enumerate `AMT_EventLogEntry` instances via WS-Enumeration. Walks
+/// Pull responses until `EndOfSequence`, parses each item's RecordID /
+/// CreationTimeStamp / Severity / Message, and hands the full list to
+/// the callback.
+void enumerateEventLog(WsmanClient *client,
+                       std::function<void(EventLogResult)> callback);
+
+/// Enumerate `CIM_Account` instances. Returns name, InstanceID,
+/// element name, and enabled state for each. AMT exposes both the
+/// AMT-side accounts and any Active Directory bindings through this
+/// class; the QML side surfaces what AMT reports.
+void enumerateUserAccounts(WsmanClient *client,
+                            std::function<void(UserAccountsResult)> callback);
 
 /// Run the full boot-source-override chain:
 ///   1. ChangeBootOrder(null)   — clear the boot order
