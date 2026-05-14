@@ -27,7 +27,7 @@ For any non-trivial change in this repo, follow these steps in order:
 5. **Implement the plan** on the branch. Tests are required for all new code. CI (`.github/workflows/ci.yml`) builds and tests on macOS + Windows on every PR.
 6. **Open the PR** when the implementation is complete and passes locally.
 7. **Watch CI** until both `macos-latest` and `windows-latest` are green.
-8. **Assign the PR to `benmcollins`** once CI is green. Do not self-merge — the maintainer reviews and merges.
+8. **Merge** once CI is green.
 
 For Qt/QML changes specifically: use the `qt-development-skills` plugin — invoke `qt-development-skills:qt-qml` when authoring QML, run `qt-development-skills:qt-qml-review` and/or `qt-development-skills:qt-cpp-review` before opening a PR.
 
