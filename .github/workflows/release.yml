@@ -122,6 +122,55 @@ jobs:
           WIN_SIGN_THUMBPRINT: ${{ secrets.WIN_SIGN_THUMBPRINT }}
         run: cpack -G ${{ matrix.cpack_generator }} --verbose
 
+      - name: Smoke-launch bundled app (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        working-directory: qt/build
+        env:
+          QUMESH_SMOKE_EXIT_MS: '3000'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          # CPack stages the .app under _CPack_Packages/Darwin/DragNDrop/<name>/
+          STAGED=$(find _CPack_Packages -maxdepth 6 -name 'QuMesh.app' -type d | head -1)
+          if [ -z "$STAGED" ]; then
+            echo "Could not locate staged QuMesh.app" >&2
+            exit 1
+          fi
+          echo "Smoke-launching $STAGED"
+          # Generous 60s timeout in case the runner is slow; the app
+          # itself should exit ~3s after QML loads.
+          /usr/bin/timeout 60 "$STAGED/Contents/MacOS/QuMesh"
+
+      - name: Smoke-launch bundled app (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: qt/build
+        env:
+          QUMESH_SMOKE_EXIT_MS: '3000'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          STAGED=$(find _CPack_Packages -maxdepth 6 -name 'QuMesh.exe' -type f | head -1)
+          if [ -z "$STAGED" ]; then
+            echo "Could not locate staged QuMesh.exe" >&2
+            exit 1
+          fi
+          echo "Smoke-launching $STAGED"
+          # GNU timeout doesn't propagate Windows exit codes well; rely
+          # on the process exiting on its own under QUMESH_SMOKE_EXIT_MS.
+          "$STAGED" &
+          APP_PID=$!
+          # Hard backstop: kill after 60s if it hasn't exited.
+          ( sleep 60 && kill -9 $APP_PID 2>/dev/null ) &
+          GUARD_PID=$!
+          if wait $APP_PID; then
+            kill -9 $GUARD_PID 2>/dev/null
+            exit 0
+          else
+            RC=$?
+            kill -9 $GUARD_PID 2>/dev/null
+            exit $RC
+          fi
+
       - name: Notarize (macOS, when secret provisioned)
         if: runner.os == 'macOS' && env.MAC_NOTARIZE_APPLE_ID != ''
         env:

@@ -20,6 +20,7 @@
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QTimer>
 #include <QtQml/qqml.h>
 
 int main(int argc, char *argv[])
@@ -45,6 +46,19 @@ int main(int argc, char *argv[])
                              QStringLiteral("_"),
                              QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {
         QCoreApplication::installTranslator(&s_qtTranslator);
+    }
+
+    // Release-workflow smoke launch: when QUMESH_SMOKE_EXIT_MS is set
+    // to a positive integer, exit cleanly after that delay. CI uses
+    // this to confirm the bundled .app / .exe starts without missing
+    // QML imports, dynamic libraries, etc.
+    if (const QByteArray smokeMs = qgetenv("QUMESH_SMOKE_EXIT_MS");
+        !smokeMs.isEmpty()) {
+        bool ok = false;
+        const int ms = smokeMs.toInt(&ok);
+        if (ok && ms > 0) {
+            QTimer::singleShot(ms, &app, []() { QCoreApplication::quit(); });
+        }
     }
 
     qumesh::config::ConfigStore configStore;
