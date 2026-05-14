@@ -3,7 +3,10 @@
 
 #include "kvm/kvm_codec.h"
 
+#include <QLoggingCategory>
 #include <zlib.h>
+
+Q_LOGGING_CATEGORY(lcKvmCodec, "qumesh.kvm.codec")
 
 namespace qumesh::kvm {
 
@@ -16,7 +19,12 @@ struct InflateStream::Impl {
         zs.zalloc = Z_NULL;
         zs.zfree  = Z_NULL;
         zs.opaque = Z_NULL;
-        if (inflateInit2(&zs, -15) == Z_OK) initialized = true;
+        // windowBits = 15 means "expect a zlib header (0x78 0x9c …)".
+        // Modern AMT firmware ships the RLE-16 payload as a standard
+        // zlib stream — the legacy NW.js code used -15 (raw deflate)
+        // and its JS ZLIB port silently tolerated the header; native
+        // zlib does not, so we have to declare it.
+        if (inflateInit2(&zs, 15) == Z_OK) initialized = true;
     }
     ~Impl() { if (initialized) inflateEnd(&zs); }
     void reset() { if (initialized) inflateReset(&zs); }
@@ -46,7 +54,13 @@ bool InflateStream::inflate(QByteArrayView in, QByteArray *out)
         const int produced = static_cast<int>(buf.size() - m_impl->zs.avail_out);
         if (produced > 0) out->append(buf.constData(), produced);
         if (rc == Z_STREAM_END) break;
-        if (rc != Z_OK && rc != Z_BUF_ERROR) return false;
+        if (rc != Z_OK && rc != Z_BUF_ERROR) {
+            qCWarning(lcKvmCodec) << "zlib inflate rc=" << rc
+                                  << "msg=" << (m_impl->zs.msg ? m_impl->zs.msg : "(null)")
+                                  << "avail_in=" << m_impl->zs.avail_in
+                                  << "produced=" << produced;
+            return false;
+        }
         // Stop once we've consumed all input AND produced less than a
         // full chunk — the stream has nothing more to emit for now.
         if (m_impl->zs.avail_in == 0 && produced < buf.size()) break;
@@ -296,8 +310,16 @@ DecodeStatus decodeRaw(QByteArrayView payload, const RectHeader &rect,
 }
 
 /// Decode RLE-encoded tile data. Returns true on success and writes
-/// pixel count actually decoded. Supports subencodings 0, 1, 128. The
-/// `data` view is the inner payload AFTER the 1-byte subencoding byte.
+/// the decoded pixels into `argb`. Subencodings handled:
+///   * 0          — RAW pixels (s × RGB565).
+///   * 1          — solid colour (1 × RGB565).
+///   * 2 … 16     — packed palette: subenc palette entries followed by
+///                  packed pixel indices (1 / 2 / 4 bits per pixel).
+///   * 128        — single-colour RLE.
+///   * 130 …      — palette RLE: (subenc-128) palette entries followed
+///                  by index bytes; high bit on the index means the
+///                  next byte(s) extend the run (255 = continue).
+/// `data` is the inner payload AFTER the 1-byte subencoding byte.
 bool decodeRleInner(QByteArrayView data, quint8 subenc,
                      const RectHeader &rect, QVector<quint32> *argb)
 {
@@ -333,6 +355,30 @@ bool decodeRleInner(QByteArrayView data, quint8 subenc,
         return true;
     }
 
+    if (subenc >= 2 && subenc <= 16) {
+        // Packed palette. The palette has `subenc` RGB565 entries; the
+        // following bytes pack 1/2/4-bit indices MSB-first.
+        QVector<quint32> palette(subenc);
+        for (int i = 0; i < subenc; ++i) {
+            quint16 v;
+            if (!pull2(&v)) return false;
+            palette[i] = rgb565ToArgb(v);
+        }
+        int br, bm;
+        if (subenc == 2)       { br = 1; bm = 0x01; } // 1bpp, 8 px/byte
+        else if (subenc <= 4)  { br = 2; bm = 0x03; } // 2bpp, 4 px/byte
+        else                   { br = 4; bm = 0x0F; } // 4bpp, 2 px/byte
+
+        int i = 0;
+        while (i < s && p < end) {
+            const int v = *p++;
+            for (int shift = 8 - br; shift >= 0 && i < s; shift -= br) {
+                (*argb)[i++] = palette[(v >> shift) & bm];
+            }
+        }
+        return i >= s;
+    }
+
     if (subenc == 128) {
         // Single-color RLE: color (2 bytes) + run-length (one or more
         // bytes; 255 means continue).
@@ -356,7 +402,43 @@ bool decodeRleInner(QByteArrayView data, quint8 subenc,
         return true;
     }
 
-    return false; // unsupported subencoding for now
+    if (subenc >= 130) {
+        // Palette RLE. (subenc - 128) palette entries, then a stream of
+        // index bytes. Each index byte's low 7 bits select a palette
+        // entry; bit 7 set means the next byte(s) extend a run (sum of
+        // bytes, with 255 continuing). Index byte without bit 7 set
+        // paints exactly one pixel.
+        const int pSize = subenc - 128;
+        QVector<quint32> palette(pSize);
+        for (int i = 0; i < pSize; ++i) {
+            quint16 v;
+            if (!pull2(&v)) return false;
+            palette[i] = rgb565ToArgb(v);
+        }
+
+        int i = 0;
+        while (i < s && p < end) {
+            const int index = *p++;
+            const int paletteIx = index & 0x7F;
+            if (paletteIx >= pSize) return false;
+            const quint32 c = palette[paletteIx];
+            int run = 1;
+            if (index & 0x80) {
+                for (;;) {
+                    if (p == end) return false;
+                    const int delta = *p++;
+                    run += delta;
+                    if (delta != 0xFF) break;
+                }
+            }
+            if (i + run > s) run = s - i;
+            for (int k = 0; k < run; ++k) (*argb)[i + k] = c;
+            i += run;
+        }
+        return i >= s;
+    }
+
+    return false; // unsupported subencoding (e.g. 17..127, 129)
 }
 
 DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
@@ -392,6 +474,8 @@ DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
         QByteArrayView inner = block.sliced(6, dataLen - 6);
         QVector<quint32> argb;
         if (!decodeRleInner(inner, sub, rect, &argb)) {
+            qCWarning(lcKvmCodec) << "RLE uncompressed: unsupported subencoding"
+                                  << sub << "for" << rect.w << "x" << rect.h;
             return DecodeStatus::UnsupportedSubencoding;
         }
         *out = makeArgbImage(rect.w, rect.h, argb.constData());
@@ -406,13 +490,22 @@ DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
     }
 
     QByteArray inflated;
-    if (!inflate->inflate(block, &inflated) || inflated.isEmpty()) {
+    const bool inflateOk = inflate->inflate(block, &inflated);
+    if (!inflateOk || inflated.isEmpty()) {
+        qCWarning(lcKvmCodec) << "RLE compressed: inflate"
+                              << (inflateOk ? "empty" : "FAILED")
+                              << "for" << rect.w << "x" << rect.h
+                              << "dataLen" << dataLen
+                              << "first32" << QByteArray(block.data(),
+                                                          qMin<int>(32, block.size())).toHex();
         return DecodeStatus::Malformed;
     }
     const quint8 sub = static_cast<unsigned char>(inflated.at(0));
     QByteArrayView inner(inflated.constData() + 1, inflated.size() - 1);
     QVector<quint32> argb;
     if (!decodeRleInner(inner, sub, rect, &argb)) {
+        qCWarning(lcKvmCodec) << "RLE compressed: unsupported subencoding"
+                              << sub << "for" << rect.w << "x" << rect.h;
         return DecodeStatus::UnsupportedSubencoding;
     }
     *out = makeArgbImage(rect.w, rect.h, argb.constData());
