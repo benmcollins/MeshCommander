@@ -37,14 +37,15 @@ QByteArray le16(quint16 v)
     return b;
 }
 
-/// Raw-deflate the bytes in `in` using a fresh stream with the same
-/// window-bits the inflate side uses (-15). Returns the compressed
-/// stream that, when fed to InflateStream::inflate, recovers `in`.
+/// Deflate the bytes in `in` as a zlib stream (with the 2-byte header)
+/// — matches what real AMT firmware ships and what
+/// `InflateStream` (windowBits=15) expects. Name kept for historical
+/// reasons; the helper used to emit raw deflate.
 QByteArray rawDeflate(const QByteArray &in)
 {
     z_stream zs{};
     if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
-                       -15, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+                       15, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
         return {};
     }
     zs.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(in.constData()));
@@ -85,6 +86,8 @@ private slots:
     void decodeRleNeedsMoreOnShortBuffer();
     void decodeRleCompressedWithInflate();
     void inflateStreamPreservesWindowAcrossBlocks();
+    void decodeRlePackedPalette1Bit();
+    void decodeRlePaletteRleWithRuns();
 };
 
 void TestKvmCodec::rgb565ToArgbBoundaries()
@@ -380,7 +383,7 @@ void TestKvmCodec::inflateStreamPreservesWindowAcrossBlocks()
     // block references the first's dictionary. Feed both through one
     // InflateStream and verify both inflate correctly.
     z_stream zs{};
-    QVERIFY(deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8,
+    QVERIFY(deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15, 8,
                           Z_DEFAULT_STRATEGY) == Z_OK);
 
     auto deflateBlock = [&zs](const QByteArray &in) -> QByteArray {
@@ -428,6 +431,106 @@ void TestKvmCodec::inflateStreamPreservesWindowAcrossBlocks()
 
     runRect(d1, 0x07E0);
     runRect(d2, 0x001F);
+}
+
+void TestKvmCodec::decodeRlePackedPalette1Bit()
+{
+    // Subencoding 2: 2-entry palette (RGB565), then 1bpp packed indices.
+    // 4x4 tile → 16 pixels → 2 bytes of packed indices.
+    // Palette: 0=red, 1=blue.
+    // Bit pattern: row0 0000, row1 1111, row2 0101, row3 1010 → bytes
+    //   byte0 = 00001111 = 0x0F (rows 0+1)
+    //   byte1 = 01011010 = 0x5A (rows 2+3)
+    QByteArray inner;
+    inner.append(char(2));                  // subencoding
+    inner.append(le16(0xF800));              // palette[0] = red
+    inner.append(le16(0x001F));              // palette[1] = blue
+    inner.append(char(0x0F));
+    inner.append(char(0x5A));
+
+    // Wrap as an uncompressed-marker block (stored-deflate-style).
+    QByteArray block;
+    block.append(char(0));                                       // marker
+    block.append(le16(static_cast<quint16>(inner.size())));      // LEN
+    block.append(QByteArray(2, '\0'));                           // NLEN ignored
+    block.append(inner);
+
+    QByteArray payload;
+    payload.append(be32(static_cast<quint32>(block.size())));
+    payload.append(block);
+
+    RectHeader rect;
+    rect.w = 4; rect.h = 4;
+    rect.encoding = EncRle;
+
+    InflateStream stream;
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(payload, rect, &dr, &consumed, &stream),
+              DecodeStatus::Ok);
+
+    const QRgb red  = rgb565ToArgb(0xF800);
+    const QRgb blue = rgb565ToArgb(0x001F);
+    // row 0: 0000 → all red
+    for (int x = 0; x < 4; ++x) QCOMPARE(dr.image.pixel(x, 0), red);
+    // row 1: 1111 → all blue
+    for (int x = 0; x < 4; ++x) QCOMPARE(dr.image.pixel(x, 1), blue);
+    // row 2: 0101 → red, blue, red, blue
+    QCOMPARE(dr.image.pixel(0, 2), red);
+    QCOMPARE(dr.image.pixel(1, 2), blue);
+    QCOMPARE(dr.image.pixel(2, 2), red);
+    QCOMPARE(dr.image.pixel(3, 2), blue);
+    // row 3: 1010 → blue, red, blue, red
+    QCOMPARE(dr.image.pixel(0, 3), blue);
+    QCOMPARE(dr.image.pixel(1, 3), red);
+    QCOMPARE(dr.image.pixel(2, 3), blue);
+    QCOMPARE(dr.image.pixel(3, 3), red);
+}
+
+void TestKvmCodec::decodeRlePaletteRleWithRuns()
+{
+    // Subencoding 130: 2-entry palette + RLE'd indices. High bit set on
+    // an index means the next byte(s) extend the run (255 = continue).
+    //
+    // Plan for a 4x4 tile (16 pixels):
+    //   index 0x80 then 0x07 → palette[0] for run of 8 pixels (1 + 7)
+    //   index 0x81 then 0x07 → palette[1] for run of 8 pixels
+    QByteArray inner;
+    inner.append(char(130));                 // subencoding
+    inner.append(le16(0xF800));              // palette[0] = red
+    inner.append(le16(0x001F));              // palette[1] = blue
+    inner.append(char(0x80));                // palette[0], run flag
+    inner.append(char(0x07));                // run +7 → total 8
+    inner.append(char(0x81));                // palette[1], run flag
+    inner.append(char(0x07));                // run +7 → total 8
+
+    QByteArray block;
+    block.append(char(0));
+    block.append(le16(static_cast<quint16>(inner.size())));
+    block.append(QByteArray(2, '\0'));
+    block.append(inner);
+
+    QByteArray payload;
+    payload.append(be32(static_cast<quint32>(block.size())));
+    payload.append(block);
+
+    RectHeader rect;
+    rect.w = 4; rect.h = 4;
+    rect.encoding = EncRle;
+
+    InflateStream stream;
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(payload, rect, &dr, &consumed, &stream),
+              DecodeStatus::Ok);
+
+    const QRgb red  = rgb565ToArgb(0xF800);
+    const QRgb blue = rgb565ToArgb(0x001F);
+    // First 8 pixels (rows 0-1) red, next 8 (rows 2-3) blue.
+    for (int x = 0; x < 4; ++x) QCOMPARE(dr.image.pixel(x, 0), red);
+    for (int x = 0; x < 4; ++x) QCOMPARE(dr.image.pixel(x, 1), red);
+    for (int x = 0; x < 4; ++x) QCOMPARE(dr.image.pixel(x, 2), blue);
+    for (int x = 0; x < 4; ++x) QCOMPARE(dr.image.pixel(x, 3), blue);
 }
 
 QTEST_GUILESS_MAIN(TestKvmCodec)
