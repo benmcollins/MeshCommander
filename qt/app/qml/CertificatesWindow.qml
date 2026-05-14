@@ -9,7 +9,7 @@ import QtQuick.Dialogs
 import QtQuick.Layouts
 import QuMesh
 
-Window {
+AppWindow {
     id: root
 
     width: 920
@@ -17,7 +17,6 @@ Window {
     minimumWidth: 720
     minimumHeight: 380
     title: qsTr("QuMesh — Certificates")
-    color: Colors.bg
 
     property int selectedRow: -1
 

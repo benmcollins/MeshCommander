@@ -22,6 +22,30 @@ ApplicationWindow {
     title: qsTr("QuMesh")
     color: Colors.bg
 
+    // Drive built-in Qt control colours (Button, Menu, MenuItem, Dialog,
+    // TextField, SpinBox, ScrollBar) from the same `Colors` tokens our
+    // hand-rolled widgets use, so the dark/light toggle is consistent
+    // across the whole UI. Each top-level Window applies this block
+    // because palette doesn't propagate across Window boundaries.
+    palette.window:           ThemePalette.window
+    palette.windowText:       ThemePalette.windowText
+    palette.base:             ThemePalette.base
+    palette.alternateBase:    ThemePalette.alternateBase
+    palette.text:             ThemePalette.text
+    palette.placeholderText:  ThemePalette.placeholderText
+    palette.button:           ThemePalette.button
+    palette.buttonText:       ThemePalette.buttonText
+    palette.highlight:        ThemePalette.highlight
+    palette.highlightedText:  ThemePalette.highlightedText
+    palette.toolTipBase:      ThemePalette.toolTipBase
+    palette.toolTipText:      ThemePalette.toolTipText
+    palette.mid:              ThemePalette.mid
+    palette.midlight:         ThemePalette.midlight
+    palette.dark:             ThemePalette.dark
+    palette.shadow:           ThemePalette.shadow
+    palette.light:            ThemePalette.light
+    palette.link:             ThemePalette.link
+
     Component.onCompleted: {
         Colors.dark = themeSettings.dark;
         MigrationController.checkAndMaybeMigrate();

@@ -9,7 +9,7 @@ import QtQuick.Layouts
 import QuMesh
 
 /// Detached window hosting one KVM session.
-Window {
+AppWindow {
     id: root
 
     property string targetHost
@@ -54,7 +54,6 @@ Window {
     minimumWidth: 640
     minimumHeight: 400
     title: qsTr("QuMesh — %1 — %2").arg(root.label).arg(root.targetHost)
-    color: Colors.bg
 
     KvmController {
         id: controller

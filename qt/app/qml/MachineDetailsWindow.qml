@@ -12,7 +12,7 @@ import QuMesh
 /// double-clicking a machine here is the explicit connect. The sidebar
 /// lists components (Overview, Network, ...) and each pane fetches its
 /// data on-demand via the MachineDetailsController.
-Window {
+AppWindow {
     id: root
 
     // Inputs from the main-window Loader.
@@ -33,7 +33,6 @@ Window {
     title: machineName.length > 0
         ? qsTr("QuMesh — %1").arg(machineName)
         : qsTr("QuMesh — %1").arg(machineHost)
-    color: Colors.bg
 
     MachineDetailsController {
         id: controller
