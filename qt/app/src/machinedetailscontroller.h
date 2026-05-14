@@ -309,6 +309,28 @@ private:
     void decInflight();
     void setLastError(const QString &e);
     void onTrustPromptRequired(const qumesh::wsman::PeerCertSummary &s);
+
+    /// Refresh methods that get called while the SSH tunnel is still
+    /// negotiating are buffered here as bits and replayed once the
+    /// `SshSession` reaches `Connected`. Without this the first wave
+    /// of refresh calls (overview, power, etc.) hits the WSMAN socket
+    /// factory before the session is up and every one fails with
+    /// "SSH tunnel socket could not be opened".
+    enum PendingRefresh : int {
+        PendingOverview     = 1 << 0,
+        PendingNetwork      = 1 << 1,
+        PendingTime         = 1 << 2,
+        PendingPower        = 1 << 3,
+        PendingEventLog     = 1 << 4,
+        PendingUserAccounts = 1 << 5,
+    };
+    int m_pendingRefreshes = 0;
+    /// `true` between `setSshConfig(enabled=true)` and the session
+    /// reaching `Connected` (or `Failed`). While true, refreshes are
+    /// buffered into `m_pendingRefreshes` instead of being issued.
+    bool m_sshConnecting = false;
+    [[nodiscard]] bool deferIfSshConnecting(PendingRefresh kind);
+    void runPendingRefreshes();
     /// Remember which top-level fetch was in flight when the trust
     /// prompt fired, so we can resume it once the user accepts. -1
     /// means "the section the user is currently looking at".

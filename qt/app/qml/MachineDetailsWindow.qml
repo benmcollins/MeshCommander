@@ -36,6 +36,15 @@ AppWindow {
         ? qsTr("QuMesh — %1").arg(machineName)
         : qsTr("QuMesh — %1").arg(machineHost)
 
+    // Apply the saved SSH tunnel config whenever Main.qml updates
+    // `machineSshConfig`. `Component.onCompleted` is too early — the
+    // Loader populates `machineSshConfig` only after `Loader.Ready`,
+    // and at construction time it's still the default empty object,
+    // so setting up the controller's SSH state from inside onCompleted
+    // installs an empty (disabled) config and the WSMAN requests then
+    // bypass the tunnel entirely.
+    onMachineSshConfigChanged: controller.setSshConfig(root.machineSshConfig || ({}))
+
     MachineDetailsController {
         id: controller
         host: root.machineHost
@@ -43,7 +52,6 @@ AppWindow {
         password: root.machinePass
         tls: root.machineTls
         trustedFingerprints: root.machineTrustedFingerprints
-        Component.onCompleted: controller.setSshConfig(root.machineSshConfig || ({}))
         onTrustedFingerprintAdded: function(fp) {
             // Pass up to Main.qml so it lands in ComputerModel — SOL /
             // KVM / IDE-R will then inherit the same pinned trust.

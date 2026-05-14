@@ -4,7 +4,9 @@
 #include "wsman/wsman_client.h"
 
 #include <QCryptographicHash>
+#include <QLoggingCategory>
 #include <QPointer>
+#include <QQueue>
 #include <QRandomGenerator>
 #include <QSslCertificate>
 #include <QSslConfiguration>
@@ -13,6 +15,8 @@
 #include <QUrl>
 
 #include <memory>
+
+Q_LOGGING_CATEGORY(qumeshWsmanXport, "qumesh.wsman.transport", QtWarningMsg)
 
 namespace qumesh::wsman {
 
@@ -85,9 +89,15 @@ QByteArray randomCnonce()
 
 // ---- WsmanReply --------------------------------------------------------------
 
+/// Monotonic counter so the log can tell one reply from another.
+/// Not thread-safe (intentionally — every WsmanReply is created on
+/// the WsmanClient's thread).
+static int s_replySeq = 0;
+
 struct WsmanReply::Private
 {
     QPointer<WsmanClient> client;
+    int seq = ++s_replySeq;
     QSslSocket *socket = nullptr;
     QTimer *timeoutTimer = nullptr;
     QString errorString;
@@ -173,6 +183,11 @@ struct WsmanClient::Private
     QByteArray digestAlgorithm;
     QByteArray digestOpaque;
     quint64 nc = 0;
+
+    // Single-flight queue used when `serializeRequests == true`.
+    bool serializeRequests = false;
+    QPointer<WsmanReply> currentRequest;
+    QQueue<QPointer<WsmanReply>> pendingQueue;
 };
 
 WsmanClient::WsmanClient(QObject *parent)
@@ -195,6 +210,10 @@ void WsmanClient::setTransferTimeoutMs(int ms) { d->timeoutMs = ms; }
 void WsmanClient::setSocketFactory(SocketFactory factory)
 {
     d->socketFactory = std::move(factory);
+}
+void WsmanClient::setSerializeRequests(bool serialize)
+{
+    d->serializeRequests = serialize;
 }
 QUrl WsmanClient::endpoint() const { return d->endpoint; }
 PeerCertSummary WsmanClient::pendingPeerCert() const { return d->pendingPeerCert; }
@@ -273,7 +292,10 @@ void writeRequestBytes(QSslSocket *sock, const QByteArray &method,
         req += "Authorization: " + authHeader + "\r\n";
     req += "Content-Length: " + QByteArray::number(body.size()) + "\r\n\r\n";
     req += body;
-    sock->write(req);
+    const qint64 wrote = sock->write(req);
+    qCWarning(qumeshWsmanXport) << "writeRequestBytes:" << req.size() << "bytes queued,"
+                              << wrote << "returned by sock->write; auth="
+                              << !authHeader.isEmpty();
 }
 
 } // namespace
@@ -289,6 +311,7 @@ void startTransport(WsmanReply *reply, WsmanClient *client,
     bool fromFactory = false;
     if (cd.socketFactory) {
         const qintptr fd = cd.socketFactory();
+        qCWarning(qumeshWsmanXport) << "startTransport: socket factory returned fd" << fd;
         if (fd < 0) {
             rd.errorString = QStringLiteral("SSH tunnel socket could not be opened");
             rd.state = WsmanReply::Private::Failed;
@@ -298,16 +321,21 @@ void startTransport(WsmanReply *reply, WsmanClient *client,
         }
         sock = new QSslSocket(reply);
         if (!sock->setSocketDescriptor(fd, QAbstractSocket::ConnectedState)) {
-            rd.errorString = QStringLiteral("setSocketDescriptor failed");
+            rd.errorString = QStringLiteral("setSocketDescriptor failed: %1").arg(sock->errorString());
+            qCWarning(qumeshWsmanXport) << "setSocketDescriptor failed:" << sock->errorString();
             rd.state = WsmanReply::Private::Failed;
             rd.finished = true;
             sock->deleteLater();
             QMetaObject::invokeMethod(reply, &WsmanReply::finished, Qt::QueuedConnection);
             return;
         }
+        qCWarning(qumeshWsmanXport) << "startTransport: adopted tunnel fd, socketState ="
+                                  << sock->state();
         fromFactory = true;
     } else {
         sock = new QSslSocket(reply);
+        qCWarning(qumeshWsmanXport) << "startTransport: direct mode, will connectToHost"
+                                    << cd.endpoint.host() << cd.endpoint.port();
     }
     rd.socket = sock;
 
@@ -435,6 +463,10 @@ void readMore(WsmanReply *reply, WsmanClient *client,
 void finishReply(WsmanReply *reply, WsmanReply::Private &rd, const QString &err)
 {
     if (rd.finished) return;
+    qCWarning(qumeshWsmanXport) << "finishReply[" << rd.seq << "] httpStatus="
+                                << rd.httpStatus
+                                << "body=" << rd.body.size() << "bytes"
+                                << "err=" << (err.isEmpty() ? QStringLiteral("(none)") : err);
     if (!err.isEmpty()) {
         rd.errorString = err;
         rd.state = WsmanReply::Private::Failed;
@@ -558,6 +590,8 @@ void readMore(WsmanReply *reply, WsmanClient *client,
 {
     if (rd.finished || rd.socket == nullptr) return;
     const QByteArray chunk = rd.socket->readAll();
+    qCWarning(qumeshWsmanXport) << "readMore[" << rd.seq << "] got" << chunk.size()
+                                << "bytes, state =" << int(rd.state);
     if (chunk.isEmpty() && rd.socket->state() != QAbstractSocket::ConnectedState
         && rd.state == WsmanReply::Private::ReadingHeaders) {
         finishReply(reply, rd, QStringLiteral("Connection closed before headers"));
@@ -600,6 +634,8 @@ void readMore(WsmanReply *reply, WsmanClient *client,
         // 401 → parse challenge and retry on a new socket.
         if (rd.httpStatus == 401) {
             const QByteArray wwwAuth = rd.responseHeaders.value("www-authenticate");
+            qCWarning(qumeshWsmanXport) << "readMore[" << rd.seq << "] got 401, www-auth ="
+                                        << wwwAuth;
             if (wwwAuth.isEmpty()) {
                 finishReply(reply, rd, QStringLiteral("401 without WWW-Authenticate"));
                 return;
@@ -607,7 +643,20 @@ void readMore(WsmanReply *reply, WsmanClient *client,
             const auto params = parseDigestChallenge(wwwAuth);
             cd.digestRealm = params.value("realm");
             cd.digestNonce = params.value("nonce");
-            cd.digestQop = params.value("qop");
+            // AMT sometimes advertises `qop="auth,auth-int"`. We have
+            // to pick a single value and send THAT back in the
+            // Authorization header (and use it in the response hash)
+            // — sending the whole comma-joined string makes the
+            // server's hash diverge from ours and the auth fails.
+            const QByteArray rawQop = params.value("qop");
+            cd.digestQop = QByteArrayLiteral("auth");
+            if (!rawQop.isEmpty()) {
+                bool foundAuth = false;
+                for (const QByteArray &p : rawQop.split(',')) {
+                    if (p.trimmed() == "auth") { foundAuth = true; break; }
+                }
+                if (!foundAuth) cd.digestQop = rawQop.split(',').first().trimmed();
+            }
             cd.digestAlgorithm = params.value("algorithm");
             cd.digestOpaque = params.value("opaque");
             cd.haveDigestChallenge = !cd.digestRealm.isEmpty() && !cd.digestNonce.isEmpty();
@@ -715,6 +764,9 @@ WsmanReply *WsmanClient::sendEnvelope(const QByteArray &envelope, const char *so
     rd.client = this;
     rd.envelope = envelope;
     if (soapAction != nullptr) rd.soapAction = QByteArray(soapAction);
+    qCWarning(qumeshWsmanXport) << "sendEnvelope[" << rd.seq << "]"
+                                << "soapAction=" << (soapAction ? soapAction : "(none)")
+                                << "bodyBytes=" << envelope.size();
     rd.requestPath = d->endpoint.path(QUrl::FullyEncoded).toUtf8();
     if (rd.requestPath.isEmpty()) rd.requestPath = "/";
     rd.hostHeader = (d->endpoint.host() + QStringLiteral(":")
@@ -725,22 +777,56 @@ WsmanReply *WsmanClient::sendEnvelope(const QByteArray &envelope, const char *so
     auto *client = this;
     auto &cd = *d;
 
-    // If we already have a valid Digest challenge cached, send the
-    // first attempt pre-authed and skip the 401 round-trip.
-    if (cd.haveDigestChallenge && !cd.user.isEmpty()) {
-        // We still need a fresh socket; reuse retryWithDigest which
-        // does exactly that.
-        QObject::connect(rd.socket = nullptr, nullptr, reply, nullptr); // no-op
-        // Implementation note: retryWithDigest opens its own socket
-        // and writes the request. It will set rd.socket.
-        retryWithDigest(reply, client, cd, rd);
+    auto startNow = [reply, client, &cd, &rd]() {
+        // If we already have a valid Digest challenge cached, send the
+        // first attempt pre-authed and skip the 401 round-trip.
+        if (cd.haveDigestChallenge && !cd.user.isEmpty()) {
+            retryWithDigest(reply, client, cd, rd);
+            return;
+        }
+        startTransport(reply, client, cd, rd);
+        if (rd.socket != nullptr) {
+            QObject::connect(rd.socket, &QSslSocket::readyRead, reply,
+                             [reply, client, &cd, &rd]() { readMore(reply, client, cd, rd); });
+        }
+    };
+
+    if (!cd.serializeRequests) {
+        startNow();
         return reply;
     }
 
-    startTransport(reply, client, cd, rd);
-    if (rd.socket != nullptr) {
-        QObject::connect(rd.socket, &QSslSocket::readyRead, reply,
-                         [reply, client, &cd, &rd]() { readMore(reply, client, cd, rd); });
+    // Serialized mode: enqueue. The single-flight drainer picks the
+    // next reply off the queue when the in-flight one finishes.
+    cd.pendingQueue.enqueue(reply);
+    QObject::connect(reply, &WsmanReply::finished, client, [client]() {
+        auto &cd2 = *client->d;
+        cd2.currentRequest = nullptr;
+        while (!cd2.pendingQueue.isEmpty()) {
+            QPointer<WsmanReply> next = cd2.pendingQueue.dequeue();
+            if (next == nullptr) continue; // reply got destroyed while queued
+            cd2.currentRequest = next;
+            // The pending reply's `rd` already has envelope / path /
+            // host set from `sendEnvelope`; we just need to fire its
+            // transport via the same logic the un-serialized path uses.
+            auto &nrd = *next->d;
+            auto *c = client;
+            if (cd2.haveDigestChallenge && !cd2.user.isEmpty()) {
+                retryWithDigest(next, c, cd2, nrd);
+            } else {
+                startTransport(next, c, cd2, nrd);
+                if (nrd.socket != nullptr) {
+                    QObject::connect(nrd.socket, &QSslSocket::readyRead, next,
+                                     [next, c, &cd2, &nrd]() { readMore(next, c, cd2, nrd); });
+                }
+            }
+            return;
+        }
+    });
+
+    if (cd.currentRequest == nullptr) {
+        cd.currentRequest = cd.pendingQueue.dequeue();
+        startNow();
     }
     return reply;
 }
