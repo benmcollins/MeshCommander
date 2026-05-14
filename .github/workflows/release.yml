@@ -137,9 +137,21 @@ jobs:
             exit 1
           fi
           echo "Smoke-launching $STAGED"
-          # Generous 60s timeout in case the runner is slow; the app
-          # itself should exit ~3s after QML loads.
-          /usr/bin/timeout 60 "$STAGED/Contents/MacOS/QuMesh"
+          # macOS doesn't ship GNU `timeout`; rely on the app's
+          # built-in QUMESH_SMOKE_EXIT_MS handler to self-exit,
+          # with a shell-level kill -9 backstop after 60 s.
+          "$STAGED/Contents/MacOS/QuMesh" &
+          APP_PID=$!
+          ( sleep 60 && kill -9 $APP_PID 2>/dev/null ) &
+          GUARD_PID=$!
+          if wait $APP_PID; then
+            kill -9 $GUARD_PID 2>/dev/null
+            exit 0
+          else
+            RC=$?
+            kill -9 $GUARD_PID 2>/dev/null
+            exit $RC
+          fi
 
       - name: Smoke-launch bundled app (Windows)
         if: runner.os == 'Windows'
