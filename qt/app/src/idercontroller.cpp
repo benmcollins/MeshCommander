@@ -6,7 +6,9 @@
 #include "ider/ider_session.h"
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
+#include "ssh/ssh_session.h"
 #include "ssh_tunnel_opener.h"
+#include "sshtunnelhost.h"
 
 namespace qumesh::app {
 
@@ -81,8 +83,32 @@ void IderController::setLastError(const QString &e)
     emit lastErrorChanged();
 }
 
+void IderController::setSshConfig(const QVariantMap &cfg)
+{
+    if (m_sshHost == nullptr) {
+        m_sshHost = new SshTunnelHost(this);
+        QObject::connect(m_sshHost, &SshTunnelHost::trustedHostKeyAdded, this,
+                         &IderController::trustedSshHostKeyAdded);
+        QObject::connect(m_sshHost, &SshTunnelHost::connectedChanged, this, [this]() {
+            if (m_openDeferred && m_sshHost != nullptr && m_sshHost->isConnected()) {
+                m_openDeferred = false;
+                open();
+            }
+        });
+    }
+    m_sshHost->setConfig(cfg);
+    m_sshSession = m_sshHost->session();
+}
+
 void IderController::open()
 {
+    if (m_sshHost != nullptr && m_sshHost->isEnabled() && !m_sshHost->isConnected()) {
+        m_openDeferred = true;
+        setLastError({});
+        setState(State::Connecting);
+        return;
+    }
+    m_openDeferred = false;
     teardown();
     if (m_host.isEmpty()) {
         setLastError(tr("host is empty"));

@@ -6,7 +6,9 @@
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
 #include "redir/sol_session.h"
+#include "ssh/ssh_session.h"
 #include "ssh_tunnel_opener.h"
+#include "sshtunnelhost.h"
 
 namespace qumesh::app {
 
@@ -72,8 +74,35 @@ void SolController::setLastError(const QString &e)
     emit lastErrorChanged();
 }
 
+void SolController::setSshConfig(const QVariantMap &cfg)
+{
+    if (m_sshHost == nullptr) {
+        m_sshHost = new SshTunnelHost(this);
+        QObject::connect(m_sshHost, &SshTunnelHost::trustedHostKeyAdded, this,
+                         &SolController::trustedSshHostKeyAdded);
+        QObject::connect(m_sshHost, &SshTunnelHost::connectedChanged, this, [this]() {
+            if (m_openDeferred && m_sshHost != nullptr && m_sshHost->isConnected()) {
+                m_openDeferred = false;
+                open();
+            }
+        });
+    }
+    m_sshHost->setConfig(cfg);
+    m_sshSession = m_sshHost->session();
+}
+
 void SolController::open()
 {
+    // SSH tunnel mode: if the host is still negotiating, defer
+    // the dial until it reaches Connected. The host's
+    // connectedChanged slot will re-call open().
+    if (m_sshHost != nullptr && m_sshHost->isEnabled() && !m_sshHost->isConnected()) {
+        m_openDeferred = true;
+        setLastError({});
+        setState(State::Connecting);
+        return;
+    }
+    m_openDeferred = false;
     teardown();
     if (m_host.isEmpty()) {
         setLastError(tr("host is empty"));

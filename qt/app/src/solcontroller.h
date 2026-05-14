@@ -7,6 +7,7 @@
 #include <QPointer>
 #include <QString>
 #include <QStringList>
+#include <QVariantMap>
 
 #include "redir/redir_client.h"
 #include "terminal/terminalscreen.h"
@@ -19,6 +20,8 @@ class SolSession;
 namespace qumesh::ssh { class SshSession; }
 
 namespace qumesh::app {
+
+class SshTunnelHost;
 
 /// QML-facing controller for one SOL session. Owns the redirection
 /// client, the SOL session driver, and the terminal screen the QML
@@ -89,6 +92,13 @@ public:
     /// session alive for the controller's lifetime.
     void setSshSession(qumesh::ssh::SshSession *session) { m_sshSession = session; }
 
+    /// QML-friendly: take the per-machine SSH config (as produced by
+    /// `ComputerModel::sshConfigFor`). When enabled, the controller
+    /// owns an `SshTunnelHost` that opens the session lazily; `open()`
+    /// then waits for the session to reach `Connected` before
+    /// dialing the AMT host.
+    Q_INVOKABLE void setSshConfig(const QVariantMap &cfg);
+
     Q_INVOKABLE void open();
     Q_INVOKABLE void close();
     Q_INVOKABLE void sendText(const QString &text);
@@ -113,6 +123,9 @@ signals:
     /// Emitted after `trustPendingCert(true)` so the QML layer can
     /// persist the fingerprint into ComputerModel.
     void trustedFingerprintAdded(const QString &fingerprint);
+    /// Emitted on the first SSH connect after auto-pinning the host key
+    /// so the QML layer can persist the fingerprint into ComputerModel.
+    void trustedSshHostKeyAdded(const QString &fingerprint);
     /// Forwarded from the underlying client whenever a TLS
     /// reconnect quietly matched a pinned fingerprint. The QML side
     /// uses it to flash a small "verified" badge.
@@ -137,6 +150,11 @@ private:
     QPointer<qumesh::redir::RedirectionClient> m_client;
     QPointer<qumesh::redir::SolSession> m_session;
     qumesh::ssh::SshSession *m_sshSession = nullptr;
+    SshTunnelHost *m_sshHost = nullptr;
+    /// `true` when the user pressed Open while the SSH session was
+    /// still negotiating; the controller resumes the dial once the
+    /// host reaches Connected.
+    bool m_openDeferred = false;
 };
 
 } // namespace qumesh::app

@@ -21,6 +21,7 @@ AppWindow {
     property string password
     property bool tls: false
     property var trustedFingerprints: []
+    property var machineSshConfig: ({})
     property string label: qsTr("Session")
 
     /// Initial tab to show: 0 = SOL, 1 = KVM, 2 = IDE-R. Each panel
@@ -28,6 +29,7 @@ AppWindow {
     property int initialTab: 0
 
     signal trustedFingerprintPersistRequested(string fingerprint)
+    signal trustedSshHostKeyPersistRequested(string fingerprint)
 
     function openTab(idx) {
         bar.currentIndex = idx;
@@ -221,8 +223,12 @@ AppWindow {
                 password: root.password
                 tls: root.tls
                 trustedFingerprints: root.trustedFingerprints
+                sshConfig: root.machineSshConfig
                 onTrustedFingerprintPersistRequested: function(fp) {
                     root.trustedFingerprintPersistRequested(fp);
+                }
+                onTrustedSshHostKeyPersistRequested: function(fp) {
+                    root.trustedSshHostKeyPersistRequested(fp);
                 }
                 onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
             }
@@ -233,8 +239,12 @@ AppWindow {
                 password: root.password
                 tls: root.tls
                 trustedFingerprints: root.trustedFingerprints
+                sshConfig: root.machineSshConfig
                 onTrustedFingerprintPersistRequested: function(fp) {
                     root.trustedFingerprintPersistRequested(fp);
+                }
+                onTrustedSshHostKeyPersistRequested: function(fp) {
+                    root.trustedSshHostKeyPersistRequested(fp);
                 }
                 onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
             }
@@ -245,8 +255,12 @@ AppWindow {
                 password: root.password
                 tls: root.tls
                 trustedFingerprints: root.trustedFingerprints
+                sshConfig: root.machineSshConfig
                 onTrustedFingerprintPersistRequested: function(fp) {
                     root.trustedFingerprintPersistRequested(fp);
+                }
+                onTrustedSshHostKeyPersistRequested: function(fp) {
+                    root.trustedSshHostKeyPersistRequested(fp);
                 }
                 onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
             }

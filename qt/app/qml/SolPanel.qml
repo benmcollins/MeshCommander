@@ -19,9 +19,13 @@ Item {
     property string password
     property bool tls: false
     property var trustedFingerprints: []
+    property var sshConfig: ({})
 
     signal trustedFingerprintPersistRequested(string fingerprint)
+    signal trustedSshHostKeyPersistRequested(string fingerprint)
     signal peerCertVerifiedByPin(string fingerprint)
+
+    onSshConfigChanged: controller.setSshConfig(root.sshConfig || ({}))
 
     function start() {
         controller.host = root.targetHost;
@@ -35,8 +39,12 @@ Item {
 
     SolController {
         id: controller
+        Component.onCompleted: controller.setSshConfig(root.sshConfig || ({}))
         onTrustedFingerprintAdded: function(fp) {
             root.trustedFingerprintPersistRequested(fp);
+        }
+        onTrustedSshHostKeyAdded: function(fp) {
+            root.trustedSshHostKeyPersistRequested(fp);
         }
         onPeerCertVerifiedByPin: function(fp) { root.peerCertVerifiedByPin(fp) }
         onStateChanged: {
