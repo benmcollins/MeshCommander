@@ -193,9 +193,8 @@ Dialog {
                         Layout.fillWidth: true
                         onTextEdited: root.draftPass = text
                     }
-                    Button {
+                    FlatButton {
                         text: root.revealPass ? qsTr("Hide") : qsTr("Show")
-                        flat: true
                         font.family: Type.sans
                         font.pixelSize: Type.sizeXs
                         onClicked: root.revealPass = !root.revealPass
@@ -210,9 +209,8 @@ Dialog {
 
             Item { Layout.fillWidth: true }
 
-            Button {
+            FlatButton {
                 text: qsTr("Cancel")
-                flat: true
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 onClicked: root.reject()

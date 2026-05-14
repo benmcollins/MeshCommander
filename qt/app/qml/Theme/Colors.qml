@@ -16,7 +16,10 @@ QtObject {
 
     readonly property color text:        dark ? "#E6EDF3" : "#1F2328"
     readonly property color textMuted:   dark ? "#7D8590" : "#656D76"
-    readonly property color textFaint:   dark ? "#484F58" : "#8C959F"
+    // textFaint must still hit WCAG AA on Colors.bg. Old values
+    // (#484F58 dark / #8C959F light) measured ~3.3:1 — failing AA.
+    // The lift here keeps the "subtle" feel while meeting 4.5:1.
+    readonly property color textFaint:   dark ? "#6E747A" : "#767E88"
 
     readonly property color accent:      "#3D8BFD"
     readonly property color accentSoft:  dark ? "#1F3A6B" : "#DDEAFB"

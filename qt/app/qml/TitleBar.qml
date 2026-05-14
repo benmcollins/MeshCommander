@@ -57,21 +57,34 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
-        Button {
-            text: Colors.dark ? "☀" : "☾"
-            flat: true
-            font.family: Type.sans
-            font.pixelSize: Type.sizeM
-            ToolTip.visible: hovered
-            ToolTip.text: Colors.dark
+        FlatButton {
+            id: themeToggle
+            implicitWidth: 28
+            implicitHeight: 24
+            padding: 4
+            // Stock Button.icon would re-colorize the SVG; the baked
+            // assets already carry the correct tint per theme, so use
+            // a contentItem Image and let icon stay empty.
+            contentItem: Image {
+                source: Colors.dark
+                    ? "qrc:/icons/icon-sun-light.svg"
+                    : "qrc:/icons/icon-moon-slate.svg"
+                sourceSize.width: 18
+                sourceSize.height: 18
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: Colors.dark
                 ? qsTr("Switch to light theme")
                 : qsTr("Switch to dark theme")
+            ToolTip.visible: hovered
+            ToolTip.text: themeToggle.Accessible.name
             onClicked: root.toggleTheme()
         }
 
-        Button {
+        FlatButton {
             text: qsTr("Certificates")
-            flat: true
             font.family: Type.sans
             font.pixelSize: Type.sizeXs
             font.letterSpacing: 1

@@ -214,9 +214,8 @@ Window {
 
             Item { Layout.fillWidth: true }
 
-            Button {
+            FlatButton {
                 text: qsTr("Close")
-                flat: true
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 onClicked: root.close()
