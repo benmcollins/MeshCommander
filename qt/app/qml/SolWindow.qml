@@ -43,6 +43,7 @@ AppWindow {
         onTrustedFingerprintAdded: function(fp) {
             root.trustedFingerprintPersistRequested(fp);
         }
+        onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
     }
 
     /// Per-window WSMAN controller, used only for the Power ▾ menu.
@@ -58,6 +59,19 @@ AppWindow {
         onTrustedFingerprintAdded: function(fp) {
             root.trustedFingerprintPersistRequested(fp);
         }
+        onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+    }
+
+    /// Brief "pinned certificate verified" badge — flashes whenever
+    /// either the SOL session or the per-window WSMAN client
+    /// reconnects against an already-pinned fingerprint.
+    CertPinFlash {
+        id: certPinFlash
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: 12
+        anchors.rightMargin: 12
+        z: 1000
     }
 
     CertTrustDialog {

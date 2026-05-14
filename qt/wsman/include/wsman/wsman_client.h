@@ -93,6 +93,12 @@ signals:
     /// and call `trustPendingPeerCert()` if accepted.
     void trustPromptRequired(const qumesh::wsman::PeerCertSummary &summary);
 
+    /// Emitted when the cert presented during the handshake matches a
+    /// pinned fingerprint — the reverse of the prompt case. Lets the
+    /// controller surface a small "verified" badge on subsequent
+    /// successful reconnects.
+    void peerCertVerifiedByPin(const QString &fingerprint);
+
 private:
     void handleAuthenticationRequired(QNetworkReply *reply, QAuthenticator *auth);
 

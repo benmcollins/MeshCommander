@@ -250,6 +250,10 @@ signals:
     /// Emitted after `trustPendingCert(true)` — the QML layer persists
     /// the fingerprint into ComputerModel.
     void trustedFingerprintAdded(const QString &fingerprint);
+    /// Forwarded from the underlying client whenever a TLS
+    /// reconnect quietly matched a pinned fingerprint. The QML side
+    /// uses it to flash a small "verified" badge.
+    void peerCertVerifiedByPin(const QString &fingerprint);
     /// Emitted from `close()`; the QML window listens and dismisses
     /// itself.
     void closeRequested();

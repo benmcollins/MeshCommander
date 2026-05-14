@@ -13,6 +13,8 @@ MachineDetailsController::MachineDetailsController(QObject *parent)
 {
     connect(m_client, &qumesh::wsman::WsmanClient::trustPromptRequired,
             this, &MachineDetailsController::onTrustPromptRequired);
+    connect(m_client, &qumesh::wsman::WsmanClient::peerCertVerifiedByPin,
+            this, &MachineDetailsController::peerCertVerifiedByPin);
 }
 
 MachineDetailsController::~MachineDetailsController() = default;

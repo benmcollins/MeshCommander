@@ -64,6 +64,7 @@ qt_add_qml_module(qumesh
         qml/AccentButton.qml
         qml/AppMark.qml
         qml/AppWindow.qml
+        qml/CertPinFlash.qml
         qml/FlatButton.qml
         qml/PlatformErasePrompt.qml
         qml/SecureErasePrompt.qml

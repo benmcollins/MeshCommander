@@ -41,10 +41,20 @@ AppWindow {
         onTrustedFingerprintAdded: function(fp) {
             root.trustedFingerprintPersistRequested(fp);
         }
+        onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
     }
 
     CertTrustDialog {
         controller: controller
+    }
+
+    CertPinFlash {
+        id: certPinFlash
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: 12
+        anchors.rightMargin: 12
+        z: 1000
     }
 
     FileDialog {

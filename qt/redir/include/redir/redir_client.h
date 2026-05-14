@@ -130,6 +130,13 @@ signals:
     /// `disconnectFromHost()` (abort).
     void trustPromptRequired(const qumesh::redir::PeerCertSummary &summary);
 
+    /// Emitted when the TLS peer's cert fingerprint is found in the
+    /// trusted list — i.e. a silent reconnect with no prompt. The
+    /// QML side uses this to flash a small "verified" badge so users
+    /// who never see the trust prompt again still get a positive
+    /// security signal.
+    void peerCertVerifiedByPin(const QString &fingerprint);
+
 private:
     void handleConnected();
     void handleEncrypted();
