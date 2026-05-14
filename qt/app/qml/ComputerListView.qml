@@ -35,6 +35,30 @@ Rectangle {
 
             ScrollBar.vertical: ScrollBar {}
 
+            // Stagger entrance for the first paint and any subsequent
+            // inserts. Items fade in + slide up slightly so a fresh
+            // model doesn't all appear at once.
+            // `ViewTransition.index` is the row's position so each
+            // delegate kicks off ~40 ms after the previous one.
+            populate: Transition {
+                SequentialAnimation {
+                    PauseAnimation { duration: ViewTransition.index * 40 }
+                    ParallelAnimation {
+                        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Motion.normal }
+                        NumberAnimation { property: "y"; from: ViewTransition.item.y + 8; to: ViewTransition.item.y; duration: Motion.normal; easing.type: Easing.OutCubic }
+                    }
+                }
+            }
+            add: Transition {
+                ParallelAnimation {
+                    NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Motion.normal }
+                    NumberAnimation { property: "y"; from: ViewTransition.item.y + 8; to: ViewTransition.item.y; duration: Motion.normal; easing.type: Easing.OutCubic }
+                }
+            }
+            displaced: Transition {
+                NumberAnimation { properties: "y"; duration: Motion.fast }
+            }
+
             delegate: Rectangle {
                 id: rowItem
 
