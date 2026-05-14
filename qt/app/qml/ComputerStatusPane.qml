@@ -296,12 +296,11 @@ Rectangle {
         spacing: 6
         anchors.centerIn: parent
 
-        Text {
-            text: "◇"
-            color: Colors.textFaint
-            font.pixelSize: 48
-            horizontalAlignment: Text.AlignHCenter
+        AppMark {
+            Layout.preferredWidth: 72
+            Layout.preferredHeight: 72
             Layout.alignment: Qt.AlignHCenter
+            opacity: 0.5
         }
         Text {
             text: qsTr("QUMESH")

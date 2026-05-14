@@ -23,8 +23,14 @@ Rectangle {
         anchors.leftMargin: 16
         anchors.rightMargin: 16
 
+        AppMark {
+            small: true
+            Layout.preferredWidth: 18
+            Layout.preferredHeight: 18
+        }
+
         Text {
-            text: "◇  QUMESH"
+            text: "QUMESH"
             color: Colors.text
             font.family: Type.sans
             font.pixelSize: Type.sizeXs

@@ -19,6 +19,7 @@
 #include <QTranslator>
 
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QTimer>
 #include <QtQml/qqml.h>
@@ -30,6 +31,11 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("Insynergy"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("insynergy.com"));
     QCoreApplication::setApplicationName(QStringLiteral("QuMesh"));
+
+    // Window-manager icon. macOS reads the bundle's .icns directly and
+    // ignores this; Windows uses the embedded .ico from the .rc. This
+    // setter covers Linux + Wayland in-app contexts (e.g. about boxes).
+    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/qumesh-mark-slate.svg")));
 
     // Load the .qm matching the system locale. qt_add_translations()
     // embeds the compiled .qm under :/i18n/ in the QML resource

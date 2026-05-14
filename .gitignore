@@ -8,3 +8,10 @@ source/cache/
 .DS_Store
 qt/build/
 qt/build-*/
+
+# Pre-built branding artifacts that CI / packaging needs verbatim.
+# Regenerate via qt/branding/build-icons.py — intermediate PNGs and
+# the iconset stay ignored.
+!qt/branding/build/
+!qt/branding/build/qumesh.icns
+!qt/branding/build/qumesh.ico

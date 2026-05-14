@@ -40,7 +40,7 @@ QNetworkReply *WsmanClient::sendEnvelope(const QByteArray &envelope, const char 
     req.setHeader(QNetworkRequest::ContentTypeHeader,
                   QStringLiteral("application/soap+xml;charset=UTF-8"));
     req.setHeader(QNetworkRequest::UserAgentHeader,
-                  QStringLiteral("MeshCommander-Qt/0.1"));
+                  QStringLiteral("QuMesh/0.1"));
     if (soapAction != nullptr) {
         req.setRawHeader("SOAPAction", soapAction);
     }

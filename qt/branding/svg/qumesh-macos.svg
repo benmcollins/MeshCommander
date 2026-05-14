@@ -1,9 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <title>QuMesh — macOS app icon</title>
-  <desc>QuMesh macOS app icon: slate-filled squircle with the QuMesh mark in white.</desc>
-  <path d="M 512,0 C 153.6,0 0,153.6 0,512 C 0,870.4 153.6,1024 512,1024 C 870.4,1024 1024,870.4 1024,512 C 1024,153.6 870.4,0 512,0 Z" fill="#1e293b"/>
-  <g transform="translate(512, 512) scale(3.84)">
+  <desc>QuMesh macOS app icon: slate-filled rounded square inside the 824×824 Apple icon grid, with the QuMesh mark centered in white.</desc>
+  <!--
+    Apple's macOS icon spec (Big Sur+): the foreground content must
+    sit within an 824×824 area centered on a 1024×1024 canvas. The
+    surrounding 100 px gutter on each side reserves room for the
+    system's rounded-rectangle mask, drop shadow, and the visual
+    balance with neighbouring icons in the Dock / Launchpad.
+    The slate tile uses Apple's standard corner radius for that grid
+    (~185.4 px on an 824 square, scaled to keep the same visual
+    softness as native macOS app icons).
+  -->
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="#1e293b"/>
+  <g transform="translate(512, 512) scale(3.1)">
     <circle cx="0" cy="0" r="50" fill="none" stroke="#ffffff" stroke-width="4"/>
     <circle cx="-50" cy="0" r="5" fill="#ffffff"/>
     <circle cx="50" cy="0" r="5" fill="#ffffff"/>
