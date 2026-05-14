@@ -50,6 +50,11 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(QString amtProtocolVersion READ amtProtocolVersion NOTIFY identifyChanged)
     Q_PROPERTY(QString amtVendor READ amtVendor NOTIFY identifyChanged)
     Q_PROPERTY(QString amtVersion READ amtVersion NOTIFY identifyChanged)
+    /// Parsed `amtVersion.major` (the first integer of the dotted
+    /// version) — used by the QML side to gate menu entries on
+    /// firmware that needs a minimum AMT level (e.g. OS Wake-on-Sleep
+    /// requires AMT 10+).
+    Q_PROPERTY(int amtVersionMajor READ amtVersionMajor NOTIFY identifyChanged)
 
     // General settings.
     Q_PROPERTY(QString hostName READ hostName NOTIFY generalSettingsChanged)
@@ -105,6 +110,7 @@ public:
     [[nodiscard]] QString amtProtocolVersion() const { return m_amtProtocolVersion; }
     [[nodiscard]] QString amtVendor() const { return m_amtVendor; }
     [[nodiscard]] QString amtVersion() const { return m_amtVersion; }
+    [[nodiscard]] int amtVersionMajor() const;
 
     [[nodiscard]] QString hostName() const { return m_hostName; }
     [[nodiscard]] QString domainName() const { return m_domainName; }
@@ -157,6 +163,12 @@ public:
     Q_INVOKABLE void bootToPxe(bool reset);
     Q_INVOKABLE void bootToIderCdrom(bool reset);
     Q_INVOKABLE void bootToIderFloppy(bool reset);
+
+    /// `IPS_PowerManagementService.RequestOSPowerSavingStateChange`
+    /// — wake the running OS from sleep / put it back to sleep. AMT
+    /// 10+ only; the QML side hides the menu entries below that.
+    Q_INVOKABLE void osWakeFromSleep();
+    Q_INVOKABLE void osPutToSleep();
 
     /// Called by the QML trust prompt. On accept, the pending cert's
     /// fingerprint is promoted into the trusted list, the trust state

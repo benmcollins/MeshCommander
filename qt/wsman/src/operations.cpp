@@ -47,6 +47,10 @@ constexpr char kBootServiceResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/"
     "CIM_BootService";
 
+constexpr char kIpsPowerServiceResource[] =
+    "http://intel.com/wbem/wscim/1/ips-schema/1/"
+    "IPS_PowerManagementService";
+
 QString newMessageId()
 {
     return QStringLiteral("uuid:") + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -483,6 +487,40 @@ void performBootAction(WsmanClient *client, BootActionParams params,
                        std::function<void(InvokeResult)> callback)
 {
     runPerformBootAction(client, params, std::move(callback));
+}
+
+void requestOsPowerStateChange(WsmanClient *client, int osPowerState,
+                               std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("Name"),
+                     QStringLiteral("Intel(r) AMT Power Management Service"));
+    selectors.insert(QStringLiteral("SystemCreationClassName"),
+                     QStringLiteral("CIM_ComputerSystem"));
+    selectors.insert(QStringLiteral("SystemName"), QStringLiteral("Intel(r) AMT"));
+    selectors.insert(QStringLiteral("CreationClassName"),
+                     QStringLiteral("IPS_PowerManagementService"));
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("OSPowerSavingState"), QString::number(osPowerState));
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kIpsPowerServiceResource),
+        QStringLiteral("RequestOSPowerSavingStateChange"),
+        selectors, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            if (rv.isEmpty()) {
+                r.error = QStringLiteral("response had no ReturnValue");
+                return;
+            }
+            bool conv = false;
+            r.returnValue = rv.toInt(&conv);
+            r.ok = conv && r.returnValue == 0;
+            if (!r.ok && r.error.isEmpty())
+                r.error = QStringLiteral("RequestOSPowerSavingStateChange returned %1").arg(rv);
+        },
+        std::move(callback));
 }
 
 void requestPowerStateChange(WsmanClient *client, int powerState,

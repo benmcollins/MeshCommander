@@ -419,6 +419,64 @@ void MachineDetailsController::bootToIderFloppy(bool reset)
         });
 }
 
+int MachineDetailsController::amtVersionMajor() const
+{
+    // amtVersion looks like "11.8.50" / "16.1.25.0" / "5.2.0". Parse
+    // the leading integer; return -1 when we haven't fetched it yet.
+    if (m_amtVersion.isEmpty()) return -1;
+    const int dot = m_amtVersion.indexOf(QLatin1Char('.'));
+    const QString head = dot < 0 ? m_amtVersion : m_amtVersion.left(dot);
+    bool ok = false;
+    const int n = head.toInt(&ok);
+    return ok ? n : -1;
+}
+
+void MachineDetailsController::osWakeFromSleep()
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    setLastError({});
+    emit powerChangeRequested(2);
+    incInflight();
+    qumesh::wsman::requestOsPowerStateChange(m_client, 2,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(QStringLiteral("OS wake: %1").arg(r.error));
+                emit powerChangeCompleted(2, false, r.error);
+                return;
+            }
+            emit powerChangeCompleted(2, true, QString());
+            refreshPower();
+        });
+}
+
+void MachineDetailsController::osPutToSleep()
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    setLastError({});
+    emit powerChangeRequested(3);
+    incInflight();
+    qumesh::wsman::requestOsPowerStateChange(m_client, 3,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(QStringLiteral("OS sleep: %1").arg(r.error));
+                emit powerChangeCompleted(3, false, r.error);
+                return;
+            }
+            emit powerChangeCompleted(3, true, QString());
+            refreshPower();
+        });
+}
+
 void MachineDetailsController::changePowerState(int code)
 {
     rebuildEndpoint();
