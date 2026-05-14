@@ -84,8 +84,21 @@ Dialog {
     anchors.centerIn: parent
     standardButtons: Dialog.NoButton
     implicitWidth: 520
+    // Cap dialog height so the form scrolls inside the dialog rather
+    // than letting the Save / Cancel buttons fall below the parent
+    // window's edge on shorter screens. 80% of the parent gives a
+    // comfortable margin around the dialog frame.
+    implicitHeight: Math.min(formColumn.implicitHeight + 80,
+                              (parent ? parent.height : 720) * 0.85)
 
-    contentItem: ColumnLayout {
+    contentItem: ScrollView {
+        clip: true
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        contentWidth: availableWidth
+
+    ColumnLayout {
+        id: formColumn
+        width: parent ? parent.width : 0
         spacing: 14
 
         Section {
@@ -471,5 +484,6 @@ enabled: root.draftName.length > 0 && root.draftHost.length > 0
                 }
             }
         }
+    }
     }
 }
