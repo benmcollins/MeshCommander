@@ -43,9 +43,6 @@ Window {
         tls: root.machineTls
     }
 
-    // Auto-load the overview as soon as the window is created.
-    Component.onCompleted: controller.refreshOverview()
-
     // Sidebar items. The `id` keys must match the value used by each
     // Loader/StackLayout currentIndex below.
     readonly property var sections: [
@@ -59,6 +56,27 @@ Window {
         { key: "users",     label: qsTr("User accounts"),  icon: "⌥" },
     ]
     property int currentSection: 0
+
+    /// Pull whatever data the active section needs. Skipped silently
+    /// while `machineHost` is still empty (the Loader populates the
+    /// props *after* the window is constructed, so initial bindings
+    /// fire with an empty host before `applyMachine()` runs).
+    function refreshCurrent() {
+        if (machineHost.length === 0) return;
+        switch (currentSection) {
+        case 0: controller.refreshOverview(); break;
+        case 1: controller.refreshPower();    break;
+        case 2: controller.refreshNetwork();  break;
+        case 3: controller.refreshTime();     break;
+        // 4 = Remote access, 5 = Certs, 6/7 = stubs — no fetch needed.
+        }
+    }
+
+    // Auto-refresh whenever the user moves between sections, or the
+    // host becomes non-empty for the first time (i.e. once the parent
+    // Loader has finished populating us).
+    onCurrentSectionChanged: refreshCurrent()
+    onMachineHostChanged: if (machineHost.length > 0) refreshCurrent()
 
     RowLayout {
         anchors.fill: parent
@@ -215,7 +233,7 @@ Window {
                         font.family: Type.sans
                         font.pixelSize: Type.sizeXs
                         enabled: !controller.busy
-                        onClicked: controller.refreshOverview()
+                        onClicked: root.refreshCurrent()
                     }
                     Item { Layout.fillWidth: true }
                     FlatButton {
@@ -440,7 +458,9 @@ Window {
                     contentHeight: networkCol.implicitHeight + 48
                     clip: true
 
-                    Component.onCompleted: controller.refreshNetwork()
+                    // Network data is fetched centrally via
+                    // `root.refreshCurrent()` when this section becomes
+                    // active.
 
                     ColumnLayout {
                         id: networkCol
@@ -507,7 +527,9 @@ Window {
                 ColumnLayout {
                     spacing: 18
 
-                    Component.onCompleted: controller.refreshTime()
+                    // Time data is fetched centrally via
+                    // `root.refreshCurrent()` when this section becomes
+                    // active.
 
                     ColumnLayout {
                         spacing: 4
