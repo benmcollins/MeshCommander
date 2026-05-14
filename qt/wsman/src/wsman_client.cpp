@@ -277,7 +277,7 @@ void writeRequestBytes(QSslSocket *sock, const QByteArray &method,
     req += "Content-Length: " + QByteArray::number(body.size()) + "\r\n\r\n";
     req += body;
     const qint64 wrote = sock->write(req);
-    qCDebug(qumeshWsmanXport) << "writeRequestBytes:" << req.size() << "bytes queued,"
+    qCWarning(qumeshWsmanXport) << "writeRequestBytes:" << req.size() << "bytes queued,"
                               << wrote << "returned by sock->write; auth="
                               << !authHeader.isEmpty();
 }
@@ -295,7 +295,7 @@ void startTransport(WsmanReply *reply, WsmanClient *client,
     bool fromFactory = false;
     if (cd.socketFactory) {
         const qintptr fd = cd.socketFactory();
-        qCDebug(qumeshWsmanXport) << "startTransport: socket factory returned fd" << fd;
+        qCWarning(qumeshWsmanXport) << "startTransport: socket factory returned fd" << fd;
         if (fd < 0) {
             rd.errorString = QStringLiteral("SSH tunnel socket could not be opened");
             rd.state = WsmanReply::Private::Failed;
@@ -313,7 +313,7 @@ void startTransport(WsmanReply *reply, WsmanClient *client,
             QMetaObject::invokeMethod(reply, &WsmanReply::finished, Qt::QueuedConnection);
             return;
         }
-        qCDebug(qumeshWsmanXport) << "startTransport: adopted tunnel fd, socketState ="
+        qCWarning(qumeshWsmanXport) << "startTransport: adopted tunnel fd, socketState ="
                                   << sock->state();
         fromFactory = true;
     } else {
@@ -568,7 +568,7 @@ void readMore(WsmanReply *reply, WsmanClient *client,
 {
     if (rd.finished || rd.socket == nullptr) return;
     const QByteArray chunk = rd.socket->readAll();
-    qCDebug(qumeshWsmanXport) << "readMore got" << chunk.size() << "bytes, state ="
+    qCWarning(qumeshWsmanXport) << "readMore got" << chunk.size() << "bytes, state ="
                               << int(rd.state);
     if (chunk.isEmpty() && rd.socket->state() != QAbstractSocket::ConnectedState
         && rd.state == WsmanReply::Private::ReadingHeaders) {

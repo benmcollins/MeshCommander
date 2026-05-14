@@ -243,7 +243,7 @@ public:
             return -1;
         }
         m_pumpFd = fds[0];
-        qCDebug(qumeshSshTunnel) << "tunnel to" << m_remoteHost << ":"
+        qCWarning(qumeshSshTunnel) << "tunnel to" << m_remoteHost << ":"
                                  << m_remotePort << "opened: pump fd"
                                  << m_pumpFd << ", qt fd" << fds[1];
         return fds[1];
@@ -263,7 +263,7 @@ protected:
         constexpr qint64 kBufSize = 32 * 1024;
         QByteArray buf;
         buf.resize(kBufSize);
-        qCDebug(qumeshSshTunnel) << "pump thread started for"
+        qCWarning(qumeshSshTunnel) << "pump thread started for"
                                  << m_remoteHost << ":" << m_remotePort;
         qint64 totalAppToSsh = 0;
         qint64 totalSshToApp = 0;
@@ -287,7 +287,7 @@ protected:
                     if (sshErr) { m_error = QStringLiteral("ssh_channel_write failed"); break; }
                     didWork = true;
                     totalAppToSsh += written;
-                    qCDebug(qumeshSshTunnel) << "app→ssh wrote" << written
+                    qCWarning(qumeshSshTunnel) << "app→ssh wrote" << written
                                              << "bytes (total" << totalAppToSsh << ")";
                     if (written < n) {
                         // libssh occasionally returns short writes; loop
@@ -353,7 +353,7 @@ protected:
                     }
                     didWork = true;
                     totalSshToApp += got;
-                    qCDebug(qumeshSshTunnel) << "ssh→app wrote" << got
+                    qCWarning(qumeshSshTunnel) << "ssh→app wrote" << got
                                              << "bytes (total" << totalSshToApp << ")";
                 }
             }
@@ -364,7 +364,7 @@ protected:
                 w, [this, &eof]() { eof = ssh_channel_is_eof(m_channel); },
                 Qt::BlockingQueuedConnection);
             if (eof != 0) {
-                qCDebug(qumeshSshTunnel) << "ssh channel EOF — pump exiting";
+                qCWarning(qumeshSshTunnel) << "ssh channel EOF — pump exiting";
                 break;
             }
 
@@ -375,7 +375,7 @@ protected:
                 QThread::usleep(5000);
             }
         }
-        qCDebug(qumeshSshTunnel) << "pump thread exiting; sent" << totalAppToSsh
+        qCWarning(qumeshSshTunnel) << "pump thread exiting; sent" << totalAppToSsh
                                  << "bytes app→ssh, received" << totalSshToApp
                                  << "bytes ssh→app; m_error=" << m_error;
 
