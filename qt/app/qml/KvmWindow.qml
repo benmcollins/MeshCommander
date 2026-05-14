@@ -61,6 +61,11 @@ AppWindow {
             root.trustedFingerprintPersistRequested(fp);
         }
         onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+        onStateChanged: {
+            if (state === KvmController.Connected) ActivityHeartbeat.reportSuccess();
+            else if (state === KvmController.Failed)
+                ActivityHeartbeat.reportFailure(qsTr("KVM: %1").arg(lastError));
+        }
     }
 
     /// Per-window WSMAN controller for the Power ▾ menu — same auth /
@@ -76,6 +81,14 @@ AppWindow {
             root.trustedFingerprintPersistRequested(fp);
         }
         onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+        onPowerChangeCompleted: function(state, ok, error) {
+            if (ok) ActivityHeartbeat.reportSuccess();
+            else    ActivityHeartbeat.reportFailure(error);
+        }
+        onLastErrorChanged: {
+            if (lastError.length > 0)
+                ActivityHeartbeat.reportFailure(lastError);
+        }
     }
 
     CertPinFlash {

@@ -42,6 +42,11 @@ AppWindow {
             root.trustedFingerprintPersistRequested(fp);
         }
         onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+        onStateChanged: {
+            if (state === IderController.Running) ActivityHeartbeat.reportSuccess();
+            else if (state === IderController.Failed)
+                ActivityHeartbeat.reportFailure(qsTr("IDE-R: %1").arg(lastError));
+        }
     }
 
     CertTrustDialog {

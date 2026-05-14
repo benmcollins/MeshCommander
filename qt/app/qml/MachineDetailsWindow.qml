@@ -48,6 +48,26 @@ AppWindow {
         }
         onCloseRequested: root.close()
         onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
+
+        // Each refresh / fetch that arrives without `lastError` set is
+        // a success pulse; failures (any non-empty `lastError`) flash
+        // the bar red and surface the message in the tooltip.
+        onPowerChangeCompleted: function(state, ok, error) {
+            if (ok) ActivityHeartbeat.reportSuccess();
+            else    ActivityHeartbeat.reportFailure(error);
+        }
+        onIdentifyChanged:        ActivityHeartbeat.reportSuccess()
+        onPowerStateChanged:      ActivityHeartbeat.reportSuccess()
+        onGeneralSettingsChanged: ActivityHeartbeat.reportSuccess()
+        onComputerSystemChanged:  ActivityHeartbeat.reportSuccess()
+        onEthernetChanged:        ActivityHeartbeat.reportSuccess()
+        onTimeChanged:            ActivityHeartbeat.reportSuccess()
+        onEventLogChanged:        ActivityHeartbeat.reportSuccess()
+        onUserAccountsChanged:    ActivityHeartbeat.reportSuccess()
+        onLastErrorChanged: {
+            if (lastError.length > 0)
+                ActivityHeartbeat.reportFailure(lastError);
+        }
     }
 
     CertPinFlash {
