@@ -172,8 +172,15 @@ void getGeneralSettings(WsmanClient *client,
 void getComputerSystem(WsmanClient *client,
                        std::function<void(ComputerSystemResult)> callback)
 {
+    // AMT exposes multiple CIM_ComputerSystem instances (one per
+    // logical subsystem). A naked Get returns a SOAP fault → HTTP 400.
+    // The AMT firmware itself is selected via Name = "Intel(r) AMT".
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("Name"), QStringLiteral("Intel(r) AMT"));
+    selectors.insert(QStringLiteral("CreationClassName"),
+                     QStringLiteral("CIM_ComputerSystem"));
     const QByteArray env = buildGetEnvelope(QString::fromLatin1(kComputerSystemResource),
-                                             {},
+                                             selectors,
                                              client ? client->endpoint().toString() : QString(),
                                              newMessageId());
     runRequest<ComputerSystemResult>(client, env, {},
