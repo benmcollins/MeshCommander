@@ -110,6 +110,13 @@ bool KvmSession::stepHandshake()
         m_height = info.height;
         emit desktopResized(m_width, m_height);
         writeFrame(buildSetEncodings());
+        // Match the legacy default: tell AMT to disable zlib on RLE
+        // blocks so every block uses the uncompressed-marker path. The
+        // alternative is a shared deflate stream that's brittle against
+        // packet loss and that our decoder currently doesn't handle for
+        // real firmware payloads. Older AMT versions silently ignore
+        // the frame (it looks like a ClientCutText).
+        writeFrame(buildKvmExtCmd(4, 0));
         writeFrame(buildFramebufferUpdateRequest(false, 0, 0, m_width, m_height));
         setState(State::FrameLoop);
         return true;
