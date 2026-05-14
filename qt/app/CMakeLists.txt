@@ -9,6 +9,8 @@ qt_add_executable(qumesh
     src/secret_codec.h
     src/ssh_tunnel_opener.cpp
     src/ssh_tunnel_opener.h
+    src/sshtunnelhost.cpp
+    src/sshtunnelhost.h
     src/computermodel.cpp
     src/computermodel.h
     src/machinedetailscontroller.cpp

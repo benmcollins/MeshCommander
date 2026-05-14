@@ -41,6 +41,8 @@ qt_add_executable(test_solcontroller
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/solcontroller.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/sshtunnelhost.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/sshtunnelhost.h
 )
 target_include_directories(test_solcontroller PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 target_link_libraries(test_solcontroller PRIVATE

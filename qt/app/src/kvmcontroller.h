@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QString>
 #include <QStringList>
+#include <QVariantMap>
 
 #include "kvmframebuffer.h"
 #include "redir/redir_client.h"
@@ -19,6 +20,8 @@ class KvmSession;
 namespace qumesh::ssh { class SshSession; }
 
 namespace qumesh::app {
+
+class SshTunnelHost;
 
 /// QML-creatable controller for one KVM session. Owns the redirection
 /// client, the KVM session driver, and the framebuffer the QML viewer
@@ -86,6 +89,13 @@ public:
     void setTrustedFingerprints(QStringList v);
     void setSshSession(qumesh::ssh::SshSession *session) { m_sshSession = session; }
 
+    /// QML-friendly: take the per-machine SSH config (as produced by
+    /// `ComputerModel::sshConfigFor`). When enabled, the controller
+    /// owns an `SshTunnelHost` that opens the session lazily; `open()`
+    /// then waits for the session to reach `Connected` before
+    /// dialing the AMT host.
+    Q_INVOKABLE void setSshConfig(const QVariantMap &cfg);
+
     Q_INVOKABLE void open();
     Q_INVOKABLE void close();
     Q_INVOKABLE void trustPendingCert(bool persist);
@@ -109,6 +119,8 @@ signals:
     void pendingCertChanged();
     void awaitingTrustChanged();
     void trustedFingerprintAdded(const QString &fingerprint);
+    /// Emitted on the first SSH connect after auto-pinning the host key.
+    void trustedSshHostKeyAdded(const QString &fingerprint);
     /// Forwarded from the underlying client whenever a TLS
     /// reconnect quietly matched a pinned fingerprint. The QML side
     /// uses it to flash a small "verified" badge.
@@ -135,6 +147,8 @@ private:
     QPointer<qumesh::redir::RedirectionClient> m_client;
     QPointer<qumesh::kvm::KvmSession> m_session;
     qumesh::ssh::SshSession *m_sshSession = nullptr;
+    SshTunnelHost *m_sshHost = nullptr;
+    bool m_openDeferred = false;
 };
 
 } // namespace qumesh::app

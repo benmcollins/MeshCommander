@@ -20,9 +20,13 @@ Item {
     property string password
     property bool tls: false
     property var trustedFingerprints: []
+    property var sshConfig: ({})
 
     signal trustedFingerprintPersistRequested(string fingerprint)
+    signal trustedSshHostKeyPersistRequested(string fingerprint)
     signal peerCertVerifiedByPin(string fingerprint)
+
+    onSshConfigChanged: controller.setSshConfig(root.sshConfig || ({}))
 
     function start() { /* user-driven; mount via the Mount button */ }
     function stop() { controller.close() }
@@ -34,8 +38,12 @@ Item {
         password: root.password
         tls: root.tls
         trustedFingerprints: root.trustedFingerprints
+        Component.onCompleted: controller.setSshConfig(root.sshConfig || ({}))
         onTrustedFingerprintAdded: function(fp) {
             root.trustedFingerprintPersistRequested(fp);
+        }
+        onTrustedSshHostKeyAdded: function(fp) {
+            root.trustedSshHostKeyPersistRequested(fp);
         }
         onPeerCertVerifiedByPin: function(fp) { root.peerCertVerifiedByPin(fp) }
         onStateChanged: {

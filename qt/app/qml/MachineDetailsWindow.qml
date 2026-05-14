@@ -1185,6 +1185,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
             item.password = root.machinePass;
             item.tls = root.machineTls;
             item.trustedFingerprints = root.machineTrustedFingerprints;
+            item.machineSshConfig = root.machineSshConfig || ({});
             item.label = root.machineName.length > 0 ? root.machineName : root.machineHost;
             item.initialTab = pendingTab;
             item.visible = true;
@@ -1194,6 +1195,9 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
             onClosing: sessionLoader.active = false
             onTrustedFingerprintPersistRequested: function(fp) {
                 root.trustedFingerprintPersistRequested(fp);
+            }
+            onTrustedSshHostKeyPersistRequested: function(fp) {
+                root.trustedSshHostKeyPersistRequested(fp);
             }
         }
     }
