@@ -53,7 +53,7 @@ Item {
         id: isoDialog
         nameFilters: [qsTr("ISO images (*.iso)"), qsTr("All files (*)")]
         title: qsTr("Select ISO to mount")
-        onAccepted: controller.isoPath = Qt.urlToLocalFile(isoDialog.selectedFile)
+        onAccepted: controller.isoPath = Paths.urlToLocalFile(isoDialog.selectedFile)
     }
 
     ColumnLayout {

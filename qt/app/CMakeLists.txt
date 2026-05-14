@@ -35,6 +35,7 @@ set_source_files_properties(
     qml/Theme/Motion.qml
     qml/Theme/ThemePalette.qml
     qml/Theme/ActivityHeartbeat.qml
+    qml/Paths.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -73,6 +74,7 @@ qt_add_qml_module(qumesh
         qml/CertPinFlash.qml
         qml/FlatButton.qml
         qml/HttpsBootPrompt.qml
+        qml/Paths.qml
         qml/PlatformErasePrompt.qml
         qml/SecureErasePrompt.qml
         qml/Theme/Colors.qml

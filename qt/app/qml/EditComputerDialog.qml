@@ -420,7 +420,7 @@ Dialog {
         FileDialog {
             id: keyDialog
             title: qsTr("Select SSH private key")
-            onAccepted: root.draftSshKeyPath = Qt.urlToLocalFile(keyDialog.selectedFile)
+            onAccepted: root.draftSshKeyPath = Paths.urlToLocalFile(keyDialog.selectedFile)
         }
 
         RowLayout {

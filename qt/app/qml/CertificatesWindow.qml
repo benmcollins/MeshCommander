@@ -28,7 +28,7 @@ AppWindow {
             qsTr("All files (*)"),
         ]
         onAccepted: {
-            const path = Qt.urlToLocalFile(importDialog.selectedFile);
+            const path = Paths.urlToLocalFile(importDialog.selectedFile);
             if (path.endsWith(".p12") || path.endsWith(".pfx")) {
                 passwordPrompt.path = path;
                 passwordPrompt.open();
@@ -48,7 +48,7 @@ AppWindow {
             : [qsTr("DER (*.cer)"), qsTr("All files (*)")]
         onAccepted: {
             if (root.selectedRow < 0) return;
-            const path = Qt.urlToLocalFile(exportDialog.selectedFile);
+            const path = Paths.urlToLocalFile(exportDialog.selectedFile);
             if (exportDialog.wantPem) {
                 CertModel.exportAsPem(root.selectedRow, path);
             } else {
@@ -131,7 +131,7 @@ AppWindow {
                 onDropped: function(drop) {
                     if (!drop.hasUrls) return;
                     for (let i = 0; i < drop.urls.length; ++i) {
-                        const path = Qt.urlToLocalFile(drop.urls[i]);
+                        const path = Paths.urlToLocalFile(drop.urls[i]);
                         if (path.length === 0) continue;
                         if (path.endsWith(".p12") || path.endsWith(".pfx")) {
                             passwordPrompt.path = path;
