@@ -47,6 +47,7 @@ void MachineDetailsController::setSshConfig(const QVariantMap &cfg)
     }
 
     m_sshEnabled = true;
+    m_sshConnecting = true;
     if (m_sshSession == nullptr) {
         m_sshSession = new qumesh::ssh::SshSession(this);
         connect(m_sshSession, &qumesh::ssh::SshSession::stateChanged, this,
@@ -59,12 +60,21 @@ void MachineDetailsController::setSshConfig(const QVariantMap &cfg)
                     case qumesh::ssh::SshSession::NeedsHostKeyTrust:
                         m_sshTunnelStatus = QStringLiteral("Awaiting host-key trust"); break;
                     case qumesh::ssh::SshSession::Connected:
-                        m_sshTunnelStatus = QStringLiteral("via SSH"); break;
+                        m_sshTunnelStatus = QStringLiteral("via SSH");
+                        m_sshConnecting = false;
+                        runPendingRefreshes();
+                        break;
                     case qumesh::ssh::SshSession::Failed:
                         m_sshTunnelStatus = QStringLiteral("SSH failed: %1")
-                                                .arg(m_sshSession->lastError()); break;
+                                                .arg(m_sshSession->lastError());
+                        m_sshConnecting = false;
+                        m_pendingRefreshes = 0;
+                        break;
                     case qumesh::ssh::SshSession::Disconnected:
-                        m_sshTunnelStatus.clear(); break;
+                        m_sshTunnelStatus.clear();
+                        m_sshConnecting = false;
+                        m_pendingRefreshes = 0;
+                        break;
                     }
                     emit sshTunnelStateChanged();
                 });
@@ -119,6 +129,25 @@ void MachineDetailsController::trustPendingSshHostKey(bool persist)
     m_awaitingSshHostKeyTrust = false;
     if (m_sshSession != nullptr) m_sshSession->trustPendingHostKey();
     if (persist) emit trustedSshHostKeyAdded(fp);
+}
+
+bool MachineDetailsController::deferIfSshConnecting(PendingRefresh kind)
+{
+    if (!m_sshConnecting) return false;
+    m_pendingRefreshes |= kind;
+    return true;
+}
+
+void MachineDetailsController::runPendingRefreshes()
+{
+    const int p = m_pendingRefreshes;
+    m_pendingRefreshes = 0;
+    if (p & PendingOverview)     refreshOverview();
+    if (p & PendingPower)        refreshPower();
+    if (p & PendingNetwork)      refreshNetwork();
+    if (p & PendingTime)         refreshTime();
+    if (p & PendingEventLog)     refreshEventLog();
+    if (p & PendingUserAccounts) refreshUserAccounts();
 }
 
 void MachineDetailsController::setHost(const QString &v)
@@ -275,6 +304,7 @@ void MachineDetailsController::setLastError(const QString &e)
 
 void MachineDetailsController::refreshOverview()
 {
+    if (deferIfSshConnecting(PendingOverview)) return;
     rebuildEndpoint();
     if (m_host.isEmpty()) {
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
@@ -360,8 +390,10 @@ void MachineDetailsController::refreshOverview()
         });
 }
 
+
 void MachineDetailsController::refreshNetwork()
 {
+    if (deferIfSshConnecting(PendingNetwork)) return;
     rebuildEndpoint();
     if (m_host.isEmpty()) {
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
@@ -385,10 +417,12 @@ void MachineDetailsController::refreshNetwork()
             }
             decInflight();
         });
+
 }
 
 void MachineDetailsController::refreshTime()
 {
+    if (deferIfSshConnecting(PendingTime)) return;
     rebuildEndpoint();
     if (m_host.isEmpty()) {
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
@@ -405,11 +439,13 @@ void MachineDetailsController::refreshTime()
                 setLastError(QStringLiteral("Time: %1").arg(r.error));
             }
             decInflight();
+
         });
 }
 
 void MachineDetailsController::refreshEventLog()
 {
+    if (deferIfSshConnecting(PendingEventLog)) return;
     rebuildEndpoint();
     if (m_host.isEmpty()) {
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
@@ -435,12 +471,14 @@ void MachineDetailsController::refreshEventLog()
                 list.append(m);
             }
             m_eventLog = std::move(list);
+
             emit eventLogChanged();
         });
 }
 
 void MachineDetailsController::refreshUserAccounts()
 {
+    if (deferIfSshConnecting(PendingUserAccounts)) return;
     rebuildEndpoint();
     if (m_host.isEmpty()) {
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
@@ -465,6 +503,7 @@ void MachineDetailsController::refreshUserAccounts()
                 m.insert(QStringLiteral("enabled"),     u.enabled);
                 list.append(m);
             }
+
             m_userAccounts = std::move(list);
             emit userAccountsChanged();
         });
@@ -472,6 +511,7 @@ void MachineDetailsController::refreshUserAccounts()
 
 void MachineDetailsController::refreshPower()
 {
+    if (deferIfSshConnecting(PendingPower)) return;
     rebuildEndpoint();
     if (m_host.isEmpty()) {
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
