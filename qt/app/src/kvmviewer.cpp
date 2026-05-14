@@ -195,6 +195,17 @@ quint32 KvmViewer::qtKeyToKeysym(int key, const QString &text)
         if (u >= 0x20 && u <= 0x7E) return u;
         if (u >= 0xA0 && u <= 0xFF) return u; // Latin-1 maps to X11 keysym 1:1
     }
+    // Fall through when `text` is empty or a control byte (e.g.
+    // Ctrl+letter delivers "\x03" but the remote needs the base
+    // letter — it'll apply the Ctrl-down we already sent on its own).
+    // Map the physical key to its lowercase ASCII keysym for letters
+    // and digits.
+    if (key >= Qt::Key_A && key <= Qt::Key_Z) {
+        return static_cast<quint32>(key - Qt::Key_A + 0x61);
+    }
+    if (key >= Qt::Key_0 && key <= Qt::Key_9) {
+        return static_cast<quint32>(key - Qt::Key_0 + 0x30);
+    }
     return 0;
 }
 
