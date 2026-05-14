@@ -16,6 +16,8 @@ class RedirectionClient;
 class SolSession;
 } // namespace qumesh::redir
 
+namespace qumesh::ssh { class SshSession; }
+
 namespace qumesh::app {
 
 /// QML-facing controller for one SOL session. Owns the redirection
@@ -81,6 +83,12 @@ public:
     void setTls(bool v);
     void setTrustedFingerprints(QStringList v);
 
+    /// When non-null, `open()` opens the session via an SSH tunnel
+    /// over the supplied session rather than connecting directly. The
+    /// pointer is non-owning; the host (e.g. SessionWindow) keeps the
+    /// session alive for the controller's lifetime.
+    void setSshSession(qumesh::ssh::SshSession *session) { m_sshSession = session; }
+
     Q_INVOKABLE void open();
     Q_INVOKABLE void close();
     Q_INVOKABLE void sendText(const QString &text);
@@ -128,6 +136,7 @@ private:
     qumesh::terminal::TerminalScreen *m_screen;
     QPointer<qumesh::redir::RedirectionClient> m_client;
     QPointer<qumesh::redir::SolSession> m_session;
+    qumesh::ssh::SshSession *m_sshSession = nullptr;
 };
 
 } // namespace qumesh::app

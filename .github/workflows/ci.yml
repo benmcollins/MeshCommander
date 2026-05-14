@@ -65,6 +65,23 @@ jobs:
             echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
           fi
 
+      - name: Install libssh (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install libssh
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix libssh)${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
+
+      - name: Install libssh (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # vcpkg ships libssh; the windows-latest runner has vcpkg
+          # pre-installed at C:/vcpkg.
+          /c/vcpkg/vcpkg.exe install libssh:x64-windows
+          echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
+          echo "VCPKG_TARGET_TRIPLET=x64-windows" >> $GITHUB_ENV
+
       - name: Configure
         shell: bash
         working-directory: qt

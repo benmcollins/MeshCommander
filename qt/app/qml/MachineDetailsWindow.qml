@@ -23,8 +23,10 @@ AppWindow {
     property string machinePass
     property bool   machineTls: false
     property var    machineTrustedFingerprints: []
+    property var    machineSshConfig: ({})
 
     signal trustedFingerprintPersistRequested(string fingerprint)
+    signal trustedSshHostKeyPersistRequested(string fingerprint)
 
     width: 1100
     height: 760
@@ -41,10 +43,14 @@ AppWindow {
         password: root.machinePass
         tls: root.machineTls
         trustedFingerprints: root.machineTrustedFingerprints
+        Component.onCompleted: controller.setSshConfig(root.machineSshConfig || ({}))
         onTrustedFingerprintAdded: function(fp) {
             // Pass up to Main.qml so it lands in ComputerModel — SOL /
             // KVM / IDE-R will then inherit the same pinned trust.
             root.trustedFingerprintPersistRequested(fp);
+        }
+        onTrustedSshHostKeyAdded: function(fp) {
+            root.trustedSshHostKeyPersistRequested(fp);
         }
         onCloseRequested: root.close()
         onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
@@ -67,6 +73,11 @@ AppWindow {
         onLastErrorChanged: {
             if (lastError.length > 0)
                 ActivityHeartbeat.reportFailure(lastError);
+        }
+        onSshTunnelStateChanged: {
+            if (sshTunnelActive) ActivityHeartbeat.reportSuccess();
+            else if (sshTunnelStatus.indexOf("failed") >= 0)
+                ActivityHeartbeat.reportFailure(sshTunnelStatus);
         }
     }
 
@@ -387,6 +398,28 @@ AppWindow {
                                 font.family: Type.sans
                                 font.pixelSize: 24
                                 font.weight: Font.Medium
+                            }
+
+                            Rectangle {
+                                visible: controller.sshTunnelStatus.length > 0
+                                Layout.topMargin: 6
+                                Layout.preferredHeight: tunnelBadgeText.implicitHeight + 6
+                                Layout.preferredWidth: tunnelBadgeText.implicitWidth + 16
+                                color: controller.sshTunnelActive
+                                    ? Colors.accent
+                                    : Colors.borderMuted
+                                radius: 4
+                                Text {
+                                    id: tunnelBadgeText
+                                    anchors.centerIn: parent
+                                    text: controller.sshTunnelStatus
+                                    color: controller.sshTunnelActive
+                                        ? Colors.surface
+                                        : Colors.textMuted
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                    font.weight: Font.Medium
+                                }
                             }
                         }
 

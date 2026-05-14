@@ -8,6 +8,8 @@ function(qumesh_app_test name)
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/configstore.h
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/computermodel.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/computermodel.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/secret_codec.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/secret_codec.h
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/migrationcontroller.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/migrationcontroller.h
     )
@@ -37,6 +39,8 @@ qt_add_executable(test_solcontroller
     test_solcontroller.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/solcontroller.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/solcontroller.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.h
 )
 target_include_directories(test_solcontroller PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 target_link_libraries(test_solcontroller PRIVATE
@@ -44,6 +48,8 @@ target_link_libraries(test_solcontroller PRIVATE
     Qt6::Network
     Qt6::Test
     qumesh_redir
+    qumesh_ssh
     qumesh_terminal
+    qumesh_wsman
 )
 add_test(NAME test_solcontroller COMMAND test_solcontroller)

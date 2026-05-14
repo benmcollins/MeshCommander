@@ -16,6 +16,8 @@ namespace qumesh::kvm {
 class KvmSession;
 }
 
+namespace qumesh::ssh { class SshSession; }
+
 namespace qumesh::app {
 
 /// QML-creatable controller for one KVM session. Owns the redirection
@@ -82,6 +84,7 @@ public:
     void setPassword(const QString &v);
     void setTls(bool v);
     void setTrustedFingerprints(QStringList v);
+    void setSshSession(qumesh::ssh::SshSession *session) { m_sshSession = session; }
 
     Q_INVOKABLE void open();
     Q_INVOKABLE void close();
@@ -131,6 +134,7 @@ private:
     KvmFramebuffer *m_framebuffer;
     QPointer<qumesh::redir::RedirectionClient> m_client;
     QPointer<qumesh::kvm::KvmSession> m_session;
+    qumesh::ssh::SshSession *m_sshSession = nullptr;
 };
 
 } // namespace qumesh::app

@@ -6,6 +6,7 @@
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
 #include "redir/sol_session.h"
+#include "ssh_tunnel_opener.h"
 
 namespace qumesh::app {
 
@@ -86,6 +87,9 @@ void SolController::open()
     m_client->setCredentials(m_user, m_password);
     m_client->setTls(m_tls);
     m_client->setTrustedFingerprints(m_trustedFingerprints);
+    if (m_sshSession != nullptr) {
+        m_client->setTunnelOpener(qumesh::app::makeSshTunnelOpener(m_sshSession));
+    }
 
     m_session = new SolSession(m_client, this);
 

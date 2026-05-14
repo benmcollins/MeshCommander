@@ -30,6 +30,24 @@ struct Computer
     QString digestRealm;
     QStringList trustedFingerprints; ///< Pinned cert fingerprints for TLS.
 
+    /// SSH tunnel configuration. When `sshTunnelEnabled` is true the
+    /// `MachineDetailsController` opens an `SshSession` to
+    /// `sshHost:sshPort` and forwards WSMAN / redir traffic to the AMT
+    /// host through that session — no local listening ports involved.
+    bool sshTunnelEnabled = false;
+    QString sshHost;
+    quint16 sshPort = 22;
+    QString sshUser;
+    enum SshAuthMode {
+        SshAuthPassword = 0,
+        SshAuthKey = 1,
+    };
+    SshAuthMode sshAuthMode = SshAuthPassword;
+    QString sshPassword;
+    QString sshKeyPath;
+    QString sshKeyPassphrase;
+    QStringList sshTrustedHostKeyFingerprints;
+
     [[nodiscard]] QJsonObject toJson() const;
     [[nodiscard]] static Computer fromJson(const QJsonObject &obj);
 };
@@ -84,6 +102,20 @@ public:
     /// Idempotent; duplicates are dropped. Returns false on persistence
     /// failure or out-of-range row.
     Q_INVOKABLE bool addTrustedFingerprint(int row, const QString &fingerprint);
+
+    /// Return the SSH tunnel configuration for the computer at `row`
+    /// as a `QVariantMap` (keys: `enabled`, `host`, `port`, `user`,
+    /// `authMode`, `password`, `keyPath`, `keyPassphrase`,
+    /// `trustedHostKeyFingerprints`). Empty map for out-of-range row.
+    Q_INVOKABLE QVariantMap sshConfigFor(int row) const;
+
+    /// Replace the SSH tunnel configuration for the computer at `row`
+    /// with the values in `cfg`. Persists immediately. Returns false on
+    /// out-of-range row or persistence failure.
+    Q_INVOKABLE bool setSshConfig(int row, const QVariantMap &cfg);
+
+    /// Append a trusted SSH host-key fingerprint at `row`. Idempotent.
+    Q_INVOKABLE bool addTrustedSshHostKey(int row, const QString &fingerprint);
 
     /// Read-only accessor for tests / dialog state.
     [[nodiscard]] Computer at(int row) const;

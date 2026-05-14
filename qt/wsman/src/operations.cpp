@@ -6,7 +6,7 @@
 #include "wsman/soap_envelope.h"
 #include "wsman/wsman_client.h"
 
-#include <QNetworkReply>
+
 #include <QObject>
 #include <QUuid>
 #include <QXmlStreamWriter>
@@ -84,16 +84,16 @@ void runRequest(WsmanClient *client, const QByteArray &envelope, ResultT &&zero,
         callback(std::move(r));
         return;
     }
-    QNetworkReply *reply = client->sendEnvelope(envelope);
-    QObject::connect(reply, &QNetworkReply::finished, client,
+    WsmanReply *reply = client->sendEnvelope(envelope);
+    QObject::connect(reply, &WsmanReply::finished, client,
                      [reply, zero = std::move(zero), extract = std::forward<Extract>(extract),
                        cb = std::move(callback)]() mutable {
                          ResultT r = zero;
                          const QByteArray body = reply->readAll();
-                         const auto err = reply->error();
+                         const auto err = reply->hasError();
                          const auto errString = reply->errorString();
                          reply->deleteLater();
-                         if (err != QNetworkReply::NoError) {
+                         if (err) {
                              r.error = errString;
                              cb(std::move(r));
                              return;
@@ -118,16 +118,16 @@ void identify(WsmanClient *client, std::function<void(IdentifyResult)> callback)
         return;
     }
     const QByteArray env = buildIdentifyEnvelope();
-    QNetworkReply *reply = client->sendEnvelope(env);
+    WsmanReply *reply = client->sendEnvelope(env);
 
-    QObject::connect(reply, &QNetworkReply::finished, client,
+    QObject::connect(reply, &WsmanReply::finished, client,
                      [reply, cb = std::move(callback)]() mutable {
                          IdentifyResult r;
                          const QByteArray body = reply->readAll();
-                         const auto err = reply->error();
+                         const auto err = reply->hasError();
                          const auto errString = reply->errorString();
                          reply->deleteLater();
-                         if (err != QNetworkReply::NoError) {
+                         if (err) {
                              r.error = errString;
                              cb(std::move(r));
                              return;
@@ -417,15 +417,15 @@ void runChainStep(WsmanClient *client, const QByteArray &envelope, const QString
         onError(std::move(r));
         return;
     }
-    QNetworkReply *reply = client->sendEnvelope(envelope);
-    QObject::connect(reply, &QNetworkReply::finished, client,
+    WsmanReply *reply = client->sendEnvelope(envelope);
+    QObject::connect(reply, &WsmanReply::finished, client,
                      [reply, name, extract = std::forward<ExtractRv>(extract),
                        onError = std::move(onError), next = std::move(next)]() mutable {
                          const QByteArray body = reply->readAll();
-                         const auto err = reply->error();
+                         const auto err = reply->hasError();
                          const auto errString = reply->errorString();
                          reply->deleteLater();
-                         if (err != QNetworkReply::NoError) {
+                         if (err) {
                              onError({false, QStringLiteral("%1: %2").arg(name).arg(errString), -1});
                              return;
                          }
@@ -745,14 +745,14 @@ void enumerateEventLog(WsmanClient *client,
                                                   context, 64,
                                                   client->endpoint().toString(),
                                                   newMessageId());
-        QNetworkReply *reply = client->sendEnvelope(env);
-        QObject::connect(reply, &QNetworkReply::finished, client,
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc, pullStep, onDone]() mutable {
                 const QByteArray body = reply->readAll();
-                const auto err = reply->error();
+                const auto err = reply->hasError();
                 const auto errString = reply->errorString();
                 reply->deleteLater();
-                if (err != QNetworkReply::NoError) { (*onDone)(errString); return; }
+                if (err) { (*onDone)(errString); return; }
                 const SoapResponse soap = parseResponse(body);
                 if (soap.isFault()) { (*onDone)(soap.fault); return; }
                 const PullChunk chunk = parsePullResponse(soap.bodyXml);
@@ -781,14 +781,14 @@ void enumerateEventLog(WsmanClient *client,
     const QByteArray env = buildEnumerateEnvelope(QString::fromLatin1(kEventLogEntryResource),
                                                    client->endpoint().toString(),
                                                    newMessageId());
-    QNetworkReply *reply = client->sendEnvelope(env);
-    QObject::connect(reply, &QNetworkReply::finished, client,
+    WsmanReply *reply = client->sendEnvelope(env);
+    QObject::connect(reply, &WsmanReply::finished, client,
         [reply, pullStep, onDone]() mutable {
             const QByteArray body = reply->readAll();
-            const auto err = reply->error();
+            const auto err = reply->hasError();
             const auto errString = reply->errorString();
             reply->deleteLater();
-            if (err != QNetworkReply::NoError) { (*onDone)(errString); return; }
+            if (err) { (*onDone)(errString); return; }
             const SoapResponse soap = parseResponse(body);
             if (soap.isFault()) { (*onDone)(soap.fault); return; }
             const QString ctx = parseEnumerateContext(soap.bodyXml);
@@ -819,14 +819,14 @@ void enumerateUserAccounts(WsmanClient *client,
                                                   context, 64,
                                                   client->endpoint().toString(),
                                                   newMessageId());
-        QNetworkReply *reply = client->sendEnvelope(env);
-        QObject::connect(reply, &QNetworkReply::finished, client,
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc, pullStep, onDone]() mutable {
                 const QByteArray body = reply->readAll();
-                const auto err = reply->error();
+                const auto err = reply->hasError();
                 const auto errString = reply->errorString();
                 reply->deleteLater();
-                if (err != QNetworkReply::NoError) { (*onDone)(errString); return; }
+                if (err) { (*onDone)(errString); return; }
                 const SoapResponse soap = parseResponse(body);
                 if (soap.isFault()) { (*onDone)(soap.fault); return; }
                 const PullChunk chunk = parsePullResponse(soap.bodyXml);
@@ -854,14 +854,14 @@ void enumerateUserAccounts(WsmanClient *client,
     const QByteArray env = buildEnumerateEnvelope(QString::fromLatin1(kAccountResource),
                                                    client->endpoint().toString(),
                                                    newMessageId());
-    QNetworkReply *reply = client->sendEnvelope(env);
-    QObject::connect(reply, &QNetworkReply::finished, client,
+    WsmanReply *reply = client->sendEnvelope(env);
+    QObject::connect(reply, &WsmanReply::finished, client,
         [reply, pullStep, onDone]() mutable {
             const QByteArray body = reply->readAll();
-            const auto err = reply->error();
+            const auto err = reply->hasError();
             const auto errString = reply->errorString();
             reply->deleteLater();
-            if (err != QNetworkReply::NoError) { (*onDone)(errString); return; }
+            if (err) { (*onDone)(errString); return; }
             const SoapResponse soap = parseResponse(body);
             if (soap.isFault()) { (*onDone)(soap.fault); return; }
             const QString ctx = parseEnumerateContext(soap.bodyXml);

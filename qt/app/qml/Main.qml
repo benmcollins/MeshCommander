@@ -164,6 +164,7 @@ ApplicationWindow {
             item.machineTls  = ComputerModel.data(idx, ComputerModel.TlsRole)  || false;
             item.machineTrustedFingerprints =
                 ComputerModel.data(idx, ComputerModel.TrustedFingerprintsRole) || [];
+            item.machineSshConfig = ComputerModel.sshConfigFor(targetRow) || ({});
             item.visible = true;
         }
 
@@ -174,6 +175,10 @@ ApplicationWindow {
             onTrustedFingerprintPersistRequested: function(fp) {
                 if (detailsLoader.targetRow >= 0)
                     ComputerModel.addTrustedFingerprint(detailsLoader.targetRow, fp);
+            }
+            onTrustedSshHostKeyPersistRequested: function(fp) {
+                if (detailsLoader.targetRow >= 0)
+                    ComputerModel.addTrustedSshHostKey(detailsLoader.targetRow, fp);
             }
         }
     }
