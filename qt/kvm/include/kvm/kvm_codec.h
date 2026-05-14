@@ -122,6 +122,15 @@ bool tryParseServerInit(QByteArrayView buffer, ServerInit *info, int *consumed);
 /// to always be present; we add RLE and DesktopSize.
 QByteArray buildSetEncodings();
 
+/// Build an Intel KvmExt command, smuggled as a ClientCutText frame
+/// (message type 6). The legacy uses this to flip AMT into modes the
+/// stock RFB protocol doesn't expose — most importantly, command `4`
+/// with value `0` disables the zlib compression on RLE blocks, which
+/// keeps every block in the uncompressed-marker path our decoder
+/// handles cleanly. Older AMT firmwares that don't recognize KvmExt
+/// silently ignore the frame (it looks like a clipboard write).
+QByteArray buildKvmExtCmd(quint8 cmd, quint8 value);
+
 /// Build FramebufferUpdateRequest. `incremental=0` triggers a full
 /// repaint; `1` requests only the changed regions since the last frame.
 QByteArray buildFramebufferUpdateRequest(bool incremental, quint16 x, quint16 y,

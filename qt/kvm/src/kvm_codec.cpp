@@ -178,6 +178,28 @@ QByteArray buildSetEncodings()
     return b;
 }
 
+QByteArray buildKvmExtCmd(quint8 cmd, quint8 value)
+{
+    // ClientCutText (msg type 6) carrying a magic '\0KvmExtCmd\0' tag
+    // plus a 1-byte command and 1-byte value. Length is the big-endian
+    // count of bytes after the 8-byte header.
+    static constexpr char kTag[] = "\0KvmExtCmd\0";   // 11 bytes
+    constexpr int kTagLen = sizeof(kTag) - 1;          // strip trailing nul
+    const quint32 bodyLen = static_cast<quint32>(kTagLen + 2);
+
+    QByteArray b;
+    b.append(char(6));                                 // type
+    b.append(char(0)); b.append(char(0)); b.append(char(0));
+    b.append(char((bodyLen >> 24) & 0xFF));
+    b.append(char((bodyLen >> 16) & 0xFF));
+    b.append(char((bodyLen >> 8) & 0xFF));
+    b.append(char(bodyLen & 0xFF));
+    b.append(kTag, kTagLen);
+    b.append(char(cmd));
+    b.append(char(value));
+    return b;
+}
+
 QByteArray buildFramebufferUpdateRequest(bool incremental, quint16 x, quint16 y,
                                           quint16 w, quint16 h)
 {
