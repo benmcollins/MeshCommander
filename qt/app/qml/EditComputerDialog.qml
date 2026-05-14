@@ -196,12 +196,11 @@ Dialog {
                 onClicked: root.reject()
             }
 
-            Button {
+            AccentButton {
                 text: root.isNew ? qsTr("Add machine") : qsTr("Save changes")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
-                highlighted: true
-                enabled: root.draftName.length > 0 && root.draftHost.length > 0
+enabled: root.draftName.length > 0 && root.draftHost.length > 0
                 onClicked: {
                     let savedRow = root.row;
                     if (root.isNew) {

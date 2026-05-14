@@ -61,6 +61,7 @@ qt_add_qml_module(qumesh
         qml/MachineDetailsWindow.qml
         qml/CertificatesWindow.qml
         qml/CertTrustDialog.qml
+        qml/AccentButton.qml
         qml/AppMark.qml
         qml/AppWindow.qml
         qml/FlatButton.qml

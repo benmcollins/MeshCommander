@@ -138,12 +138,11 @@ Dialog {
                 font.pixelSize: Type.sizeS
                 onClicked: if (root.controller) root.controller.close()
             }
-            Button {
+            AccentButton {
                 text: qsTr("Trust")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
-                highlighted: true
-                onClicked: if (root.controller)
+onClicked: if (root.controller)
                     root.controller.trustPendingCert(persistCheck.checked)
             }
         }

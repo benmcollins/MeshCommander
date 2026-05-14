@@ -222,12 +222,11 @@ Rectangle {
                         spacing: 8
                         Layout.fillWidth: true
 
-                        Button {
+                        AccentButton {
                             text: qsTr("Open details…")
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
-                            highlighted: true
-                            enabled: root.machineHost.length > 0 && root.machineUser.length > 0
+enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             onClicked: root.openDetailsRequested(root.row)
                         }
                         FlatButton {

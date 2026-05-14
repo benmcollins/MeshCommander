@@ -177,12 +177,11 @@ AppWindow {
                         font.pixelSize: Type.sizeS
                         Layout.alignment: Qt.AlignHCenter
                     }
-                    Button {
+                    AccentButton {
                         text: qsTr("Import…")
                         font.family: Type.sans
                         font.pixelSize: Type.sizeS
-                        highlighted: true
-                        Layout.alignment: Qt.AlignHCenter
+Layout.alignment: Qt.AlignHCenter
                         onClicked: importDialog.open()
                     }
                 }

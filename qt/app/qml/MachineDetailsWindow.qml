@@ -678,10 +678,9 @@ AppWindow {
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                             }
-                            Button {
+                            AccentButton {
                                 text: qsTr("Open SOL")
-                                highlighted: true
-                                enabled: root.machineHost.length > 0 && root.machineUser.length > 0
+enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 onClicked: solLoader.launch()
                             }
                         }
@@ -703,10 +702,9 @@ AppWindow {
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                             }
-                            Button {
+                            AccentButton {
                                 text: qsTr("Open KVM")
-                                highlighted: true
-                                enabled: root.machineHost.length > 0 && root.machineUser.length > 0
+enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 onClicked: kvmLoader.launch()
                             }
                         }
@@ -729,10 +727,9 @@ AppWindow {
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                             }
-                            Button {
+                            AccentButton {
                                 text: qsTr("Mount ISO…")
-                                highlighted: true
-                                enabled: root.machineHost.length > 0 && root.machineUser.length > 0
+enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 onClicked: iderLoader.launch()
                             }
                         }
