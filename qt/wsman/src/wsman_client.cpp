@@ -4,6 +4,7 @@
 #include "wsman/wsman_client.h"
 
 #include <QCryptographicHash>
+#include <QLoggingCategory>
 #include <QPointer>
 #include <QRandomGenerator>
 #include <QSslCertificate>
@@ -13,6 +14,8 @@
 #include <QUrl>
 
 #include <memory>
+
+Q_LOGGING_CATEGORY(qumeshWsmanXport, "qumesh.wsman.transport", QtWarningMsg)
 
 namespace qumesh::wsman {
 
@@ -273,7 +276,10 @@ void writeRequestBytes(QSslSocket *sock, const QByteArray &method,
         req += "Authorization: " + authHeader + "\r\n";
     req += "Content-Length: " + QByteArray::number(body.size()) + "\r\n\r\n";
     req += body;
-    sock->write(req);
+    const qint64 wrote = sock->write(req);
+    qCDebug(qumeshWsmanXport) << "writeRequestBytes:" << req.size() << "bytes queued,"
+                              << wrote << "returned by sock->write; auth="
+                              << !authHeader.isEmpty();
 }
 
 } // namespace
@@ -289,6 +295,7 @@ void startTransport(WsmanReply *reply, WsmanClient *client,
     bool fromFactory = false;
     if (cd.socketFactory) {
         const qintptr fd = cd.socketFactory();
+        qCDebug(qumeshWsmanXport) << "startTransport: socket factory returned fd" << fd;
         if (fd < 0) {
             rd.errorString = QStringLiteral("SSH tunnel socket could not be opened");
             rd.state = WsmanReply::Private::Failed;
@@ -298,13 +305,16 @@ void startTransport(WsmanReply *reply, WsmanClient *client,
         }
         sock = new QSslSocket(reply);
         if (!sock->setSocketDescriptor(fd, QAbstractSocket::ConnectedState)) {
-            rd.errorString = QStringLiteral("setSocketDescriptor failed");
+            rd.errorString = QStringLiteral("setSocketDescriptor failed: %1").arg(sock->errorString());
+            qCWarning(qumeshWsmanXport) << "setSocketDescriptor failed:" << sock->errorString();
             rd.state = WsmanReply::Private::Failed;
             rd.finished = true;
             sock->deleteLater();
             QMetaObject::invokeMethod(reply, &WsmanReply::finished, Qt::QueuedConnection);
             return;
         }
+        qCDebug(qumeshWsmanXport) << "startTransport: adopted tunnel fd, socketState ="
+                                  << sock->state();
         fromFactory = true;
     } else {
         sock = new QSslSocket(reply);
@@ -558,6 +568,8 @@ void readMore(WsmanReply *reply, WsmanClient *client,
 {
     if (rd.finished || rd.socket == nullptr) return;
     const QByteArray chunk = rd.socket->readAll();
+    qCDebug(qumeshWsmanXport) << "readMore got" << chunk.size() << "bytes, state ="
+                              << int(rd.state);
     if (chunk.isEmpty() && rd.socket->state() != QAbstractSocket::ConnectedState
         && rd.state == WsmanReply::Private::ReadingHeaders) {
         finishReply(reply, rd, QStringLiteral("Connection closed before headers"));

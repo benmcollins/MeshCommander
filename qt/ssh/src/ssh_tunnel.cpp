@@ -5,6 +5,7 @@
 #include "ssh/ssh_session.h"
 #include "ssh_session_worker.h"
 
+#include <QLoggingCategory>
 #include <QMutexLocker>
 #include <QPointer>
 #include <QThread>
@@ -12,6 +13,8 @@
 #include <libssh/libssh.h>
 
 #include <atomic>
+
+Q_LOGGING_CATEGORY(qumeshSshTunnel, "qumesh.ssh.tunnel", QtWarningMsg)
 
 #ifdef Q_OS_WIN
 #  include <winsock2.h>
@@ -22,6 +25,8 @@
 #else
 #  include <sys/socket.h>
 #  include <sys/types.h>
+#  include <netinet/in.h>
+#  include <arpa/inet.h>
 #  include <fcntl.h>
 #  include <unistd.h>
 #  include <poll.h>
@@ -38,19 +43,21 @@ class SshSessionWorker;
 
 namespace {
 
-#ifdef Q_OS_WIN
-/// Windows lacks POSIX `socketpair()`. Emulate it with a transient
-/// 127.0.0.1 listener: bind to an ephemeral port, accept exactly one
-/// connection, then close the listener. The local listening port is
-/// open for microseconds, which is the practical floor of "no exposed
-/// port" on platforms without AF_UNIX socketpair.
+/// Build a pair of connected stream sockets via a transient 127.0.0.1
+/// listener: bind to an ephemeral port, accept exactly one connection,
+/// close the listener. The listening port is open for only the few
+/// microseconds between `listen()` and `accept()`, then gone.
 ///
-/// We could use Windows 10's AF_UNIX support, but its socketpair-style
-/// emulation still requires a named filesystem socket, which is an
-/// equivalent exposure surface and additionally requires cleanup. The
-/// transient-listener approach has zero filesystem residue.
+/// Previously the POSIX path used `socketpair(AF_UNIX, SOCK_STREAM)`
+/// which is conceptually cleaner — no port ever bound — but
+/// `QSslSocket::setSocketDescriptor` / `QTcpSocket::setSocketDescriptor`
+/// have TCP-shaped assumptions and don't drive an AF_UNIX fd reliably
+/// (no `readyRead` after writes that should have triggered it, TLS
+/// handshake never completing, etc.). Both platforms now share this
+/// transient-loopback pattern so the failure mode is the same.
 int makeSocketPair(qintptr fds[2])
 {
+#ifdef Q_OS_WIN
     SOCKET listener = ::socket(AF_INET, SOCK_STREAM, 0);
     if (listener == INVALID_SOCKET) return -1;
 
@@ -88,31 +95,62 @@ int makeSocketPair(qintptr fds[2])
     fds[0] = static_cast<qintptr>(server);
     fds[1] = static_cast<qintptr>(client);
     return 0;
-}
-
-void closeFd(qintptr fd)
-{
-    if (fd >= 0) ::closesocket(static_cast<SOCKET>(fd));
-}
 #else
-int makeSocketPair(qintptr fds[2])
-{
-    int raw[2] = {-1, -1};
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, raw) != 0) return -1;
-    // The pump side is non-blocking; the Qt side stays in whatever
-    // mode Qt prefers (we hand it off below).
-    int flags = ::fcntl(raw[0], F_GETFL, 0);
-    if (flags >= 0) ::fcntl(raw[0], F_SETFL, flags | O_NONBLOCK);
-    fds[0] = raw[0];
-    fds[1] = raw[1];
+    int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (listener < 0) return -1;
+
+    int one = 1;
+    ::setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+    if (::bind(listener, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0
+        || ::listen(listener, 1) != 0) {
+        ::close(listener);
+        return -1;
+    }
+    socklen_t alen = sizeof(addr);
+    if (::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &alen) != 0) {
+        ::close(listener);
+        return -1;
+    }
+
+    int client = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (client < 0) {
+        ::close(listener);
+        return -1;
+    }
+    if (::connect(client, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
+        ::close(client);
+        ::close(listener);
+        return -1;
+    }
+    int server = ::accept(listener, nullptr, nullptr);
+    ::close(listener);
+    if (server < 0) {
+        ::close(client);
+        return -1;
+    }
+    // Pump side: non-blocking so the pump's poll-and-read loop doesn't
+    // stall on partial drains.
+    int flags = ::fcntl(server, F_GETFL, 0);
+    if (flags >= 0) ::fcntl(server, F_SETFL, flags | O_NONBLOCK);
+    fds[0] = server;
+    fds[1] = client;
     return 0;
+#endif
 }
 
 void closeFd(qintptr fd)
 {
+#ifdef Q_OS_WIN
+    if (fd >= 0) ::closesocket(static_cast<SOCKET>(fd));
+#else
     if (fd >= 0) ::close(static_cast<int>(fd));
-}
 #endif
+}
 
 bool fdReadable(qintptr fd, int timeoutMs)
 {
@@ -205,6 +243,9 @@ public:
             return -1;
         }
         m_pumpFd = fds[0];
+        qCDebug(qumeshSshTunnel) << "tunnel to" << m_remoteHost << ":"
+                                 << m_remotePort << "opened: pump fd"
+                                 << m_pumpFd << ", qt fd" << fds[1];
         return fds[1];
     }
 
@@ -222,6 +263,10 @@ protected:
         constexpr qint64 kBufSize = 32 * 1024;
         QByteArray buf;
         buf.resize(kBufSize);
+        qCDebug(qumeshSshTunnel) << "pump thread started for"
+                                 << m_remoteHost << ":" << m_remotePort;
+        qint64 totalAppToSsh = 0;
+        qint64 totalSshToApp = 0;
 
         while (!m_stop.load(std::memory_order_acquire)) {
             bool didWork = false;
@@ -241,6 +286,9 @@ protected:
                         }, Qt::BlockingQueuedConnection);
                     if (sshErr) { m_error = QStringLiteral("ssh_channel_write failed"); break; }
                     didWork = true;
+                    totalAppToSsh += written;
+                    qCDebug(qumeshSshTunnel) << "app→ssh wrote" << written
+                                             << "bytes (total" << totalAppToSsh << ")";
                     if (written < n) {
                         // libssh occasionally returns short writes; loop
                         // remaining bytes next iteration. We push the
@@ -304,6 +352,9 @@ protected:
                         totalOut += wrote;
                     }
                     didWork = true;
+                    totalSshToApp += got;
+                    qCDebug(qumeshSshTunnel) << "ssh→app wrote" << got
+                                             << "bytes (total" << totalSshToApp << ")";
                 }
             }
 
@@ -312,7 +363,10 @@ protected:
             QMetaObject::invokeMethod(
                 w, [this, &eof]() { eof = ssh_channel_is_eof(m_channel); },
                 Qt::BlockingQueuedConnection);
-            if (eof != 0) break;
+            if (eof != 0) {
+                qCDebug(qumeshSshTunnel) << "ssh channel EOF — pump exiting";
+                break;
+            }
 
             if (!didWork) {
                 // Avoid spinning: short sleep when both directions
@@ -321,6 +375,9 @@ protected:
                 QThread::usleep(5000);
             }
         }
+        qCDebug(qumeshSshTunnel) << "pump thread exiting; sent" << totalAppToSsh
+                                 << "bytes app→ssh, received" << totalSshToApp
+                                 << "bytes ssh→app; m_error=" << m_error;
 
         // Pump exiting: close the SSH channel.
         if (m_channel != nullptr) {
