@@ -94,11 +94,14 @@ AppWindow {
     function refreshCurrent() {
         if (machineHost.length === 0) return;
         switch (currentSection) {
-        case 0: controller.refreshOverview(); break;
-        case 1: controller.refreshPower();    break;
-        case 2: controller.refreshNetwork();  break;
-        case 3: controller.refreshTime();     break;
-        // 4 = Remote access, 5 = Certs, 6/7 = stubs — no fetch needed.
+        case 0: controller.refreshOverview();     break;
+        case 1: controller.refreshPower();        break;
+        case 2: controller.refreshNetwork();      break;
+        case 3: controller.refreshTime();         break;
+        // 4 = Remote access — no fetch needed.
+        // 5 = Certificates (local pins) — comes from the saved machine.
+        case 6: controller.refreshEventLog();     break;
+        case 7: controller.refreshUserAccounts(); break;
         }
     }
 
@@ -856,15 +859,17 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     Item { Layout.fillHeight: true }
                 }
 
-                // 6 — Event log (stub)
+                // 6 — Event log
                 ColumnLayout {
-                    spacing: 18
+                    spacing: 8
+
                     ColumnLayout {
                         spacing: 4
                         Layout.fillWidth: true
                         Layout.topMargin: 24
                         Layout.leftMargin: 24
                         Layout.rightMargin: 24
+
                         Text {
                             text: qsTr("EVENT LOG")
                             color: Colors.textMuted
@@ -874,26 +879,93 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             font.weight: Font.Medium
                         }
                         Text {
-                            text: qsTr("AMT event log fetch lands in a follow-up — needs WS-Enumeration.")
+                            text: controller.eventLog.length === 0
+                                ? qsTr("No entries.")
+                                : qsTr("%1 entries").arg(controller.eventLog.length)
+                            color: Colors.text
+                            font.family: Type.sans
+                            font.pixelSize: 20
+                        }
+                    }
+
+                    ListView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.leftMargin: 24
+                        Layout.rightMargin: 24
+                        Layout.bottomMargin: 24
+                        clip: true
+                        model: controller.eventLog
+                        ScrollBar.vertical: ScrollBar {}
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            required property int index
+                            width: ListView.view.width
+                            implicitHeight: 36
+                            color: index % 2 === 0 ? "transparent" : Colors.elevated
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 12
+
+                                Text {
+                                    text: modelData.severity || "—"
+                                    color: {
+                                        // CIM Severity: 0/1 OK, 2 Degraded, 3 Minor,
+                                        // 4 Major, 5 Critical, 6 Fatal. Bucket into
+                                        // our three on/standby/error colours.
+                                        const s = parseInt(modelData.severity);
+                                        if (s >= 5) return Colors.error;
+                                        if (s >= 3) return Colors.standby;
+                                        return Colors.textMuted;
+                                    }
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                    Layout.preferredWidth: 32
+                                }
+                                Text {
+                                    text: modelData.timestamp || "—"
+                                    color: Colors.textMuted
+                                    font.family: Type.mono
+                                    font.pixelSize: Type.sizeXs
+                                    Layout.preferredWidth: 160
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    text: modelData.message || ""
+                                    color: Colors.text
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeS
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+
+                        Text {
+                            visible: controller.eventLog.length === 0 && !controller.busy
+                            anchors.centerIn: parent
+                            text: qsTr("No event log entries.")
                             color: Colors.textFaint
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
                         }
                     }
-                    Item { Layout.fillHeight: true }
                 }
 
-                // 7 — Users (stub)
+                // 7 — User accounts
                 ColumnLayout {
-                    spacing: 18
+                    spacing: 8
+
                     ColumnLayout {
                         spacing: 4
                         Layout.fillWidth: true
                         Layout.topMargin: 24
                         Layout.leftMargin: 24
                         Layout.rightMargin: 24
+
                         Text {
                             text: qsTr("USER ACCOUNTS")
                             color: Colors.textMuted
@@ -903,15 +975,90 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             font.weight: Font.Medium
                         }
                         Text {
-                            text: qsTr("AMT user list lands in a follow-up — needs WS-Enumeration.")
+                            text: controller.userAccounts.length === 0
+                                ? qsTr("No accounts.")
+                                : qsTr("%1 accounts").arg(controller.userAccounts.length)
+                            color: Colors.text
+                            font.family: Type.sans
+                            font.pixelSize: 20
+                        }
+                        Text {
+                            text: qsTr("Read-only — adding / editing accounts comes in a follow-up.")
+                            color: Colors.textFaint
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeXs
+                        }
+                    }
+
+                    ListView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.leftMargin: 24
+                        Layout.rightMargin: 24
+                        Layout.bottomMargin: 24
+                        clip: true
+                        model: controller.userAccounts
+                        ScrollBar.vertical: ScrollBar {}
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            required property int index
+                            width: ListView.view.width
+                            implicitHeight: 48
+                            color: index % 2 === 0 ? "transparent" : Colors.elevated
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 12
+                                anchors.topMargin: 6
+                                anchors.bottomMargin: 6
+                                spacing: 2
+
+                                RowLayout {
+                                    spacing: 8
+                                    Layout.fillWidth: true
+
+                                    Text {
+                                        text: modelData.elementName.length > 0
+                                              ? modelData.elementName
+                                              : (modelData.name || qsTr("(unnamed)"))
+                                        color: Colors.text
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeM
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+                                    Text {
+                                        visible: !modelData.enabled
+                                        text: qsTr("DISABLED")
+                                        color: Colors.standby
+                                        font.family: Type.sans
+                                        font.pixelSize: 9
+                                        font.weight: Font.Medium
+                                        font.letterSpacing: 1
+                                    }
+                                }
+
+                                Text {
+                                    text: modelData.instanceID || ""
+                                    color: Colors.textFaint
+                                    font.family: Type.mono
+                                    font.pixelSize: Type.sizeXs
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                            }
+                        }
+
+                        Text {
+                            visible: controller.userAccounts.length === 0 && !controller.busy
+                            anchors.centerIn: parent
+                            text: qsTr("No user accounts.")
                             color: Colors.textFaint
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
                         }
                     }
-                    Item { Layout.fillHeight: true }
                 }
             }
         }

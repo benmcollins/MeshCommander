@@ -11,6 +11,8 @@
 #include <QUuid>
 #include <QXmlStreamWriter>
 
+#include <memory>
+
 namespace qumesh::wsman {
 
 namespace {
@@ -54,6 +56,14 @@ constexpr char kIpsPowerServiceResource[] =
 constexpr char kBootCapabilitiesResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_BootCapabilities";
+
+constexpr char kEventLogEntryResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/"
+    "AMT_EventLogEntry";
+
+constexpr char kAccountResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/"
+    "CIM_Account";
 
 QString newMessageId()
 {
@@ -678,6 +688,157 @@ void requestPowerStateChange(WsmanClient *client, int powerState,
                 r.error = QStringLiteral("RequestPowerStateChange returned %1").arg(rv);
         },
         std::move(callback));
+}
+
+void enumerateEventLog(WsmanClient *client,
+                       std::function<void(EventLogResult)> callback)
+{
+    // Wrap the templated runner with a closure that fills the right
+    // result field. The runner template's generic `r.entries` line
+    // would clash with the User-accounts result that uses `accounts`,
+    // so we keep `done` as a thin shim.
+    struct Acc { QList<EventLogEntry> items; };
+    auto acc = std::make_shared<Acc>();
+    auto onDone = std::make_shared<std::function<void(QString)>>();
+    auto cb = std::make_shared<std::function<void(EventLogResult)>>(std::move(callback));
+
+    *onDone = [acc, cb](QString error) {
+        EventLogResult r;
+        r.ok = error.isEmpty();
+        r.error = std::move(error);
+        r.entries = std::move(acc->items);
+        (*cb)(std::move(r));
+    };
+
+    auto pullStep = std::make_shared<std::function<void(const QString &)>>();
+    *pullStep = [client, acc, pullStep, onDone](const QString &context) mutable {
+        const QByteArray env = buildPullEnvelope(QString::fromLatin1(kEventLogEntryResource),
+                                                  context, 64,
+                                                  client->endpoint().toString(),
+                                                  newMessageId());
+        QNetworkReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &QNetworkReply::finished, client,
+            [reply, acc, pullStep, onDone]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->error();
+                const auto errString = reply->errorString();
+                reply->deleteLater();
+                if (err != QNetworkReply::NoError) { (*onDone)(errString); return; }
+                const SoapResponse soap = parseResponse(body);
+                if (soap.isFault()) { (*onDone)(soap.fault); return; }
+                const PullChunk chunk = parsePullResponse(soap.bodyXml);
+                for (const QByteArray &item : chunk.items) {
+                    EventLogEntry e;
+                    e.recordId  = findScalar(item, QStringLiteral("RecordID"));
+                    e.timestamp = findScalar(item, QStringLiteral("CreationTimeStamp"));
+                    e.severity  = findScalar(item, QStringLiteral("Severity"));
+                    // Message is split across several fields in the
+                    // schema; the most user-facing one is "Message"
+                    // (free text). Fall back to "Description" otherwise.
+                    e.message = findScalar(item, QStringLiteral("Message"));
+                    if (e.message.isEmpty())
+                        e.message = findScalar(item, QStringLiteral("Description"));
+                    acc->items.append(e);
+                }
+                if (chunk.endOfSequence || chunk.enumerationContext.isEmpty()) {
+                    (*onDone)({});
+                    return;
+                }
+                (*pullStep)(chunk.enumerationContext);
+            });
+    };
+
+    if (client == nullptr) { (*onDone)(QStringLiteral("client is null")); return; }
+    const QByteArray env = buildEnumerateEnvelope(QString::fromLatin1(kEventLogEntryResource),
+                                                   client->endpoint().toString(),
+                                                   newMessageId());
+    QNetworkReply *reply = client->sendEnvelope(env);
+    QObject::connect(reply, &QNetworkReply::finished, client,
+        [reply, pullStep, onDone]() mutable {
+            const QByteArray body = reply->readAll();
+            const auto err = reply->error();
+            const auto errString = reply->errorString();
+            reply->deleteLater();
+            if (err != QNetworkReply::NoError) { (*onDone)(errString); return; }
+            const SoapResponse soap = parseResponse(body);
+            if (soap.isFault()) { (*onDone)(soap.fault); return; }
+            const QString ctx = parseEnumerateContext(soap.bodyXml);
+            if (ctx.isEmpty()) { (*onDone)({}); return; }
+            (*pullStep)(ctx);
+        });
+}
+
+void enumerateUserAccounts(WsmanClient *client,
+                            std::function<void(UserAccountsResult)> callback)
+{
+    struct Acc { QList<UserAccount> items; };
+    auto acc = std::make_shared<Acc>();
+    auto onDone = std::make_shared<std::function<void(QString)>>();
+    auto cb = std::make_shared<std::function<void(UserAccountsResult)>>(std::move(callback));
+
+    *onDone = [acc, cb](QString error) {
+        UserAccountsResult r;
+        r.ok = error.isEmpty();
+        r.error = std::move(error);
+        r.accounts = std::move(acc->items);
+        (*cb)(std::move(r));
+    };
+
+    auto pullStep = std::make_shared<std::function<void(const QString &)>>();
+    *pullStep = [client, acc, pullStep, onDone](const QString &context) mutable {
+        const QByteArray env = buildPullEnvelope(QString::fromLatin1(kAccountResource),
+                                                  context, 64,
+                                                  client->endpoint().toString(),
+                                                  newMessageId());
+        QNetworkReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &QNetworkReply::finished, client,
+            [reply, acc, pullStep, onDone]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->error();
+                const auto errString = reply->errorString();
+                reply->deleteLater();
+                if (err != QNetworkReply::NoError) { (*onDone)(errString); return; }
+                const SoapResponse soap = parseResponse(body);
+                if (soap.isFault()) { (*onDone)(soap.fault); return; }
+                const PullChunk chunk = parsePullResponse(soap.bodyXml);
+                for (const QByteArray &item : chunk.items) {
+                    UserAccount u;
+                    u.instanceID  = findScalar(item, QStringLiteral("InstanceID"));
+                    u.name        = findScalar(item, QStringLiteral("Name"));
+                    u.elementName = findScalar(item, QStringLiteral("ElementName"));
+                    const QString es = findScalar(item, QStringLiteral("EnabledState"));
+                    // CIM EnabledState: 2 = Enabled. Anything else (3/4
+                    // disabled, 5 not applicable, etc.) we surface as
+                    // disabled in the QML.
+                    u.enabled = (es == QStringLiteral("2"));
+                    acc->items.append(u);
+                }
+                if (chunk.endOfSequence || chunk.enumerationContext.isEmpty()) {
+                    (*onDone)({});
+                    return;
+                }
+                (*pullStep)(chunk.enumerationContext);
+            });
+    };
+
+    if (client == nullptr) { (*onDone)(QStringLiteral("client is null")); return; }
+    const QByteArray env = buildEnumerateEnvelope(QString::fromLatin1(kAccountResource),
+                                                   client->endpoint().toString(),
+                                                   newMessageId());
+    QNetworkReply *reply = client->sendEnvelope(env);
+    QObject::connect(reply, &QNetworkReply::finished, client,
+        [reply, pullStep, onDone]() mutable {
+            const QByteArray body = reply->readAll();
+            const auto err = reply->error();
+            const auto errString = reply->errorString();
+            reply->deleteLater();
+            if (err != QNetworkReply::NoError) { (*onDone)(errString); return; }
+            const SoapResponse soap = parseResponse(body);
+            if (soap.isFault()) { (*onDone)(soap.fault); return; }
+            const QString ctx = parseEnumerateContext(soap.bodyXml);
+            if (ctx.isEmpty()) { (*onDone)({}); return; }
+            (*pullStep)(ctx);
+        });
 }
 
 } // namespace qumesh::wsman
