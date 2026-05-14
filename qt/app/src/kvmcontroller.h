@@ -33,6 +33,15 @@ class KvmController : public QObject
     Q_PROPERTY(int desktopWidth READ desktopWidth NOTIFY desktopResized)
     Q_PROPERTY(int desktopHeight READ desktopHeight NOTIFY desktopResized)
     Q_PROPERTY(KvmFramebuffer *framebuffer READ framebuffer CONSTANT)
+    Q_PROPERTY(bool tls READ tls WRITE setTls NOTIFY tlsChanged)
+    Q_PROPERTY(QStringList trustedFingerprints READ trustedFingerprints
+                   WRITE setTrustedFingerprints NOTIFY trustedFingerprintsChanged)
+    Q_PROPERTY(QString pendingCertSubject READ pendingCertSubject NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertIssuer READ pendingCertIssuer NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertFingerprint READ pendingCertFingerprint NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertNotBefore READ pendingCertNotBefore NOTIFY pendingCertChanged)
+    Q_PROPERTY(QString pendingCertNotAfter READ pendingCertNotAfter NOTIFY pendingCertChanged)
+    Q_PROPERTY(bool awaitingTrust READ awaitingTrust NOTIFY awaitingTrustChanged)
 
 public:
     enum class State {
