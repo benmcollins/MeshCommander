@@ -318,6 +318,8 @@ void startTransport(WsmanReply *reply, WsmanClient *client,
         fromFactory = true;
     } else {
         sock = new QSslSocket(reply);
+        qCWarning(qumeshWsmanXport) << "startTransport: direct mode, will connectToHost"
+                                    << cd.endpoint.host() << cd.endpoint.port();
     }
     rd.socket = sock;
 
