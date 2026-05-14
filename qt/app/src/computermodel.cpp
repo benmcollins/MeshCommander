@@ -256,11 +256,44 @@ bool ComputerModel::persist()
     return true;
 }
 
+int ComputerModel::countOn() const { return m_countOn; }
+int ComputerModel::countOff() const { return m_countOff; }
+int ComputerModel::countStandby() const { return m_countStandby; }
+int ComputerModel::countUnreachable() const { return m_countUnreachable; }
+int ComputerModel::countUnknown() const { return m_countUnknown; }
+
+void ComputerModel::recomputeFleetCounts()
+{
+    int on = 0, off = 0, standby = 0, unreachable = 0, unknown = 0;
+    for (const Computer &c : m_computers) {
+        const int s = m_powerStates.value(c.id, 0);
+        switch (static_cast<PowerStatePoller::State>(s)) {
+        case PowerStatePoller::State::On:          ++on; break;
+        case PowerStatePoller::State::Off:         ++off; break;
+        case PowerStatePoller::State::Standby:
+        case PowerStatePoller::State::Hibernate:   ++standby; break;
+        case PowerStatePoller::State::Unreachable: ++unreachable; break;
+        case PowerStatePoller::State::Unknown:     ++unknown; break;
+        }
+    }
+    if (on == m_countOn && off == m_countOff && standby == m_countStandby
+        && unreachable == m_countUnreachable && unknown == m_countUnknown) {
+        return;
+    }
+    m_countOn = on;
+    m_countOff = off;
+    m_countStandby = standby;
+    m_countUnreachable = unreachable;
+    m_countUnknown = unknown;
+    emit fleetCountsChanged();
+}
+
 void ComputerModel::tearDownPollers()
 {
     for (auto *p : std::as_const(m_pollers)) p->deleteLater();
     m_pollers.clear();
     m_powerStates.clear();
+    recomputeFleetCounts();
 }
 
 void ComputerModel::rebuildPollers()
@@ -289,6 +322,7 @@ void ComputerModel::rebuildPollers()
                                 break;
                             }
                         }
+                        recomputeFleetCounts();
                     });
         }
         p->setHost(c.host);
@@ -299,8 +333,13 @@ void ComputerModel::rebuildPollers()
         next.insert(c.id, p);
     }
     // Anything left in m_pollers belongs to a deleted/orphaned computer.
-    for (auto *old : std::as_const(m_pollers)) old->deleteLater();
+    // Drop their cached state so fleet counts shrink with the fleet.
+    for (auto it = m_pollers.cbegin(); it != m_pollers.cend(); ++it) {
+        m_powerStates.remove(it.key());
+        it.value()->deleteLater();
+    }
     m_pollers = std::move(next);
+    recomputeFleetCounts();
 }
 
 } // namespace qumesh::model

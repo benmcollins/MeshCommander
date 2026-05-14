@@ -51,6 +51,11 @@ struct Computer
 class ComputerModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(int countOn READ countOn NOTIFY fleetCountsChanged)
+    Q_PROPERTY(int countOff READ countOff NOTIFY fleetCountsChanged)
+    Q_PROPERTY(int countStandby READ countStandby NOTIFY fleetCountsChanged)
+    Q_PROPERTY(int countUnreachable READ countUnreachable NOTIFY fleetCountsChanged)
+    Q_PROPERTY(int countUnknown READ countUnknown NOTIFY fleetCountsChanged)
 public:
     enum Role : int {
         IdRole = Qt::UserRole + 1,
@@ -76,6 +81,16 @@ public:
     [[nodiscard]] config::ConfigStore *store() const { return m_store; }
     [[nodiscard]] QString lastError() const { return m_lastError; }
 
+    /// Fleet-aggregate accessors: count of rows currently in each
+    /// `PowerStatePoller::State`. Updated together by the same poller
+    /// signal that pushes per-row `PowerStateRole` updates, so the
+    /// counts and per-row data stay coherent.
+    [[nodiscard]] int countOn() const;
+    [[nodiscard]] int countOff() const;
+    [[nodiscard]] int countStandby() const;
+    [[nodiscard]] int countUnreachable() const;
+    [[nodiscard]] int countUnknown() const;
+
     // QAbstractListModel
     [[nodiscard]] int rowCount(const QModelIndex &parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex &index, int role) const override;
@@ -100,8 +115,14 @@ public:
     /// Read-only accessor for tests / dialog state.
     [[nodiscard]] Computer at(int row) const;
 
+signals:
+    void fleetCountsChanged();
+
 private:
     [[nodiscard]] bool persist();
+    /// Recompute the fleet-aggregate counts from m_powerStates and
+    /// emit `fleetCountsChanged` if anything moved.
+    void recomputeFleetCounts();
     /// Build / refresh the per-row poller fleet to match the current
     /// computer list. Idempotent.
     void rebuildPollers();
@@ -113,6 +134,11 @@ private:
     QString m_lastError;
     QHash<QString, app::PowerStatePoller *> m_pollers;
     QHash<QString, int> m_powerStates; ///< id → poller State (cast to int)
+    int m_countOn = 0;
+    int m_countOff = 0;
+    int m_countStandby = 0;
+    int m_countUnreachable = 0;
+    int m_countUnknown = 0;
 };
 
 } // namespace qumesh::model
