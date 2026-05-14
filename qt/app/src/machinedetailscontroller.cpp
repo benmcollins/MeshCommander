@@ -307,6 +307,118 @@ void MachineDetailsController::refreshPower()
     });
 }
 
+void MachineDetailsController::bootToBios(bool reset)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    setLastError({});
+    emit powerChangeRequested(reset ? 10 : 2);
+    incInflight();
+    qumesh::wsman::BootActionParams p;
+    p.targetPowerState = reset ? 10 : 2;
+    p.biosSetup = true;
+    qumesh::wsman::performBootAction(m_client, p,
+        [this, reset](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            const int code = reset ? 10 : 2;
+            if (!r.ok) {
+                setLastError(QStringLiteral("Boot to BIOS: %1").arg(r.error));
+                emit powerChangeCompleted(code, false, r.error);
+                return;
+            }
+            emit powerChangeCompleted(code, true, QString());
+            refreshPower();
+        });
+}
+
+void MachineDetailsController::bootToPxe(bool reset)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    setLastError({});
+    emit powerChangeRequested(reset ? 10 : 2);
+    incInflight();
+    qumesh::wsman::BootActionParams p;
+    p.targetPowerState = reset ? 10 : 2;
+    p.amtBootSource = QStringLiteral("Force PXE Boot");
+    qumesh::wsman::performBootAction(m_client, p,
+        [this, reset](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            const int code = reset ? 10 : 2;
+            if (!r.ok) {
+                setLastError(QStringLiteral("Boot to PXE: %1").arg(r.error));
+                emit powerChangeCompleted(code, false, r.error);
+                return;
+            }
+            emit powerChangeCompleted(code, true, QString());
+            refreshPower();
+        });
+}
+
+void MachineDetailsController::bootToIderCdrom(bool reset)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    setLastError({});
+    emit powerChangeRequested(reset ? 10 : 2);
+    incInflight();
+    qumesh::wsman::BootActionParams p;
+    p.targetPowerState = reset ? 10 : 2;
+    p.amtBootSource = QStringLiteral("Force CD/DVD Boot");
+    p.useIder = true;
+    p.iderBootDevice = 1; // CD-ROM
+    qumesh::wsman::performBootAction(m_client, p,
+        [this, reset](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            const int code = reset ? 10 : 2;
+            if (!r.ok) {
+                setLastError(QStringLiteral("Boot to IDE-R CDROM: %1").arg(r.error));
+                emit powerChangeCompleted(code, false, r.error);
+                return;
+            }
+            emit powerChangeCompleted(code, true, QString());
+            refreshPower();
+        });
+}
+
+void MachineDetailsController::bootToIderFloppy(bool reset)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    setLastError({});
+    emit powerChangeRequested(reset ? 10 : 2);
+    incInflight();
+    qumesh::wsman::BootActionParams p;
+    p.targetPowerState = reset ? 10 : 2;
+    p.amtBootSource = QStringLiteral("Force CD/DVD Boot");
+    p.useIder = true;
+    p.iderBootDevice = 0; // Floppy
+    qumesh::wsman::performBootAction(m_client, p,
+        [this, reset](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            const int code = reset ? 10 : 2;
+            if (!r.ok) {
+                setLastError(QStringLiteral("Boot to IDE-R Floppy: %1").arg(r.error));
+                emit powerChangeCompleted(code, false, r.error);
+                return;
+            }
+            emit powerChangeCompleted(code, true, QString());
+            refreshPower();
+        });
+}
+
 void MachineDetailsController::changePowerState(int code)
 {
     rebuildEndpoint();

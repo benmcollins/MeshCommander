@@ -63,8 +63,25 @@ Window {
         }
     }
 
+    /// Per-window WSMAN controller for the Power ▾ menu — same auth /
+    /// pinned cert, separate TCP session against the WSMAN port.
+    MachineDetailsController {
+        id: powerController
+        host: root.targetHost
+        user: root.user
+        password: root.password
+        tls: root.tls
+        trustedFingerprints: root.trustedFingerprints
+        onTrustedFingerprintAdded: function(fp) {
+            root.trustedFingerprintPersistRequested(fp);
+        }
+    }
+
     CertTrustDialog {
         controller: controller
+    }
+    CertTrustDialog {
+        controller: powerController
     }
 
     onClosing: controller.close()
@@ -109,6 +126,34 @@ Window {
             }
 
             Item { Layout.fillWidth: true }
+
+            Button {
+                text: qsTr("Power ▾")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeXs
+                enabled: !powerController.busy
+                onClicked: powerMenu.popup()
+
+                Menu {
+                    id: powerMenu
+                    MenuItem { text: qsTr("Power on");           onTriggered: powerController.powerOn() }
+                    MenuItem { text: qsTr("Reset");              onTriggered: powerController.powerReset() }
+                    MenuItem { text: qsTr("Reset (graceful)");   onTriggered: powerController.powerResetGraceful() }
+                    MenuItem { text: qsTr("Power off (soft)");   onTriggered: powerController.powerOffSoft() }
+                    MenuItem { text: qsTr("Power off (hard)");   onTriggered: powerController.powerOffHard() }
+                    MenuSeparator {}
+                    MenuItem { text: qsTr("Power on to BIOS Setup"); onTriggered: powerController.bootToBios(false) }
+                    MenuItem { text: qsTr("Reset to BIOS Setup");    onTriggered: powerController.bootToBios(true) }
+                    MenuSeparator {}
+                    MenuItem { text: qsTr("Power on to PXE");        onTriggered: powerController.bootToPxe(false) }
+                    MenuItem { text: qsTr("Reset to PXE");           onTriggered: powerController.bootToPxe(true) }
+                    MenuSeparator {}
+                    MenuItem { text: qsTr("Power on to IDE-R CDROM"); onTriggered: powerController.bootToIderCdrom(false) }
+                    MenuItem { text: qsTr("Reset to IDE-R CDROM");    onTriggered: powerController.bootToIderCdrom(true) }
+                    MenuItem { text: qsTr("Power on to IDE-R Floppy"); onTriggered: powerController.bootToIderFloppy(false) }
+                    MenuItem { text: qsTr("Reset to IDE-R Floppy");    onTriggered: powerController.bootToIderFloppy(true) }
+                }
+            }
 
             Button {
                 text: qsTr("Send keys ▾")

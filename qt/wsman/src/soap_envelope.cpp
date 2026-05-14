@@ -21,6 +21,12 @@ constexpr char kAnonymousReplyTo[] =
     "http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous";
 
 constexpr char kActionGet[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get";
+constexpr char kActionPut[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Put";
+
+constexpr char kBootConfigResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_BootConfigSetting";
+constexpr char kBootSourceResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_BootSourceSetting";
 
 void writeAddressingHeader(QXmlStreamWriter &w, const QString &action,
                            const QString &to, const QString &messageId,
@@ -103,6 +109,105 @@ QByteArray buildGetEnvelope(const QString &resourceUri,
 
     w.writeEmptyElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
 
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+QByteArray buildPutEnvelope(const QString &resourceUri,
+                             const QString &className,
+                             const QHash<QString, QString> &selectors,
+                             const QHash<QString, QString> &properties,
+                             const QString &to,
+                             const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap), QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman), QStringLiteral("w"));
+    w.writeNamespace(resourceUri, QStringLiteral("r"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    writeAddressingHeader(w, QString::fromLatin1(kActionPut), to, messageId, resourceUri,
+                            selectors);
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resourceUri, className);
+    for (auto it = properties.constBegin(); it != properties.constEnd(); ++it) {
+        w.writeTextElement(resourceUri, it.key(), it.value());
+    }
+    w.writeEndElement(); // <className>
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+QByteArray buildChangeBootOrderEnvelope(const QString &amtBootSourceInstanceId,
+                                         const QString &to,
+                                         const QString &messageId)
+{
+    // CIM_BootConfigSetting.ChangeBootOrder accepts a `Source` parameter
+    // that is a full WS-Addressing EPR pointing at a specific
+    // CIM_BootSourceSetting. Empty `amtBootSourceInstanceId` → omit
+    // Source entirely (clears the boot-order override).
+    const QString configUri = QString::fromLatin1(kBootConfigResource);
+    const QString sourceUri = QString::fromLatin1(kBootSourceResource);
+
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("InstanceID"),
+                     QStringLiteral("Intel(r) AMT: Boot Configuration 0"));
+
+    const QString action = configUri + QLatin1String("/ChangeBootOrder");
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap), QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman), QStringLiteral("w"));
+    w.writeNamespace(configUri, QStringLiteral("r"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+    writeAddressingHeader(w, action, to, messageId, configUri, selectors);
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(configUri, QStringLiteral("ChangeBootOrder_INPUT"));
+
+    if (!amtBootSourceInstanceId.isEmpty()) {
+        w.writeStartElement(configUri, QStringLiteral("Source"));
+
+        // The EPR is the standard {Address, ReferenceParameters} pair.
+        w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                            QStringLiteral("Address"),
+                            QString::fromLatin1(
+                                "http://schemas.xmlsoap.org/ws/2004/08/addressing"));
+
+        w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                            QStringLiteral("ReferenceParameters"));
+        w.writeTextElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("ResourceURI"), sourceUri);
+        w.writeStartElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("SelectorSet"));
+        w.writeStartElement(QString::fromLatin1(kNsWsman), QStringLiteral("Selector"));
+        w.writeAttribute(QStringLiteral("Name"), QStringLiteral("InstanceID"));
+        w.writeCharacters(QStringLiteral("Intel(r) AMT: ") + amtBootSourceInstanceId);
+        w.writeEndElement(); // Selector
+        w.writeEndElement(); // SelectorSet
+        w.writeEndElement(); // ReferenceParameters
+
+        w.writeEndElement(); // Source
+    }
+
+    w.writeEndElement(); // ChangeBootOrder_INPUT
+    w.writeEndElement(); // Body
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
     return out;

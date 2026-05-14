@@ -461,6 +461,27 @@ Window {
                                 enabled: !controller.busy
                                 onClicked: controller.powerOffHard()
                             }
+
+                            Button {
+                                text: qsTr("Boot to… ▾")
+                                enabled: !controller.busy
+                                onClicked: bootMenu.popup()
+
+                                Menu {
+                                    id: bootMenu
+                                    MenuItem { text: qsTr("Power on to BIOS Setup"); onTriggered: controller.bootToBios(false) }
+                                    MenuItem { text: qsTr("Reset to BIOS Setup");    onTriggered: controller.bootToBios(true) }
+                                    MenuSeparator {}
+                                    MenuItem { text: qsTr("Power on to PXE");        onTriggered: controller.bootToPxe(false) }
+                                    MenuItem { text: qsTr("Reset to PXE");           onTriggered: controller.bootToPxe(true) }
+                                    MenuSeparator {}
+                                    MenuItem { text: qsTr("Power on to IDE-R CDROM"); onTriggered: controller.bootToIderCdrom(false) }
+                                    MenuItem { text: qsTr("Reset to IDE-R CDROM");    onTriggered: controller.bootToIderCdrom(true) }
+                                    MenuItem { text: qsTr("Power on to IDE-R Floppy"); onTriggered: controller.bootToIderFloppy(false) }
+                                    MenuItem { text: qsTr("Reset to IDE-R Floppy");    onTriggered: controller.bootToIderFloppy(true) }
+                                }
+                            }
+
                             FlatButton {
                                 text: qsTr("Refresh")
                                 enabled: !controller.busy

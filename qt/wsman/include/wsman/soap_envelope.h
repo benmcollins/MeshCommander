@@ -46,6 +46,26 @@ namespace qumesh::wsman {
                                               const QString &to,
                                               const QString &messageId);
 
+/// Build a WS-Transfer `Put` envelope. `className` is the leaf XML tag
+/// (e.g. `AMT_BootSettingData`); `properties` becomes child elements in
+/// the resource namespace.
+[[nodiscard]] QByteArray buildPutEnvelope(const QString &resourceUri,
+                                           const QString &className,
+                                           const QHash<QString, QString> &selectors,
+                                           const QHash<QString, QString> &properties,
+                                           const QString &to,
+                                           const QString &messageId);
+
+/// `ChangeBootOrder` accepts a `Source` parameter that is itself an
+/// endpoint reference (EPR) pointing at a `CIM_BootSourceSetting`
+/// instance. This helper wraps the InstanceID for a given AMT boot
+/// source (e.g. "Force PXE Boot") into the right EPR shape. `instanceId`
+/// is the bit after the "Intel(r) AMT: " prefix — pass empty to clear
+/// the boot order (Source omitted).
+[[nodiscard]] QByteArray buildChangeBootOrderEnvelope(const QString &amtBootSourceInstanceId,
+                                                      const QString &to,
+                                                      const QString &messageId);
+
 /// Parsed SOAP response. `bodyXml` is the raw `<s:Body>` content (without
 /// the outer Envelope/Header); `fault` is non-empty if a `s:Fault` was
 /// detected at the SOAP layer.

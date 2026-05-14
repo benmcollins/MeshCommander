@@ -9,6 +9,7 @@
 #include <QNetworkReply>
 #include <QObject>
 #include <QUuid>
+#include <QXmlStreamWriter>
 
 namespace qumesh::wsman {
 
@@ -37,6 +38,14 @@ constexpr char kEthernetSettingsResource[] =
 constexpr char kTimeSyncResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_TimeSynchronizationService";
+
+constexpr char kBootSettingDataResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/"
+    "AMT_BootSettingData";
+
+constexpr char kBootServiceResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/"
+    "CIM_BootService";
 
 QString newMessageId()
 {
@@ -249,6 +258,231 @@ void getTimeSettings(WsmanClient *client,
             if (!conv) r.error = QStringLiteral("Ta0 '%1' was not numeric").arg(ta);
         },
         std::move(callback));
+}
+
+namespace {
+
+QString endpointStr(WsmanClient *client)
+{
+    return client ? client->endpoint().toString() : QString();
+}
+
+/// One async step in the boot-action chain. Builds the envelope, sends
+/// it, parses the standard SOAP fault path, then either fails the chain
+/// or invokes `next` on success. `name` is for error messages.
+template <typename ExtractRv>
+void runChainStep(WsmanClient *client, const QByteArray &envelope, const QString &name,
+                  ExtractRv &&extract,
+                  std::function<void(InvokeResult)> onError,
+                  std::function<void()> next)
+{
+    if (client == nullptr) {
+        InvokeResult r{false, QStringLiteral("client is null"), -1};
+        onError(std::move(r));
+        return;
+    }
+    QNetworkReply *reply = client->sendEnvelope(envelope);
+    QObject::connect(reply, &QNetworkReply::finished, client,
+                     [reply, name, extract = std::forward<ExtractRv>(extract),
+                       onError = std::move(onError), next = std::move(next)]() mutable {
+                         const QByteArray body = reply->readAll();
+                         const auto err = reply->error();
+                         const auto errString = reply->errorString();
+                         reply->deleteLater();
+                         if (err != QNetworkReply::NoError) {
+                             onError({false, QStringLiteral("%1: %2").arg(name).arg(errString), -1});
+                             return;
+                         }
+                         const SoapResponse soap = parseResponse(body);
+                         if (soap.isFault()) {
+                             onError({false, QStringLiteral("%1: %2").arg(name).arg(soap.fault), -1});
+                             return;
+                         }
+                         InvokeResult r;
+                         extract(soap.bodyXml, r);
+                         if (!r.ok) {
+                             onError({false,
+                                       QStringLiteral("%1: %2").arg(name).arg(
+                                           r.error.isEmpty()
+                                               ? QStringLiteral("ReturnValue %1").arg(r.returnValue)
+                                               : r.error),
+                                       r.returnValue});
+                             return;
+                         }
+                         next();
+                     });
+}
+
+bool readReturnValueOk(const QByteArray &body, InvokeResult &r)
+{
+    const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+    if (rv.isEmpty()) {
+        r.error = QStringLiteral("response had no ReturnValue");
+        return false;
+    }
+    bool conv = false;
+    r.returnValue = rv.toInt(&conv);
+    r.ok = conv && r.returnValue == 0;
+    return r.ok;
+}
+
+void runPerformBootAction(WsmanClient *client, const BootActionParams &p,
+                          std::function<void(InvokeResult)> callback)
+{
+    const QString to = endpointStr(client);
+
+    // Step 5: RequestPowerStateChange.
+    auto doPowerChange = [client, code = p.targetPowerState, callback, to]() mutable {
+        requestPowerStateChange(client, code, std::move(callback));
+    };
+
+    // Step 4: set specific boot source (if any), else jump straight to step 5.
+    auto doSetSpecificBootSource = [client, p, to, doPowerChange, callback]() mutable {
+        if (p.amtBootSource.isEmpty()) {
+            doPowerChange();
+            return;
+        }
+        const QByteArray env = buildChangeBootOrderEnvelope(p.amtBootSource, to, newMessageId());
+        runChainStep(client, env, QStringLiteral("ChangeBootOrder(%1)").arg(p.amtBootSource),
+                     [](const QByteArray &body, InvokeResult &r) { readReturnValueOk(body, r); },
+                     callback, doPowerChange);
+    };
+
+    // Step 3: SetBootConfigRole(1).
+    auto doSetRole = [client, to, doSetSpecificBootSource, callback]() mutable {
+        QHash<QString, QString> selectors;
+        selectors.insert(QStringLiteral("Name"),
+                         QStringLiteral("Intel(r) AMT Boot Service"));
+        selectors.insert(QStringLiteral("SystemCreationClassName"),
+                         QStringLiteral("CIM_ComputerSystem"));
+        selectors.insert(QStringLiteral("SystemName"), QStringLiteral("Intel(r) AMT"));
+        selectors.insert(QStringLiteral("CreationClassName"), QStringLiteral("CIM_BootService"));
+
+        // BootConfigSetting EPR is the parameter.
+        QHash<QString, QString> params;
+        // We send the EPR-wrapped Role=IsNextSingleUse via a hand-built
+        // envelope so we can include the BootConfigSetting EPR. The
+        // generic buildInvokeEnvelope helper doesn't support EPR-shaped
+        // parameters, so we splice it inline here.
+        QByteArray envelope;
+        QXmlStreamWriter w(&envelope);
+        w.setAutoFormatting(false);
+        constexpr const char *kSoap = "http://www.w3.org/2003/05/soap-envelope";
+        constexpr const char *kAddr = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+        constexpr const char *kWsman = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+        const QString svcUri = QString::fromLatin1(kBootServiceResource);
+        const QString cfgUri =
+            QStringLiteral("http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_BootConfigSetting");
+
+        w.writeStartDocument();
+        w.writeNamespace(QString::fromLatin1(kSoap), QStringLiteral("s"));
+        w.writeNamespace(QString::fromLatin1(kAddr), QStringLiteral("a"));
+        w.writeNamespace(QString::fromLatin1(kWsman), QStringLiteral("w"));
+        w.writeNamespace(svcUri, QStringLiteral("r"));
+
+        w.writeStartElement(QString::fromLatin1(kSoap), QStringLiteral("Envelope"));
+        w.writeStartElement(QString::fromLatin1(kSoap), QStringLiteral("Header"));
+        w.writeTextElement(QString::fromLatin1(kAddr), QStringLiteral("Action"),
+                            svcUri + QLatin1String("/SetBootConfigRole"));
+        w.writeTextElement(QString::fromLatin1(kAddr), QStringLiteral("To"), to);
+        w.writeTextElement(QString::fromLatin1(kWsman), QStringLiteral("ResourceURI"), svcUri);
+        w.writeTextElement(QString::fromLatin1(kAddr), QStringLiteral("MessageID"),
+                            newMessageId());
+        w.writeStartElement(QString::fromLatin1(kAddr), QStringLiteral("ReplyTo"));
+        w.writeTextElement(QString::fromLatin1(kAddr), QStringLiteral("Address"),
+                            QString::fromLatin1(
+                                "http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+        w.writeEndElement(); // ReplyTo
+
+        w.writeStartElement(QString::fromLatin1(kWsman), QStringLiteral("SelectorSet"));
+        for (auto it = selectors.constBegin(); it != selectors.constEnd(); ++it) {
+            w.writeStartElement(QString::fromLatin1(kWsman), QStringLiteral("Selector"));
+            w.writeAttribute(QStringLiteral("Name"), it.key());
+            w.writeCharacters(it.value());
+            w.writeEndElement();
+        }
+        w.writeEndElement(); // SelectorSet
+        w.writeEndElement(); // Header
+
+        w.writeStartElement(QString::fromLatin1(kSoap), QStringLiteral("Body"));
+        w.writeStartElement(svcUri, QStringLiteral("SetBootConfigRole_INPUT"));
+
+        // BootConfigSetting EPR.
+        w.writeStartElement(svcUri, QStringLiteral("BootConfigSetting"));
+        w.writeTextElement(QString::fromLatin1(kAddr), QStringLiteral("Address"),
+                            QString::fromLatin1(
+                                "http://schemas.xmlsoap.org/ws/2004/08/addressing"));
+        w.writeStartElement(QString::fromLatin1(kAddr),
+                            QStringLiteral("ReferenceParameters"));
+        w.writeTextElement(QString::fromLatin1(kWsman),
+                            QStringLiteral("ResourceURI"), cfgUri);
+        w.writeStartElement(QString::fromLatin1(kWsman), QStringLiteral("SelectorSet"));
+        w.writeStartElement(QString::fromLatin1(kWsman), QStringLiteral("Selector"));
+        w.writeAttribute(QStringLiteral("Name"), QStringLiteral("InstanceID"));
+        w.writeCharacters(QStringLiteral("Intel(r) AMT: Boot Configuration 0"));
+        w.writeEndElement(); // Selector
+        w.writeEndElement(); // SelectorSet
+        w.writeEndElement(); // ReferenceParameters
+        w.writeEndElement(); // BootConfigSetting
+
+        w.writeTextElement(svcUri, QStringLiteral("Role"), QStringLiteral("1"));
+        w.writeEndElement(); // SetBootConfigRole_INPUT
+        w.writeEndElement(); // Body
+        w.writeEndElement(); // Envelope
+        w.writeEndDocument();
+
+        runChainStep(client, envelope, QStringLiteral("SetBootConfigRole"),
+                     [](const QByteArray &body, InvokeResult &r) { readReturnValueOk(body, r); },
+                     callback, doSetSpecificBootSource);
+    };
+
+    // Step 2: write the AMT_BootSettingData with our flags.
+    auto doPutBootSettingData = [client, p, to, doSetRole, callback]() mutable {
+        QHash<QString, QString> props;
+        const auto boolStr = [](bool v) { return v ? QStringLiteral("true") : QStringLiteral("false"); };
+        props.insert(QStringLiteral("BIOSPause"),     boolStr(p.biosPause));
+        props.insert(QStringLiteral("BIOSSetup"),     boolStr(p.biosSetup));
+        props.insert(QStringLiteral("BootMediaIndex"), QStringLiteral("0"));
+        props.insert(QStringLiteral("ConfigurationDataReset"), boolStr(false));
+        props.insert(QStringLiteral("EnforceSecureBoot"), boolStr(false));
+        props.insert(QStringLiteral("FirmwareVerbosity"), QStringLiteral("0"));
+        props.insert(QStringLiteral("ForcedProgressEvents"), boolStr(false));
+        props.insert(QStringLiteral("IDERBootDevice"), QString::number(p.iderBootDevice));
+        props.insert(QStringLiteral("LockKeyboard"),    boolStr(false));
+        props.insert(QStringLiteral("LockPowerButton"), boolStr(false));
+        props.insert(QStringLiteral("LockResetButton"), boolStr(false));
+        props.insert(QStringLiteral("LockSleepButton"), boolStr(false));
+        props.insert(QStringLiteral("ReflashBIOS"),     boolStr(false));
+        props.insert(QStringLiteral("UseIDER"),         boolStr(p.useIder));
+        props.insert(QStringLiteral("UseSOL"),          boolStr(p.useSol));
+        props.insert(QStringLiteral("UseSafeMode"),     boolStr(false));
+        props.insert(QStringLiteral("UserPasswordBypass"), boolStr(false));
+
+        QHash<QString, QString> selectors;
+        selectors.insert(QStringLiteral("InstanceID"),
+                         QStringLiteral("Intel(r) AMT:BootSettingData 0"));
+        const QByteArray env = buildPutEnvelope(
+            QString::fromLatin1(kBootSettingDataResource),
+            QStringLiteral("AMT_BootSettingData"),
+            selectors, props, to, newMessageId());
+        runChainStep(client, env, QStringLiteral("Put AMT_BootSettingData"),
+                     [](const QByteArray &, InvokeResult &r) { r.ok = true; r.returnValue = 0; },
+                     callback, doSetRole);
+    };
+
+    // Step 1: clear the boot order.
+    const QByteArray env = buildChangeBootOrderEnvelope(QString(), to, newMessageId());
+    runChainStep(client, env, QStringLiteral("ChangeBootOrder(clear)"),
+                 [](const QByteArray &body, InvokeResult &r) { readReturnValueOk(body, r); },
+                 callback, doPutBootSettingData);
+}
+
+} // namespace
+
+void performBootAction(WsmanClient *client, BootActionParams params,
+                       std::function<void(InvokeResult)> callback)
+{
+    runPerformBootAction(client, params, std::move(callback));
 }
 
 void requestPowerStateChange(WsmanClient *client, int powerState,
