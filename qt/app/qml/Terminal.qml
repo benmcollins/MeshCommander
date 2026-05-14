@@ -103,6 +103,7 @@ Rectangle {
 
     Keys.onPressed: function(event) {
         const ctrl = event.modifiers & Qt.ControlModifier;
+        const meta = event.modifiers & Qt.MetaModifier;
 
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             root.keyInput("\r"); event.accepted = true; return;
@@ -121,10 +122,18 @@ Rectangle {
         if (event.key === Qt.Key_Right) { root.controlSequence("\x1b[C"); event.accepted = true; return; }
         if (event.key === Qt.Key_Left)  { root.controlSequence("\x1b[D"); event.accepted = true; return; }
 
+        // Ctrl+A..Z → 0x01..0x1A. With `AA_MacDontSwapCtrlAndMeta` set
+        // in main.cpp, ControlModifier consistently means physical ⌃ on
+        // every platform — including macOS where Qt's default would
+        // remap it to MetaModifier.
         if (ctrl && event.key >= Qt.Key_A && event.key <= Qt.Key_Z) {
             const c = String.fromCharCode(event.key - Qt.Key_A + 1);
             root.keyInput(c); event.accepted = true; return;
         }
+        // Cmd / Meta combinations are local on macOS (clipboard,
+        // window-management). Don't forward them — leave the bytes for
+        // the OS to handle.
+        if (meta) return;
         if (event.text.length > 0 && event.text.charCodeAt(0) >= 0x20) {
             root.keyInput(event.text); event.accepted = true;
         }
