@@ -323,8 +323,15 @@ protected:
                 w, [this, &polled]() {
                     polled = ssh_channel_poll(m_channel, 0);
                 }, Qt::BlockingQueuedConnection);
+            // SSH_EOF (-127) is libssh's signal that the remote side
+            // half-closed the channel — a normal end of stream, not
+            // an error. Anything else negative is a real failure.
+            if (polled == SSH_EOF) {
+                qCWarning(qumeshSshTunnel) << "ssh_channel_poll: remote sent EOF";
+                break;
+            }
             if (polled < 0) {
-                m_error = QStringLiteral("ssh_channel_poll failed");
+                m_error = QStringLiteral("ssh_channel_poll failed (rc=%1)").arg(polled);
                 break;
             }
             if (polled > 0) {

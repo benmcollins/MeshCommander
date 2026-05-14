@@ -89,9 +89,15 @@ QByteArray randomCnonce()
 
 // ---- WsmanReply --------------------------------------------------------------
 
+/// Monotonic counter so the log can tell one reply from another.
+/// Not thread-safe (intentionally — every WsmanReply is created on
+/// the WsmanClient's thread).
+static int s_replySeq = 0;
+
 struct WsmanReply::Private
 {
     QPointer<WsmanClient> client;
+    int seq = ++s_replySeq;
     QSslSocket *socket = nullptr;
     QTimer *timeoutTimer = nullptr;
     QString errorString;
@@ -457,6 +463,10 @@ void readMore(WsmanReply *reply, WsmanClient *client,
 void finishReply(WsmanReply *reply, WsmanReply::Private &rd, const QString &err)
 {
     if (rd.finished) return;
+    qCWarning(qumeshWsmanXport) << "finishReply[" << rd.seq << "] httpStatus="
+                                << rd.httpStatus
+                                << "body=" << rd.body.size() << "bytes"
+                                << "err=" << (err.isEmpty() ? QStringLiteral("(none)") : err);
     if (!err.isEmpty()) {
         rd.errorString = err;
         rd.state = WsmanReply::Private::Failed;
@@ -580,8 +590,8 @@ void readMore(WsmanReply *reply, WsmanClient *client,
 {
     if (rd.finished || rd.socket == nullptr) return;
     const QByteArray chunk = rd.socket->readAll();
-    qCWarning(qumeshWsmanXport) << "readMore got" << chunk.size() << "bytes, state ="
-                              << int(rd.state);
+    qCWarning(qumeshWsmanXport) << "readMore[" << rd.seq << "] got" << chunk.size()
+                                << "bytes, state =" << int(rd.state);
     if (chunk.isEmpty() && rd.socket->state() != QAbstractSocket::ConnectedState
         && rd.state == WsmanReply::Private::ReadingHeaders) {
         finishReply(reply, rd, QStringLiteral("Connection closed before headers"));
@@ -739,6 +749,9 @@ WsmanReply *WsmanClient::sendEnvelope(const QByteArray &envelope, const char *so
     rd.client = this;
     rd.envelope = envelope;
     if (soapAction != nullptr) rd.soapAction = QByteArray(soapAction);
+    qCWarning(qumeshWsmanXport) << "sendEnvelope[" << rd.seq << "]"
+                                << "soapAction=" << (soapAction ? soapAction : "(none)")
+                                << "bodyBytes=" << envelope.size();
     rd.requestPath = d->endpoint.path(QUrl::FullyEncoded).toUtf8();
     if (rd.requestPath.isEmpty()) rd.requestPath = "/";
     rd.hostHeader = (d->endpoint.host() + QStringLiteral(":")
