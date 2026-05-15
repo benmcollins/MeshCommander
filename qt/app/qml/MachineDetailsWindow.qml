@@ -130,6 +130,15 @@ AppWindow {
         }
     }
 
+    // Surfaces a Put-rejected message when the AMT login can't modify
+    // the consent policy. Cleared on the next successful refresh.
+    Connections {
+        target: controller
+        function onOptInPolicyChangeFailed(error) {
+            ActivityHeartbeat.reportFailure(qsTr("User consent: %1").arg(error));
+        }
+    }
+
     // Sidebar items. The `id` keys must match the value used by each
     // Loader/StackLayout currentIndex below.
     readonly property var sections: [
@@ -814,6 +823,65 @@ AppWindow {
                             color: Colors.textMuted
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
+                        }
+                    }
+
+                    Section {
+                        title: qsTr("USER CONSENT")
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 24
+                        Layout.rightMargin: 24
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Text {
+                                text: controller.kvmOptInPolicy
+                                    ? qsTr("KVM requires a 6-digit code displayed on the remote machine before the framebuffer unlocks.")
+                                    : qsTr("Disabled — KVM, SOL, and IDE-R start without prompting for a code on the remote machine.")
+                                color: Colors.textMuted
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeS
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                            RowLayout {
+                                spacing: 10
+                                Layout.fillWidth: true
+
+                                Rectangle {
+                                    implicitWidth: 10
+                                    implicitHeight: 10
+                                    radius: 5
+                                    color: controller.kvmOptInPolicy ? Colors.standby : Colors.off
+                                }
+                                Text {
+                                    text: controller.kvmOptInPolicy
+                                        ? qsTr("Consent required")
+                                        : qsTr("Not required")
+                                    color: Colors.text
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeS
+                                    Layout.fillWidth: true
+                                }
+                                FlatButton {
+                                    text: controller.kvmOptInPolicy
+                                        ? qsTr("Disable")
+                                        : qsTr("Enable")
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                    enabled: controller.canModifyOptInPolicy && !controller.busy
+                                    onClicked: controller.setKvmOptInPolicyEnabled(!controller.kvmOptInPolicy)
+                                }
+                            }
+                            Text {
+                                visible: !controller.canModifyOptInPolicy
+                                text: qsTr("Note: the current AMT login lacks the privilege to change this policy. Log in with an administrator account to enable / disable consent.")
+                                color: Colors.textMuted
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
                         }
                     }
 

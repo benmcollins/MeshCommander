@@ -59,8 +59,12 @@ AppWindow {
         password: root.password
         tls: root.tls
         trustedFingerprints: root.trustedFingerprints
+        Component.onCompleted: powerController.setSshConfig(root.machineSshConfig || ({}))
         onTrustedFingerprintAdded: function(fp) {
             root.trustedFingerprintPersistRequested(fp);
+        }
+        onTrustedSshHostKeyAdded: function(fp) {
+            root.trustedSshHostKeyPersistRequested(fp);
         }
         onPeerCertVerifiedByPin: function(fp) { certPinFlash.flash(fp) }
         onPowerChangeCompleted: function(state, ok, error) {
@@ -71,10 +75,38 @@ AppWindow {
             if (lastError.length > 0)
                 ActivityHeartbeat.reportFailure(lastError);
         }
+        // Detect that KVM/SOL/IDE-R will be gated by consent and walk
+        // the operator through the StartOptIn / SendOptInCode dance.
+        onOptInStatusChanged: {
+            if (powerController.optInRequired
+                && powerController.optInState !== 4 /* InSession */
+                && !optInPrompt.opened) {
+                powerController.startOptIn();
+            }
+        }
+        onOptInStarted: function(ok, error) {
+            if (ok) optInPrompt.openFor();
+            else ActivityHeartbeat.reportFailure(qsTr("User consent: %1").arg(error));
+        }
+        onOptInCodeResult: function(ok, error) {
+            if (ok) {
+                optInPrompt.close();
+                ActivityHeartbeat.reportSuccess();
+            } else {
+                optInPrompt.errorText = qsTr("Code rejected: %1").arg(error);
+                optInPrompt.openFor();
+            }
+        }
     }
 
     CertTrustDialog {
         controller: powerController
+    }
+
+    OptInPrompt {
+        id: optInPrompt
+        onSubmitted: function(code) { powerController.sendOptInCode(code); }
+        onCancelled: powerController.cancelOptIn()
     }
 
     CertPinFlash {
@@ -111,6 +143,10 @@ AppWindow {
         bar.currentIndex = root.initialTab;
         root._started[root.initialTab] = true;
         Qt.callLater(root.startActive);
+        // Once the controller has the SSH config + host, ask AMT whether
+        // consent is required for redirection. The result lands in
+        // `onOptInStatusChanged` which kicks off `startOptIn` if needed.
+        powerController.refreshOptInStatus();
     }
 
     ColumnLayout {

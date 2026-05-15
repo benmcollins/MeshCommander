@@ -394,6 +394,81 @@ void MachineDetailsController::refreshOverview()
             }
             decInflight();
         });
+
+    refreshOptInStatus();
+}
+
+void MachineDetailsController::refreshOptInStatus()
+{
+    if (deferIfSshConnecting(PendingOverview)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) return;
+    incInflight();
+    qumesh::wsman::getOptInStatus(m_client,
+        [this](qumesh::wsman::OptInServiceResult r) {
+            if (r.ok) {
+                m_optInRequired         = r.optInRequired;
+                m_optInState            = r.optInState;
+                m_canModifyOptInPolicy  = r.canModifyOptInPolicy;
+                m_kvmOptInPolicy        = r.kvmOptInPolicy;
+                emit optInStatusChanged();
+            }
+            // Soft failure: older AMT firmware doesn't expose these
+            // classes. Leave the previous values in place and let the
+            // UI default to "OptIn: not detected" or similar.
+            decInflight();
+        });
+}
+
+void MachineDetailsController::setKvmOptInPolicyEnabled(bool enabled)
+{
+    setLastError({});
+    incInflight();
+    qumesh::wsman::setKvmOptInPolicy(m_client, enabled,
+        [this, enabled](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (r.ok) {
+                m_kvmOptInPolicy = enabled;
+                emit optInStatusChanged();
+                // Re-read the runtime fields too — disabling the
+                // policy flips `OptInRequired` back to false.
+                refreshOptInStatus();
+            } else {
+                emit optInPolicyChangeFailed(r.error);
+            }
+        });
+}
+
+void MachineDetailsController::startOptIn()
+{
+    incInflight();
+    qumesh::wsman::startOptIn(m_client,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            emit optInStarted(r.ok, r.error);
+            refreshOptInStatus();
+        });
+}
+
+void MachineDetailsController::sendOptInCode(int code)
+{
+    incInflight();
+    qumesh::wsman::sendOptInCode(m_client, static_cast<quint32>(code),
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            emit optInCodeResult(r.ok, r.error);
+            refreshOptInStatus();
+        });
+}
+
+void MachineDetailsController::cancelOptIn()
+{
+    incInflight();
+    qumesh::wsman::cancelOptIn(m_client,
+        [this](qumesh::wsman::InvokeResult) {
+            decInflight();
+            refreshOptInStatus();
+        });
 }
 
 

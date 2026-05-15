@@ -65,6 +65,14 @@ constexpr char kAccountResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/"
     "CIM_Account";
 
+constexpr char kOptInServiceResource[] =
+    "http://intel.com/wbem/wscim/1/ips-schema/1/"
+    "IPS_OptInService";
+
+constexpr char kKvmRedirectionSettingDataResource[] =
+    "http://intel.com/wbem/wscim/1/ips-schema/1/"
+    "IPS_KVMRedirectionSettingData";
+
 QString newMessageId()
 {
     return QStringLiteral("uuid:") + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -867,6 +875,237 @@ void enumerateUserAccounts(WsmanClient *client,
             const QString ctx = parseEnumerateContext(soap.bodyXml);
             if (ctx.isEmpty()) { (*onDone)({}); return; }
             (*pullStep)(ctx);
+        });
+}
+
+namespace {
+
+QHash<QString, QString> optInServiceSelectors()
+{
+    QHash<QString, QString> sel;
+    sel.insert(QStringLiteral("Name"),
+               QStringLiteral("Intel(r) AMT OptIn Service"));
+    sel.insert(QStringLiteral("SystemCreationClassName"),
+               QStringLiteral("CIM_ComputerSystem"));
+    sel.insert(QStringLiteral("SystemName"), QStringLiteral("Intel(r) AMT"));
+    sel.insert(QStringLiteral("CreationClassName"),
+               QStringLiteral("IPS_OptInService"));
+    return sel;
+}
+
+} // namespace
+
+void getOptInStatus(WsmanClient *client,
+                    std::function<void(OptInServiceResult)> callback)
+{
+    // Two-step: read IPS_OptInService for the runtime fields, then
+    // IPS_KVMRedirectionSettingData for the persisted policy. We chain
+    // them so the caller gets one merged result.
+    const QString to = client ? client->endpoint().toString() : QString();
+    auto cb = std::make_shared<std::function<void(OptInServiceResult)>>(std::move(callback));
+    auto partial = std::make_shared<OptInServiceResult>();
+
+    const QByteArray svcEnv = buildGetEnvelope(
+        QString::fromLatin1(kOptInServiceResource), {}, to, newMessageId());
+    auto *reply = client->sendEnvelope(svcEnv);
+    QObject::connect(reply, &WsmanReply::finished, client,
+        [reply, client, partial, cb, to]() mutable {
+            const QByteArray body = reply->readAll();
+            const bool err = reply->hasError();
+            const QString errStr = reply->errorString();
+            reply->deleteLater();
+            if (err) {
+                partial->error = errStr;
+                (*cb)(*partial);
+                return;
+            }
+            const SoapResponse soap = parseResponse(body);
+            if (soap.isFault()) {
+                partial->error = soap.fault;
+                (*cb)(*partial);
+                return;
+            }
+            const QString req = findScalar(soap.bodyXml,
+                                            QStringLiteral("OptInRequired"));
+            const QString st = findScalar(soap.bodyXml,
+                                           QStringLiteral("OptInState"));
+            const QString canMod = findScalar(
+                soap.bodyXml, QStringLiteral("CanModifyOptInPolicy"));
+            // `OptInRequired` is an enum in newer firmware (0 / 1 / 0xFF
+            // / etc) and a bool in older. Treat any non-zero as "yes".
+            partial->optInRequired = !req.isEmpty() && req != QStringLiteral("0")
+                                     && req.toLower() != QStringLiteral("false");
+            partial->optInState = st.toInt();
+            partial->canModifyOptInPolicy = canMod.toLower() == QStringLiteral("true")
+                                            || canMod == QStringLiteral("1");
+
+            // Now fetch the KVM setting data.
+            const QByteArray kvmEnv = buildGetEnvelope(
+                QString::fromLatin1(kKvmRedirectionSettingDataResource),
+                {}, to, newMessageId());
+            auto *r2 = client->sendEnvelope(kvmEnv);
+            QObject::connect(r2, &WsmanReply::finished, client,
+                [r2, partial, cb]() {
+                    const QByteArray body2 = r2->readAll();
+                    const bool err2 = r2->hasError();
+                    const QString errStr2 = r2->errorString();
+                    r2->deleteLater();
+                    if (err2) {
+                        // Older firmware may not expose this resource;
+                        // partial result still useful so don't blame.
+                        partial->kvmOptInPolicy = false;
+                    } else {
+                        const SoapResponse s = parseResponse(body2);
+                        if (!s.isFault()) {
+                            const QString pol = findScalar(
+                                s.bodyXml, QStringLiteral("OptInPolicy"));
+                            partial->kvmOptInPolicy =
+                                pol.toLower() == QStringLiteral("true")
+                                || pol == QStringLiteral("1");
+                        }
+                    }
+                    partial->ok = true;
+                    (*cb)(*partial);
+                });
+        });
+}
+
+void startOptIn(WsmanClient *client, std::function<void(InvokeResult)> callback)
+{
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kOptInServiceResource),
+        QStringLiteral("StartOptIn"),
+        optInServiceSelectors(), {},
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            r.returnValue = rv.toInt();
+            r.ok = (r.returnValue == 0);
+            if (!r.ok)
+                r.error = QStringLiteral("StartOptIn returned %1").arg(rv);
+        },
+        std::move(callback));
+}
+
+void sendOptInCode(WsmanClient *client, quint32 code,
+                   std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("OptInCode"), QString::number(code));
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kOptInServiceResource),
+        QStringLiteral("SendOptInCode"),
+        optInServiceSelectors(), params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            r.returnValue = rv.toInt();
+            r.ok = (r.returnValue == 0);
+            if (!r.ok)
+                r.error = QStringLiteral("SendOptInCode returned %1").arg(rv);
+        },
+        std::move(callback));
+}
+
+void cancelOptIn(WsmanClient *client, std::function<void(InvokeResult)> callback)
+{
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kOptInServiceResource),
+        QStringLiteral("CancelOptIn"),
+        optInServiceSelectors(), {},
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            r.returnValue = rv.toInt();
+            r.ok = (r.returnValue == 0);
+            if (!r.ok)
+                r.error = QStringLiteral("CancelOptIn returned %1").arg(rv);
+        },
+        std::move(callback));
+}
+
+void setKvmOptInPolicy(WsmanClient *client, bool policyRequired,
+                       std::function<void(InvokeResult)> callback)
+{
+    // Read-modify-write: AMT Put requires the entire SettingData record
+    // round-tripped, so we Get first, flip the single field, then Put.
+    const QString to = client ? client->endpoint().toString() : QString();
+    auto cb = std::make_shared<std::function<void(InvokeResult)>>(std::move(callback));
+
+    const QByteArray getEnv = buildGetEnvelope(
+        QString::fromLatin1(kKvmRedirectionSettingDataResource),
+        {}, to, newMessageId());
+    auto *reply = client->sendEnvelope(getEnv);
+    QObject::connect(reply, &WsmanReply::finished, client,
+        [reply, client, policyRequired, to, cb]() {
+            const QByteArray body = reply->readAll();
+            const bool err = reply->hasError();
+            const QString errStr = reply->errorString();
+            reply->deleteLater();
+            InvokeResult r;
+            if (err) { r.error = errStr; (*cb)(r); return; }
+            const SoapResponse soap = parseResponse(body);
+            if (soap.isFault()) { r.error = soap.fault; (*cb)(r); return; }
+
+            // Echo back every scalar the firmware sent us, swapping
+            // OptInPolicy. Anything we don't know about gets passed
+            // through verbatim so the firmware's validator is happy.
+            QHash<QString, QString> props;
+            const QList<QString> keys = {
+                QStringLiteral("EnabledByMEBx"),
+                QStringLiteral("Is5900PortEnabled"),
+                QStringLiteral("OptInPolicy"),
+                QStringLiteral("OptInPolicyTimeout"),
+                QStringLiteral("SessionTimeout"),
+                QStringLiteral("RFBPassword"),
+                QStringLiteral("DefaultScreen"),
+                QStringLiteral("InitialDecimationModeForLowResScreens"),
+                QStringLiteral("GreyscalePixelFormatSupported"),
+                QStringLiteral("BackToBackFeatureSupported"),
+            };
+            for (const QString &k : keys) {
+                const QString v = findScalar(soap.bodyXml, k);
+                if (!v.isEmpty()) props.insert(k, v);
+            }
+            props.insert(QStringLiteral("OptInPolicy"),
+                         policyRequired ? QStringLiteral("true") : QStringLiteral("false"));
+
+            // The IPS_KVMRedirectionSettingData InstanceID selector is
+            // a fixed string the firmware advertises.
+            QHash<QString, QString> sel;
+            sel.insert(QStringLiteral("InstanceID"),
+                       QStringLiteral("Intel(r) KVM Redirection Settings"));
+
+            const QByteArray putEnv = buildPutEnvelope(
+                QString::fromLatin1(kKvmRedirectionSettingDataResource),
+                QStringLiteral("IPS_KVMRedirectionSettingData"),
+                sel, props, to, newMessageId());
+
+            auto *r2 = client->sendEnvelope(putEnv);
+            QObject::connect(r2, &WsmanReply::finished, client,
+                [r2, cb]() {
+                    const QByteArray body2 = r2->readAll();
+                    const bool err2 = r2->hasError();
+                    const QString errStr2 = r2->errorString();
+                    r2->deleteLater();
+                    InvokeResult res;
+                    if (err2) { res.error = errStr2; (*cb)(res); return; }
+                    const SoapResponse s = parseResponse(body2);
+                    if (s.isFault()) {
+                        // AMT returns a SOAP fault when the login lacks
+                        // permission. The error string is what we surface
+                        // to the UI ("not authorized" or similar).
+                        res.error = s.fault;
+                        (*cb)(res);
+                        return;
+                    }
+                    res.ok = true;
+                    res.returnValue = 0;
+                    (*cb)(res);
+                });
         });
 }
 
