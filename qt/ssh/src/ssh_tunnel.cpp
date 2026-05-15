@@ -5,7 +5,6 @@
 #include "ssh/ssh_session.h"
 #include "ssh_session_worker.h"
 
-#include <QLoggingCategory>
 #include <QMutexLocker>
 #include <QPointer>
 #include <QThread>
@@ -13,8 +12,6 @@
 #include <libssh/libssh.h>
 
 #include <atomic>
-
-Q_LOGGING_CATEGORY(qumeshSshTunnel, "qumesh.ssh.tunnel", QtWarningMsg)
 
 #ifdef Q_OS_WIN
 #  include <winsock2.h>
@@ -243,9 +240,6 @@ public:
             return -1;
         }
         m_pumpFd = fds[0];
-        qCWarning(qumeshSshTunnel) << "tunnel to" << m_remoteHost << ":"
-                                 << m_remotePort << "opened: pump fd"
-                                 << m_pumpFd << ", qt fd" << fds[1];
         return fds[1];
     }
 
@@ -263,10 +257,6 @@ protected:
         constexpr qint64 kBufSize = 32 * 1024;
         QByteArray buf;
         buf.resize(kBufSize);
-        qCWarning(qumeshSshTunnel) << "pump thread started for"
-                                 << m_remoteHost << ":" << m_remotePort;
-        qint64 totalAppToSsh = 0;
-        qint64 totalSshToApp = 0;
 
         while (!m_stop.load(std::memory_order_acquire)) {
             bool didWork = false;
@@ -286,9 +276,6 @@ protected:
                         }, Qt::BlockingQueuedConnection);
                     if (sshErr) { m_error = QStringLiteral("ssh_channel_write failed"); break; }
                     didWork = true;
-                    totalAppToSsh += written;
-                    qCWarning(qumeshSshTunnel) << "app→ssh wrote" << written
-                                             << "bytes (total" << totalAppToSsh << ")";
                     if (written < n) {
                         // libssh occasionally returns short writes; loop
                         // remaining bytes next iteration. We push the
@@ -326,10 +313,7 @@ protected:
             // SSH_EOF (-127) is libssh's signal that the remote side
             // half-closed the channel — a normal end of stream, not
             // an error. Anything else negative is a real failure.
-            if (polled == SSH_EOF) {
-                qCWarning(qumeshSshTunnel) << "ssh_channel_poll: remote sent EOF";
-                break;
-            }
+            if (polled == SSH_EOF) break;
             if (polled < 0) {
                 m_error = QStringLiteral("ssh_channel_poll failed (rc=%1)").arg(polled);
                 break;
@@ -359,9 +343,6 @@ protected:
                         totalOut += wrote;
                     }
                     didWork = true;
-                    totalSshToApp += got;
-                    qCWarning(qumeshSshTunnel) << "ssh→app wrote" << got
-                                             << "bytes (total" << totalSshToApp << ")";
                 }
             }
 
@@ -370,10 +351,7 @@ protected:
             QMetaObject::invokeMethod(
                 w, [this, &eof]() { eof = ssh_channel_is_eof(m_channel); },
                 Qt::BlockingQueuedConnection);
-            if (eof != 0) {
-                qCWarning(qumeshSshTunnel) << "ssh channel EOF — pump exiting";
-                break;
-            }
+            if (eof != 0) break;
 
             if (!didWork) {
                 // Avoid spinning: short sleep when both directions
@@ -382,9 +360,6 @@ protected:
                 QThread::usleep(5000);
             }
         }
-        qCWarning(qumeshSshTunnel) << "pump thread exiting; sent" << totalAppToSsh
-                                 << "bytes app→ssh, received" << totalSshToApp
-                                 << "bytes ssh→app; m_error=" << m_error;
 
         // Pump exiting: close the SSH channel.
         if (m_channel != nullptr) {

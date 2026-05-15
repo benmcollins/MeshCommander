@@ -5,13 +5,10 @@
 #include "ssh_session_worker.h"
 
 #include <QFile>
-#include <QLoggingCategory>
 #include <QMutexLocker>
 #include <QPointer>
 #include <QThread>
 #include <QtCore/qcoreapplication.h>
-
-Q_LOGGING_CATEGORY(qumeshSshSession, "qumesh.ssh.session", QtWarningMsg)
 
 namespace qumesh::ssh {
 
@@ -76,12 +73,6 @@ QString SshSessionWorker::pendingKeyType() const
 void SshSessionWorker::open(SshSession::Params p)
 {
     m_params = std::move(p);
-    qCWarning(qumeshSshSession)
-        << "SshSession::open host=" << m_params.host
-        << "port=" << m_params.port
-        << "user=" << m_params.user
-        << "authMode=" << int(m_params.authMode)
-        << "trustedHostKeys=" << m_params.trustedHostKeyFingerprints.size();
     emit stateChanged(SshSession::Connecting);
 
     QMutexLocker lock(&m_sessionMutex);
@@ -113,14 +104,10 @@ void SshSessionWorker::open(SshSession::Params p)
         return;
     }
 
-    qCWarning(qumeshSshSession) << "calling ssh_connect…";
-    const int crc = ssh_connect(m_session);
-    if (crc != SSH_OK) {
-        qCWarning(qumeshSshSession) << "ssh_connect returned" << crc;
+    if (ssh_connect(m_session) != SSH_OK) {
         fail(sshErrorString(m_session, QStringLiteral("ssh_connect failed")));
         return;
     }
-    qCWarning(qumeshSshSession) << "ssh_connect OK; verifying host key…";
 
     if (!verifyHostKey()) return; // either prompted user or failed.
     proceedWithAuth();
@@ -173,7 +160,6 @@ ssh_channel SshSessionWorker::openForwardChannel(const QString &remoteHost,
 
 void SshSessionWorker::fail(const QString &msg)
 {
-    qCWarning(qumeshSshSession) << "FAIL:" << msg;
     if (m_session != nullptr) {
         ssh_disconnect(m_session);
         ssh_free(m_session);
@@ -204,10 +190,6 @@ bool SshSessionWorker::verifyHostKey()
     const QString fp = hexFingerprint(hash, hashLen);
     ssh_clean_pubkey_hash(&hash);
 
-    qCWarning(qumeshSshSession) << "host key fingerprint:" << fp
-                                << "type:" << keyTypeName(keyType)
-                                << "(in trusted list?" << m_params.trustedHostKeyFingerprints.contains(fp) << ")";
-
     if (m_params.trustedHostKeyFingerprints.contains(fp)) {
         emit hostKeyVerifiedByPin(fp);
         return true;
@@ -223,7 +205,6 @@ bool SshSessionWorker::verifyHostKey()
 
 void SshSessionWorker::proceedWithAuth()
 {
-    qCWarning(qumeshSshSession) << "proceedWithAuth: mode =" << int(m_params.authMode);
     emit stateChanged(SshSession::Authenticating);
 
     int rc = SSH_AUTH_DENIED;
@@ -260,8 +241,6 @@ void SshSessionWorker::proceedWithAuth()
     }
     }
 
-    qCWarning(qumeshSshSession) << "ssh_userauth_* returned" << rc
-                                << "(SUCCESS=0 DENIED=1 PARTIAL=2 INFO=3 AGAIN=4 ERROR=-1)";
     if (rc == SSH_AUTH_SUCCESS) {
         emit stateChanged(SshSession::Connected);
         return;
