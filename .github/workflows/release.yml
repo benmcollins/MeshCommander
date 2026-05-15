@@ -106,6 +106,42 @@ jobs:
           brew install libssh
           echo "CMAKE_PREFIX_PATH=$(brew --prefix libssh)${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
 
+      - name: Import Developer ID cert into per-job keychain (macOS)
+        if: runner.os == 'macOS' && env.MAC_DEVELOPER_ID_P12_BASE64 != ''
+        env:
+          MAC_DEVELOPER_ID_P12_BASE64: ${{ secrets.MAC_DEVELOPER_ID_P12_BASE64 }}
+          MAC_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MAC_DEVELOPER_ID_P12_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # GitHub-hosted runners start with empty user keychains, so
+          # codesign can't find a Developer ID identity. Create a
+          # disposable keychain for this job, import the .p12, then
+          # set-key-partition-list so codesign can use the private key
+          # without an interactive prompt.
+          CERT_PATH=$(mktemp -d)/cert.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
+          printf '%s' "$MAC_DEVELOPER_ID_P12_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+              -P "$MAC_DEVELOPER_ID_P12_PASSWORD" \
+              -A -t cert -f pkcs12 \
+              -k "$KEYCHAIN_PATH"
+          rm -f "$CERT_PATH"
+          # Put our keychain first in the search path so codesign sees
+          # the imported identity. Re-include the existing user list so
+          # Apple's root certs remain reachable for chain validation.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" \
+              $(security list-keychains -d user | sed 's/"//g')
+          security set-key-partition-list \
+              -S "apple-tool:,apple:,codesign:" \
+              -s -k "$KEYCHAIN_PASSWORD" \
+              "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
       - name: Install libssh (Windows)
         if: runner.os == 'Windows'
         shell: bash

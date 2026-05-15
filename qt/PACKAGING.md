@@ -47,17 +47,23 @@ macOS) notarization without any further code changes.
 
 ### macOS
 
-| Secret                     | Source |
-|----------------------------|--------|
-| `MAC_SIGNING_IDENTITY`     | The Developer ID Application identity string, e.g. `Developer ID Application: Your Name (TEAMID)`. Run `security find-identity -v -p codesigning` on the build machine to list candidates. |
-| `MAC_NOTARIZE_APPLE_ID`    | The Apple ID associated with your developer account. |
-| `MAC_NOTARIZE_TEAM_ID`     | Your 10-character Apple Developer Team ID. |
-| `MAC_NOTARIZE_PASSWORD`    | An app-specific password generated at <https://appleid.apple.com> (Sign-In and Security → App-Specific Passwords). |
+| Secret                          | Source |
+|---------------------------------|--------|
+| `MAC_DEVELOPER_ID_P12_BASE64`   | Your Developer ID Application certificate + private key, exported from Keychain Access as a `.p12`, then base64-encoded (`base64 -i cert.p12 \| pbcopy`). The release workflow imports it into a fresh per-job keychain so codesign can find the identity. |
+| `MAC_DEVELOPER_ID_P12_PASSWORD` | The export password you set when generating the `.p12`. |
+| `MAC_SIGNING_IDENTITY`          | The Developer ID Application identity string, e.g. `Developer ID Application: Your Name (TEAMID)`. Run `security find-identity -v -p codesigning` on the build machine to list candidates. |
+| `MAC_NOTARIZE_APPLE_ID`         | The Apple ID associated with your developer account. |
+| `MAC_NOTARIZE_TEAM_ID`          | Your 10-character Apple Developer Team ID. |
+| `MAC_NOTARIZE_PASSWORD`         | An app-specific password generated at <https://appleid.apple.com> (Sign-In and Security → App-Specific Passwords). |
 
 Add them under **Settings → Secrets and variables → Actions** in this
-repo. The CMake install step picks up `MAC_SIGNING_IDENTITY` and signs
-the bundle with hardened-runtime entitlements; the release workflow
-follows up with `notarytool submit --wait` and `stapler staple`.
+repo. The workflow imports the cert with `security import` +
+`set-key-partition-list`; the CMake install step then runs
+`qt/app/codesign-bundle.sh`, which signs Sparkle.framework's internal
+helpers (XPCServices, Autoupdate, Updater.app) inner-out before
+sealing the app shell with hardened-runtime entitlements from
+`qt/app/QuMesh.entitlements`. The release workflow follows up with
+`notarytool submit --wait` and `stapler staple`.
 
 If you also have an Apple Developer ID **Installer** certificate and
 want a signed `.pkg` instead of a `.dmg`, switch CPack to the
