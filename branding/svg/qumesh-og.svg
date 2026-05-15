@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  QuMesh social preview / Open Graph image. 1280×640 — GitHub's
+  recommended size for repo social previews and the dimensions Twitter,
+  LinkedIn, Slack, Discord, etc. all crop sensibly. Render to PNG via
+  branding/build-icons.py.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <title>QuMesh — Native Qt6 console for Intel AMT (vPro) devices</title>
+
+  <defs>
+    <!-- Vertical gradient on the slate background, slightly lighter at
+         the top so the mark on the left has a touch more presence. -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#1e293b"/>
+      <stop offset="1"   stop-color="#0f172a"/>
+    </linearGradient>
+
+    <!-- A subtle dot pattern that suggests "mesh" without competing
+         with the mark. 24px grid, ~3% white opacity. -->
+    <pattern id="meshDots" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="16" cy="16" r="1.2" fill="#E6EDF3" opacity="0.08"/>
+    </pattern>
+
+    <!-- Soft glow ring behind the mark to lift it off the background. -->
+    <radialGradient id="markGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0"   stop-color="#38bdf8" stop-opacity="0.20"/>
+      <stop offset="0.6" stop-color="#38bdf8" stop-opacity="0.05"/>
+      <stop offset="1"   stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background. -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#meshDots)"/>
+
+  <!-- Subtle bottom-edge accent stripe in cyan — picks up the
+       interactive accent the app uses. -->
+  <rect x="0" y="636" width="1280" height="4" fill="#38bdf8" opacity="0.85"/>
+
+  <!-- ============================================================
+       LEFT: the QuMesh mark, large.
+       The mark is on a 200×200 viewBox; we scale it 1.8× and centre
+       it inside a 360px column at x ∈ [60, 420]. The radial glow
+       sits behind it.
+       ============================================================ -->
+  <circle cx="240" cy="320" r="220" fill="url(#markGlow)"/>
+
+  <g transform="translate(240, 320) scale(1.8)" stroke-linecap="round">
+    <!-- Outer ring (the Q). -->
+    <circle cx="0" cy="0" r="50" fill="none" stroke="#E6EDF3" stroke-width="4"/>
+    <!-- Eight lattice nodes around the ring. -->
+    <circle cx="-50" cy="0" r="5" fill="#E6EDF3"/>
+    <circle cx="50" cy="0" r="5" fill="#E6EDF3"/>
+    <circle cx="0" cy="-50" r="5" fill="#E6EDF3"/>
+    <circle cx="0" cy="50" r="5" fill="#E6EDF3"/>
+    <circle cx="-35.355" cy="-35.355" r="5" fill="#E6EDF3"/>
+    <circle cx="35.355" cy="-35.355" r="5" fill="#E6EDF3"/>
+    <circle cx="-35.355" cy="35.355" r="5" fill="#E6EDF3"/>
+    <circle cx="35.355" cy="35.355" r="5" fill="#E6EDF3"/>
+    <!-- Tail — connection out to a remote node. Cyan picks up the
+         accent stripe at the bottom of the canvas. -->
+    <line x1="20" y1="20" x2="55" y2="55" stroke="#38bdf8" stroke-width="5"/>
+    <circle cx="55" cy="55" r="7" fill="#38bdf8"/>
+  </g>
+
+  <!-- ============================================================
+       RIGHT: wordmark + tagline + platform pills.
+       Anchored at x=500 (about 40% in from the left edge).
+       ============================================================ -->
+
+  <!-- "QuMesh" wordmark. IBM Plex Sans Medium; system Helvetica
+       Neue is the fallback if Plex isn't installed when the PNG is
+       rebuilt — close enough proportions to keep the composition. -->
+  <text x="500" y="290"
+        font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-weight="500"
+        font-size="124"
+        fill="#F1F5F9"
+        letter-spacing="-2">QuMesh</text>
+
+  <!-- Tagline -->
+  <text x="500" y="350"
+        font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-weight="400"
+        font-size="30"
+        fill="#94A3B8"
+        letter-spacing="0.2">Native Qt6 console for Intel AMT (vPro) devices</text>
+
+  <!-- Platform / tech pills. Slate-700 fills, light text, cyan dot
+       at left to echo the tail node in the mark. -->
+  <g transform="translate(500, 420)"
+     font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+     font-weight="500"
+     font-size="22"
+     fill="#E2E8F0">
+
+    <!-- macOS pill -->
+    <g>
+      <rect x="0" y="0" width="148" height="50" rx="25" fill="#334155"/>
+      <circle cx="22" cy="25" r="5" fill="#38bdf8"/>
+      <text x="40" y="33">macOS</text>
+    </g>
+
+    <!-- Windows pill -->
+    <g transform="translate(164, 0)">
+      <rect x="0" y="0" width="166" height="50" rx="25" fill="#334155"/>
+      <circle cx="22" cy="25" r="5" fill="#38bdf8"/>
+      <text x="40" y="33">Windows</text>
+    </g>
+
+    <!-- Qt6 / QML pill -->
+    <g transform="translate(346, 0)">
+      <rect x="0" y="0" width="180" height="50" rx="25" fill="#334155"/>
+      <circle cx="22" cy="25" r="5" fill="#38bdf8"/>
+      <text x="40" y="33">Qt6 + QML</text>
+    </g>
+  </g>
+
+  <!-- Footer attribution — small, low-contrast. -->
+  <text x="500" y="540"
+        font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-weight="400"
+        font-size="20"
+        fill="#64748B"
+        letter-spacing="0.5">github.com/benmcollins/QuMesh · Apache 2.0</text>
+</svg>

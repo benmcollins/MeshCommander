@@ -10,8 +10,9 @@ Cross-platform icon assets for the QuMesh application (macOS + Windows, Qt/QML).
 | `qumesh-mark-small.svg` | Simplified variant (Q + tail node, no interior lattice). Used for renders ≤ 32 px where the lattice detail muddies. Also uses `currentColor`. |
 | `qumesh-macos.svg` | Slate squircle tile (1024×1024) with white mark. The source for `.icns`. |
 | `qumesh-windows.svg` | Slate mark on transparent background (256×256). The source for `.ico`. |
+| `qumesh-og.svg` | 1280×640 social preview / Open Graph card. Renders to `build/og-image.png`; upload that file at **Repo → Settings → Social preview** so GitHub serves it as the OG image when the repo URL is shared on Twitter, Slack, Discord, etc. |
 
-Brand color: **#1e293b** (slate-800).
+Brand color: **#1e293b** (slate-800), accent **#38bdf8** (sky-400).
 
 ## Building the icon bundles
 
@@ -26,6 +27,7 @@ Outputs:
 build/
 ├── qumesh.icns                # macOS application icon
 ├── qumesh.ico                 # Windows application icon
+├── og-image.png               # 1280×640 GitHub social preview
 ├── qumesh.iconset/            # intermediate macOS iconset
 └── png/                       # standalone PNG renders at standard sizes
     ├── qumesh-mark-16.png
@@ -36,6 +38,26 @@ build/
 ```
 
 On macOS, the script uses the system `iconutil` for an optimized `.icns`. On Linux or Windows build hosts, it falls back to a Pillow-based ICNS writer that produces a functional but larger file.
+
+For `og-image.png` to render the wordmark in IBM Plex Sans (matching the app), make the bundled font visible to fontconfig before running the script:
+
+```bash
+mkdir -p ~/.local/share/fonts/qumesh-build
+cp ../app/qml/fonts/IBMPlexSans-{Regular,Medium}.ttf ~/.local/share/fonts/qumesh-build/
+fc-cache -f ~/.local/share/fonts/qumesh-build
+```
+
+Without that step the script still produces a usable card — the SVG falls back to Helvetica Neue / Arial.
+
+### Uploading the social preview to GitHub
+
+GitHub's social preview image is only settable through the web UI; there's no `gh` API endpoint for it. Once `og-image.png` is generated:
+
+1. Open **Repo → Settings → General**.
+2. Under **Social preview**, click **Edit** → **Upload an image**.
+3. Pick `branding/build/og-image.png`.
+
+GitHub then serves it as the Open Graph image when the repo URL is unfurled in Twitter, LinkedIn, Slack, Discord, iMessage, etc.
 
 ## Qt/QML integration
 

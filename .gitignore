@@ -13,3 +13,4 @@ legacy/source/cache/
 branding/build/*
 !branding/build/qumesh.icns
 !branding/build/qumesh.ico
+!branding/build/og-image.png

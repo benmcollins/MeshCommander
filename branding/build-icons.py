@@ -6,6 +6,8 @@ Generates platform-specific icon bundles from the master SVG files:
   - macOS:   qumesh.icns (from svg/qumesh-macos.svg + svg/qumesh-mark-small.svg)
   - Windows: qumesh.ico  (from svg/qumesh-windows.svg + svg/qumesh-mark-small.svg)
   - PNG renders: build/png/ at every standard size
+  - Social preview: build/og-image.png (1280×640, from svg/qumesh-og.svg) —
+    upload at Repo → Settings → Social preview.
 
 Requirements:
   pip install cairosvg pillow
@@ -45,6 +47,7 @@ ICONSET_DIR = BUILD_DIR / "qumesh.iconset"
 MACOS_SVG = SVG_DIR / "qumesh-macos.svg"
 WINDOWS_SVG = SVG_DIR / "qumesh-windows.svg"
 SMALL_SVG = SVG_DIR / "qumesh-mark-small.svg"
+OG_SVG = SVG_DIR / "qumesh-og.svg"
 
 # macOS iconset sizes: (size_px, filename, source_svg).
 # Apple expects @1x and @2x variants. We use the simplified mark for sizes <= 32px
@@ -196,6 +199,22 @@ def build_png_renders() -> None:
     print(f"  -> {PNG_DIR}/")
 
 
+def build_og_image() -> None:
+    """Render the 1280×640 social preview PNG used as GitHub's Open
+    Graph image. Best results need IBM Plex Sans available to
+    fontconfig; the bundled TTFs live at app/qml/fonts/. The SVG
+    falls back to Helvetica Neue / Arial if Plex isn't installed."""
+    print("Building social preview image…")
+    out_path = BUILD_DIR / "og-image.png"
+    png_bytes = cairosvg.svg2png(
+        url=str(OG_SVG),
+        output_width=1280,
+        output_height=640,
+    )
+    out_path.write_bytes(png_bytes)
+    print(f"  -> {out_path}")
+
+
 def main() -> int:
     if not SVG_DIR.is_dir():
         print(f"SVG source directory not found: {SVG_DIR}", file=sys.stderr)
@@ -206,6 +225,7 @@ def main() -> int:
     build_png_renders()
     build_macos_iconset()
     build_windows_ico()
+    build_og_image()
 
     print("\nDone. Outputs in build/:")
     for p in sorted(BUILD_DIR.rglob("*")):
