@@ -167,15 +167,24 @@ if(APPLE)
     target_sources(qumesh PRIVATE "${_macos_icns}")
 endif()
 
-# --- Sparkle (macOS in-app auto-update) -------------------------------
+# --- In-app auto-update ----------------------------------------------
 #
-# Pulled at configure time from Sparkle's GitHub Releases tarball (no
-# vendored binary in the repo). The framework is copied into the
-# bundle's Contents/Frameworks/ post-build, and Info.plist carries the
-# appcast URL + the EdDSA public key so Sparkle can verify each update
-# before installing.
+# Two platform backends share the QML-facing `Updater` facade
+# (src/updater.h): Sparkle on macOS and WinSparkle on Windows. Both
+# binaries are pulled at configure time from their respective GitHub
+# Releases (pinned URL + SHA256, no vendored binary in the repo). The
+# bundle/install steps drop the framework / DLL next to the executable,
+# and a checked-in public key in this directory (`sparkle_pub_ed_key`,
+# `winsparkle_pub_ed_key`) is read in for the runtime signature check.
+# Without a key set the build still produces a runnable artifact;
+# Sparkle/WinSparkle simply refuse to install any update they can't
+# verify.
 
-option(QUMESH_AUTOUPDATE "Build with in-app auto-update (Sparkle on macOS)" ON)
+option(QUMESH_AUTOUPDATE "Build with in-app auto-update (Sparkle/WinSparkle)" ON)
+
+set(QUMESH_APPCAST_FEED_URL
+    "https://github.com/benmcollins/QuMesh/releases/latest/download/appcast.xml"
+    CACHE STRING "Sparkle/WinSparkle appcast.xml feed URL")
 
 if(APPLE AND QUMESH_AUTOUPDATE)
     include(FetchContent)
@@ -224,11 +233,63 @@ if(APPLE AND QUMESH_AUTOUPDATE)
     else()
         set(SPARKLE_PUBLIC_ED_KEY "")
     endif()
-    set(SPARKLE_FEED_URL
-        "https://github.com/benmcollins/QuMesh/releases/latest/download/appcast.xml")
+    set(SPARKLE_FEED_URL "${QUMESH_APPCAST_FEED_URL}")
     set_target_properties(qumesh PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
     )
+elseif(WIN32 AND QUMESH_AUTOUPDATE)
+    include(FetchContent)
+    FetchContent_Declare(
+        winsparkle
+        URL      https://github.com/vslavik/winsparkle/releases/download/v0.9.2/WinSparkle-0.9.2.zip
+        URL_HASH SHA256=2a5facf5a22056edf7afc4d0a4bf05620b7aa7cc1619c3078b281e374cdb9996
+    )
+    FetchContent_MakeAvailable(winsparkle)
+
+    # The zip lays out per-arch subdirs under WinSparkle-0.9.2/. We
+    # build x64 (Qt's win64_msvc2022_64) so pick that variant.
+    set(_winsparkle_root "${winsparkle_SOURCE_DIR}")
+    set(_winsparkle_dll  "${_winsparkle_root}/x64/Release/WinSparkle.dll")
+    set(_winsparkle_lib  "${_winsparkle_root}/x64/Release/WinSparkle.lib")
+
+    add_library(WinSparkle::WinSparkle SHARED IMPORTED)
+    set_target_properties(WinSparkle::WinSparkle PROPERTIES
+        IMPORTED_LOCATION             "${_winsparkle_dll}"
+        IMPORTED_IMPLIB               "${_winsparkle_lib}"
+        INTERFACE_INCLUDE_DIRECTORIES "${_winsparkle_root}/include"
+    )
+
+    target_sources(qumesh PRIVATE src/updater_win.cpp)
+    target_link_libraries(qumesh PRIVATE WinSparkle::WinSparkle)
+
+    # WinSparkle.dll must sit alongside QuMesh.exe at runtime. Copy
+    # into the build dir post-build so launch-from-build-tree works,
+    # and install it next to the exe so cpack picks it up.
+    add_custom_command(TARGET qumesh POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_winsparkle_dll}"
+            "$<TARGET_FILE_DIR:qumesh>/WinSparkle.dll"
+        VERBATIM
+    )
+    install(FILES "${_winsparkle_dll}" DESTINATION .)
+
+    # WinSparkle takes its appcast URL + EdDSA public key via C-API
+    # calls at startup. Bake both into a generated header so the wiring
+    # stays internal to the binary and we avoid MSVC/clang macro-quoting
+    # differences that bite you with COMPILE_DEFINITIONS.
+    set(_winsparkle_pub_key_file "${CMAKE_CURRENT_SOURCE_DIR}/winsparkle_pub_ed_key")
+    if(EXISTS "${_winsparkle_pub_key_file}")
+        file(READ "${_winsparkle_pub_key_file}" WINSPARKLE_PUBLIC_ED_KEY)
+        string(STRIP "${WINSPARKLE_PUBLIC_ED_KEY}" WINSPARKLE_PUBLIC_ED_KEY)
+    else()
+        set(WINSPARKLE_PUBLIC_ED_KEY "")
+    endif()
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/updater_win_config.h.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/updater_win_config.h"
+        @ONLY
+    )
+    target_include_directories(qumesh PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 else()
     # Stub implementation; declares Updater as available()==false so QML
     # can `import` it unconditionally and hide its UI.

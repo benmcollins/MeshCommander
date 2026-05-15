@@ -115,13 +115,44 @@ configure time and substitutes it into the bundle Info.plist as
 bundle — Sparkle just refuses to install any update because no
 signature can validate.
 
-### Required CI secret
+### Required CI secrets
 
 | Secret                       | Source |
 |------------------------------|--------|
-| `SPARKLE_ED_PRIVATE_KEY`     | Base64 EdDSA private key (single-line, no headers). The release workflow writes it to a temp file and passes it to `sign_update --ed-key-file`. |
+| `SPARKLE_ED_PRIVATE_KEY`     | Base64 EdDSA private key for the macOS appcast (single-line, no headers). The release workflow writes it to a temp file and passes it to `sign_update --ed-key-file`. |
+| `WINSPARKLE_ED_PRIVATE_KEY`  | Base64 EdDSA private key for the Windows appcast. Generated with `winsparkle-tool.exe generate-key`. Independent of the Sparkle key — same algorithm, different keypair. |
 
-### Disabling Sparkle for a build
+### Windows side (WinSparkle)
+
+The Windows build mirrors the macOS Sparkle wiring with
+[WinSparkle 0.9.2](https://github.com/vslavik/winsparkle):
+
+1. Generate a keypair on a Windows machine:
+   ```
+   winsparkle-tool.exe generate-key
+   winsparkle-tool.exe public-key  > pubkey.txt
+   ```
+   The private key is stored in the Windows registry under
+   `HKCU\Software\WinSparkle`. Export it (also via `winsparkle-tool`)
+   into a single-line base64 string for `WINSPARKLE_ED_PRIVATE_KEY`.
+2. Copy the public-key string into `qt/app/winsparkle_pub_ed_key`
+   (commit it).
+3. The release workflow signs each `.exe` with `winsparkle-tool.exe
+   sign --private-key-file …` and merges the Windows `<item>` into
+   the same `appcast.xml` the macOS job produces. Each item carries
+   `<sparkle:os>` so Sparkle and WinSparkle each pick their own.
+
+### Code signing on Windows
+
+There's no equivalent to Apple's Developer ID baked into the workflow
+yet — Windows code signing requires buying a certificate from a CA
+(Sectigo via SSL.com is $80–200/yr; Azure Trusted Signing is ~$10/mo).
+Without one, SmartScreen warns "Windows protected your PC" on first
+launch but the installer still works, and WinSparkle's *update*
+signature check is independent of Authenticode anyway. Wire this up
+later when a cert is acquired.
+
+### Disabling auto-update for a build
 
 Pass `-DQUMESH_AUTOUPDATE=OFF` at configure time. The Updater QML
 singleton then reports `available() === false`, so the in-app "Updates"

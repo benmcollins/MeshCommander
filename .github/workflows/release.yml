@@ -268,11 +268,13 @@ jobs:
             echo "<item>"
             echo "  <title>$VERSION</title>"
             echo "  <pubDate>$PUBDATE</pubDate>"
+            echo "  <sparkle:os>macos</sparkle:os>"
             echo "  <description><![CDATA["
             printf '%s\n' "$NOTES"
             echo "  ]]></description>"
             echo "  <enclosure url=\"https://github.com/${{ github.repository }}/releases/download/${TAG}/${DMG_NAME}\""
             echo "             sparkle:version=\"$VERSION\""
+            echo "             sparkle:os=\"macos\""
             echo "             $SIG"
             echo "             type=\"application/octet-stream\" />"
             echo "</item>"
@@ -286,6 +288,64 @@ jobs:
         with:
           name: appcast-fragment-macos
           path: appcast/item-macos.xml
+          if-no-files-found: error
+
+      - name: Sign update for WinSparkle (Windows, when secret provisioned)
+        if: runner.os == 'Windows' && env.WINSPARKLE_ED_PRIVATE_KEY != ''
+        env:
+          WINSPARKLE_ED_PRIVATE_KEY: ${{ secrets.WINSPARKLE_ED_PRIVATE_KEY }}
+        shell: bash
+        working-directory: qt/build
+        run: |
+          # Pull the same WinSparkle zip CMake fetches; we need
+          # bin/winsparkle-tool.exe to sign the installer with the
+          # EdDSA private key. The .zip is ~10 MB.
+          WS_VER=0.9.2
+          WS_URL="https://github.com/vslavik/winsparkle/releases/download/v${WS_VER}/WinSparkle-${WS_VER}.zip"
+          curl -sL "$WS_URL" -o /tmp/winsparkle.zip
+          mkdir -p /tmp/winsparkle
+          7z x -y -o/tmp/winsparkle /tmp/winsparkle.zip > /dev/null
+          TOOL="/tmp/winsparkle/WinSparkle-${WS_VER}/bin/winsparkle-tool.exe"
+          KEY_FILE=$(mktemp)
+          printf '%s' "$WINSPARKLE_ED_PRIVATE_KEY" > "$KEY_FILE"
+          EXE=$(ls QuMesh-*-windows-x64.exe | head -1)
+          # `winsparkle-tool sign` prints `sparkle:edSignature="..."`
+          # to stdout for embedding in the appcast item.
+          SIG_LINE=$("$TOOL" sign --private-key-file "$KEY_FILE" "$EXE")
+          rm -f "$KEY_FILE"
+          LENGTH=$(stat -c '%s' "$EXE" 2>/dev/null || stat -f '%z' "$EXE")
+          mkdir -p ../../appcast
+          TAG="${GITHUB_REF##*/}"
+          VERSION="${TAG#v}"
+          EXE_NAME=$(basename "$EXE")
+          PUBDATE=$(LC_ALL=en_US.UTF-8 date -u +"%a, %d %b %Y %H:%M:%S +0000")
+          NOTES=$(git tag -l --format='%(contents)' "$TAG")
+          if [ -z "$NOTES" ]; then NOTES="QuMesh $TAG"; fi
+          {
+            echo "<item>"
+            echo "  <title>$VERSION</title>"
+            echo "  <pubDate>$PUBDATE</pubDate>"
+            echo "  <sparkle:os>windows</sparkle:os>"
+            echo "  <description><![CDATA["
+            printf '%s\n' "$NOTES"
+            echo "  ]]></description>"
+            echo "  <enclosure url=\"https://github.com/${{ github.repository }}/releases/download/${TAG}/${EXE_NAME}\""
+            echo "             sparkle:version=\"$VERSION\""
+            echo "             sparkle:os=\"windows\""
+            echo "             length=\"$LENGTH\""
+            echo "             $SIG_LINE"
+            echo "             type=\"application/octet-stream\" />"
+            echo "</item>"
+          } > ../../appcast/item-windows.xml
+
+      - name: Upload appcast fragment (Windows)
+        if: runner.os == 'Windows' && env.WINSPARKLE_ED_PRIVATE_KEY != ''
+        env:
+          WINSPARKLE_ED_PRIVATE_KEY: ${{ secrets.WINSPARKLE_ED_PRIVATE_KEY }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: appcast-fragment-windows
+          path: appcast/item-windows.xml
           if-no-files-found: error
 
       - name: Notarize (macOS, when secret provisioned)
@@ -350,23 +410,36 @@ jobs:
           path: appcast/
         continue-on-error: true
 
-      - name: Assemble Sparkle appcast
-        if: hashFiles('appcast/item-macos.xml') != ''
+      - name: Download WinSparkle appcast fragment (if produced)
+        uses: actions/download-artifact@v4
+        with:
+          name: appcast-fragment-windows
+          path: appcast/
+        continue-on-error: true
+
+      - name: Assemble appcast (macOS + Windows)
+        if: hashFiles('appcast/item-macos.xml') != '' || hashFiles('appcast/item-windows.xml') != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Pull the previous release's appcast.xml (if any) and prepend
-          # the new <item> so the in-app "what's new" history grows over
-          # time. First-ever release: prior fetch fails, we start fresh.
+          # the new <item>s so the in-app "what's new" history grows
+          # over time. First-ever release: prior fetch fails, we start
+          # fresh. Each item carries sparkle:os so Sparkle and
+          # WinSparkle each pick the entries that match their platform.
           PREV_ITEMS=""
           if gh release download --repo "${{ github.repository }}" \
                                   --pattern appcast.xml \
                                   --dir prev_appcast 2>/dev/null; then
-            # Strip the channel/header/footer; keep just the <item>...</item>
-            # blocks for the prior history.
             PREV_ITEMS=$(awk '/<item>/,/<\/item>/' prev_appcast/appcast.xml)
           fi
-          NEW_ITEM=$(cat appcast/item-macos.xml)
+          NEW_ITEMS=""
+          for fragment in appcast/item-macos.xml appcast/item-windows.xml; do
+            if [ -f "$fragment" ]; then
+              NEW_ITEMS="${NEW_ITEMS}$(cat "$fragment")
+          "
+            fi
+          done
           mkdir -p dist
           cat > dist/appcast.xml <<APPCAST
           <?xml version="1.0" encoding="utf-8"?>
@@ -376,7 +449,7 @@ jobs:
               <link>https://github.com/${{ github.repository }}</link>
               <description>QuMesh release feed</description>
               <language>en</language>
-          ${NEW_ITEM}
+          ${NEW_ITEMS}
           ${PREV_ITEMS}
             </channel>
           </rss>
