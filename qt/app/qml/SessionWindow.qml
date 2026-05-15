@@ -24,8 +24,8 @@ AppWindow {
     property var machineSshConfig: ({})
     property string label: qsTr("Session")
 
-    /// Initial tab to show: 0 = SOL, 1 = KVM, 2 = IDE-R. Each panel
-    /// auto-`start()`s the first time it becomes the active tab.
+    /// Initial tab to show: 0 = SOL, 1 = KVM, 2 = IDE-R. Panels do
+    /// not auto-connect — the operator clicks Connect on the panel.
     property int initialTab: 0
 
     signal trustedFingerprintPersistRequested(string fingerprint)
@@ -33,12 +33,7 @@ AppWindow {
 
     function openTab(idx) {
         bar.currentIndex = idx;
-        if (root.visible) startActive();
-    }
-    function startActive() {
-        const items = [solPanel, kvmPanel, iderPanel];
-        const it = items[bar.currentIndex];
-        if (it !== null && it.start) it.start();
+        if (root.visible) root.raise();
     }
 
     width: 1024
@@ -124,25 +119,8 @@ AppWindow {
         iderPanel.stop();
     }
 
-    /// Track which tabs we've already started so the panel's controller
-    /// isn't re-opened every time the user flips back to a connected
-    /// tab. Re-starting after the user has explicitly disconnected is
-    /// handled by the panel's own Reconnect button.
-    property var _started: ({})
-    Connections {
-        target: bar
-        function onCurrentIndexChanged() {
-            if (!root._started[bar.currentIndex]) {
-                root._started[bar.currentIndex] = true;
-                root.startActive();
-            }
-        }
-    }
-
     Component.onCompleted: {
         bar.currentIndex = root.initialTab;
-        root._started[root.initialTab] = true;
-        Qt.callLater(root.startActive);
         // Once the controller has the SSH config + host, ask AMT whether
         // consent is required for redirection. The result lands in
         // `onOptInStatusChanged` which kicks off `startOptIn` if needed.

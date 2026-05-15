@@ -102,7 +102,7 @@ Item {
                       || controller.state === SolController.Authenticating
                       || controller.state === SolController.Opening
                     ? qsTr("Disconnect")
-                    : qsTr("Reconnect")
+                    : qsTr("Connect")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 onClicked: {
