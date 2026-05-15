@@ -1,8 +1,3 @@
-<!--
-SPDX-License-Identifier: Apache-2.0
-Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
--->
-
 # QuMesh — Roadmap
 
 QuMesh is a native Qt6 + QML console for Intel AMT devices, replacing the legacy NW.js-wrapped MeshCommander (`source/Commander.htm`). Cross-platform (macOS + Windows), one-shot import from the legacy app's saved config.

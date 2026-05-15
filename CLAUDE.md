@@ -1,8 +1,3 @@
-<!--
-SPDX-License-Identifier: Apache-2.0
-Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
--->
-
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -11,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The repo is **mid-rewrite from Intel's NW.js MeshCommander to QuMesh, a native Qt6/QML app**, cross-platform (macOS + Windows). The new product is QuMesh; the legacy product is MeshCommander. Two trees coexist:
 
-- **`qt/`** — QuMesh, the new Qt6/QML app. Where active development happens. Read `qt/ROADMAP.md` for the phased plan.
-- **`source/` + `mkapp*` + top-level `package.json`** — the legacy NW.js MeshCommander implementation. Kept as a reference for AMT protocol behavior while features are ported, and removed progressively (see `qt/ROADMAP.md` "Progressive cleanup").
+- **`./`** — QuMesh, the new Qt6/QML app. Where active development happens. Read `ROADMAP.md` for the phased plan.
+- **`legacy/source/` + `mkapp*` + top-level `legacy/package.json`** — the legacy NW.js MeshCommander implementation. Kept as a reference for AMT protocol behavior while features are ported, and removed progressively (see `ROADMAP.md` "Progressive cleanup").
 
 The legacy was a macOS repackaging of Intel's MeshCommander web app (a console for managing Intel AMT / vPro hardware), wrapping a ~53k-line single-page web app (`source/Commander.htm`) in NW.js. Upstream is Intel's MeshCommander source (Apache-2.0).
 
@@ -33,10 +28,9 @@ For Qt/QML changes specifically: use the `qt-development-skills` plugin — invo
 
 ## Build
 
-### QuMesh (`qt/`)
+### QuMesh
 
 ```
-cd qt
 cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -47,6 +41,7 @@ Run the app: `./build/app/qumesh.app/Contents/MacOS/qumesh` (macOS) or `build\ap
 ### Legacy NW.js build
 
 ```
+cd legacy
 npm install                      # install nw-builder (top-level package.json)
 ./mkapp-arm64                    # build Apple Silicon .app under build/MeshCommander-osxarm64/
 ```

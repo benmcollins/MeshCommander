@@ -13,7 +13,7 @@
 # The final job downloads both artifacts and publishes a GitHub Release.
 #
 # Signing/notarization is gated on the existence of repo secrets; until
-# those are populated, the release ships unsigned. See `qt/app/CMakeLists.txt`
+# those are populated, the release ships unsigned. See `app/CMakeLists.txt`
 # for the signing stubs and the README for how to provision secrets.
 
 name: Release
@@ -152,22 +152,20 @@ jobs:
 
       - name: Configure
         shell: bash
-        working-directory: qt
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         shell: bash
-        working-directory: qt
         run: cmake --build build --parallel
 
       - name: Test (smoke)
         shell: bash
-        working-directory: qt/build
+        working-directory: build
         run: ctest --output-on-failure --parallel
 
       - name: Package
         shell: bash
-        working-directory: qt/build
+        working-directory: build
         env:
           MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
           WIN_SIGN_THUMBPRINT: ${{ secrets.WIN_SIGN_THUMBPRINT }}
@@ -176,7 +174,7 @@ jobs:
       - name: Smoke-launch bundled app (macOS)
         if: runner.os == 'macOS'
         shell: bash
-        working-directory: qt/build
+        working-directory: build
         env:
           QUMESH_SMOKE_EXIT_MS: '3000'
           QT_QPA_PLATFORM: offscreen
@@ -207,7 +205,7 @@ jobs:
       - name: Smoke-launch bundled app (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        working-directory: qt/build
+        working-directory: build
         env:
           QUMESH_SMOKE_EXIT_MS: '3000'
           QT_QPA_PLATFORM: offscreen
@@ -239,7 +237,7 @@ jobs:
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         shell: bash
-        working-directory: qt/build
+        working-directory: build
         run: |
           # Pull the same Sparkle tarball CMake fetches; we only need
           # bin/sign_update from it. Cache-friendly: tar.xz is < 14 MB.
@@ -295,7 +293,7 @@ jobs:
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         shell: bash
-        working-directory: qt/build
+        working-directory: build
         run: |
           # Pull the same WinSparkle zip CMake fetches; we need
           # bin/winsparkle-tool.exe to sign the installer with the
@@ -357,7 +355,7 @@ jobs:
           MAC_NOTARIZE_TEAM_ID: ${{ secrets.MAC_NOTARIZE_TEAM_ID }}
           MAC_NOTARIZE_PASSWORD: ${{ secrets.MAC_NOTARIZE_PASSWORD }}
         shell: bash
-        working-directory: qt/build
+        working-directory: build
         run: |
           DMG=$(ls QuMesh-*-macos.dmg | head -1)
           xcrun notarytool submit "$DMG" \
@@ -369,7 +367,7 @@ jobs:
 
       - name: Collect artifact
         shell: bash
-        working-directory: qt/build
+        working-directory: build
         run: |
           mkdir -p ../../artifacts
           if [ "${{ runner.os }}" = "macOS" ]; then

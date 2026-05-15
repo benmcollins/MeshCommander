@@ -1,8 +1,3 @@
-<!--
-SPDX-License-Identifier: Apache-2.0
-Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
--->
-
 # Packaging QuMesh
 
 QuMesh ships as a `.dmg` for macOS and an NSIS-based `.exe` installer for

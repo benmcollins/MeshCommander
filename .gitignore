@@ -1,18 +1,15 @@
-# SPDX-License-Identifier: Apache-2.0
-# Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
-
-build/
-cache/
-node_modules/
-source/cache/
+legacy/build/
+legacy/cache/
+legacy/node_modules/
+legacy/source/cache/
 .DS_Store
-qt/build/
-qt/build-*/
+/build/
+/build-*/
 
 # Pre-built branding artifacts that CI / packaging needs verbatim.
-# Regenerate via qt/branding/build-icons.py — intermediate PNGs and
+# Regenerate via branding/build-icons.py — intermediate PNGs and
 # the iconset stay ignored.
-!qt/branding/build/
-qt/branding/build/*
-!qt/branding/build/qumesh.icns
-!qt/branding/build/qumesh.ico
+!branding/build/
+branding/build/*
+!branding/build/qumesh.icns
+!branding/build/qumesh.ico

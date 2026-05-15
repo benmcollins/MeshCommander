@@ -1,6 +1,3 @@
-# SPDX-License-Identifier: Apache-2.0
-# Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
-
 name: CI
 
 on:
@@ -84,15 +81,13 @@ jobs:
 
       - name: Configure
         shell: bash
-        working-directory: qt
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         shell: bash
-        working-directory: qt
         run: cmake --build build --parallel
 
       - name: Test
         shell: bash
-        working-directory: qt/build
+        working-directory: build
         run: ctest --output-on-failure --parallel
