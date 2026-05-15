@@ -147,6 +147,17 @@ qt_add_resources(qumesh "qumesh_icons"
         "${_baked_icons_dir}/icon-moon-light.svg"
 )
 
+# Standalone tile asset (slate background + light Q) for the window
+# icon — see main.cpp's QGuiApplication::setWindowIcon. Lives under
+# branding/svg/ rather than the baked dir because it doesn't need a
+# colour swap; the slate background and light-grey mark are baked in.
+qt_add_resources(qumesh "qumesh_tile_icon"
+    PREFIX "/icons"
+    BASE   "${_branding_dir}/svg"
+    FILES
+        "${_branding_dir}/svg/qumesh-mark-tile.svg"
+)
+
 # Platform app icons (already pre-built under branding/build/).
 if(APPLE)
     set(_macos_icns "${_branding_dir}/build/qumesh.icns")

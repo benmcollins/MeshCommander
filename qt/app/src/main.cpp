@@ -42,10 +42,13 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationDomain(QStringLiteral("insynergy.com"));
     QCoreApplication::setApplicationName(QStringLiteral("QuMesh"));
 
-    // Window-manager icon. macOS reads the bundle's .icns directly and
-    // ignores this; Windows uses the embedded .ico from the .rc. This
-    // setter covers Linux + Wayland in-app contexts (e.g. about boxes).
-    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/qumesh-mark-slate.svg")));
+    // Window-manager icon. macOS overrides the bundle .icns with this
+    // at runtime (Dock + Cmd+Tab), Windows decorates non-bundle window
+    // chrome with it, and Linux/Wayland use it for the about box and
+    // desktop entries. Use the tile variant (slate background + light
+    // Q) so the icon reads as a finished tile rather than a floating
+    // outline.
+    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/qumesh-mark-tile.svg")));
 
     // Load the .qm matching the system locale. qt_add_translations()
     // embeds the compiled .qm under :/i18n/ in the QML resource

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <title>QuMesh — window icon tile</title>
+  <desc>QuMesh window/dock icon: slate-blue rounded square with the QuMesh mark in light grey. Mark sits at the natural size from qumesh-mark.svg (~50% of tile diameter) so it reads as a finished icon at Dock / Cmd+Tab / taskbar sizes without macOS-grid gutter shrinking it.</desc>
+  <rect x="0" y="0" width="200" height="200" rx="45" ry="45" fill="#1e293b"/>
+  <g transform="translate(100, 100)">
+    <circle cx="0" cy="0" r="50" fill="none" stroke="#E6EDF3" stroke-width="4"/>
+    <circle cx="-50" cy="0" r="5" fill="#E6EDF3"/>
+    <circle cx="50" cy="0" r="5" fill="#E6EDF3"/>
+    <circle cx="0" cy="-50" r="5" fill="#E6EDF3"/>
+    <circle cx="0" cy="50" r="5" fill="#E6EDF3"/>
+    <circle cx="-35.355" cy="-35.355" r="5" fill="#E6EDF3"/>
+    <circle cx="35.355" cy="-35.355" r="5" fill="#E6EDF3"/>
+    <circle cx="-35.355" cy="35.355" r="5" fill="#E6EDF3"/>
+    <circle cx="35.355" cy="35.355" r="5" fill="#E6EDF3"/>
+    <line x1="20" y1="20" x2="55" y2="55" stroke="#E6EDF3" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="55" cy="55" r="7" fill="#E6EDF3"/>
+  </g>
+</svg>
