@@ -253,7 +253,9 @@ jobs:
           SIG=$(/tmp/sparkle/bin/sign_update "$DMG" --ed-key-file "$KEY_FILE")
           rm -f "$KEY_FILE"
           # Stash the bits the publish job needs to assemble appcast.xml.
-          mkdir -p ../../appcast
+          # Step runs with working-directory: build, so `..` is the
+          # repo root — upload-artifact resolves its `path:` the same way.
+          mkdir -p "$GITHUB_WORKSPACE/appcast"
           TAG="${GITHUB_REF##*/}"
           VERSION="${TAG#v}"
           DMG_NAME=$(basename "$DMG")
@@ -276,7 +278,7 @@ jobs:
             echo "             $SIG"
             echo "             type=\"application/octet-stream\" />"
             echo "</item>"
-          } > ../../appcast/item-macos.xml
+          } > "$GITHUB_WORKSPACE/appcast/item-macos.xml"
 
       - name: Upload appcast fragment (macOS)
         if: runner.os == 'macOS' && env.SPARKLE_ED_PRIVATE_KEY != ''
@@ -314,7 +316,7 @@ jobs:
           SIG_LINE=$("$TOOL" sign --private-key-file "$KEY_FILE" "$EXE")
           rm -f "$KEY_FILE"
           LENGTH=$(stat -c '%s' "$EXE" 2>/dev/null || stat -f '%z' "$EXE")
-          mkdir -p ../../appcast
+          mkdir -p "$GITHUB_WORKSPACE/appcast"
           TAG="${GITHUB_REF##*/}"
           VERSION="${TAG#v}"
           EXE_NAME=$(basename "$EXE")
@@ -336,7 +338,7 @@ jobs:
             echo "             $SIG_LINE"
             echo "             type=\"application/octet-stream\" />"
             echo "</item>"
-          } > ../../appcast/item-windows.xml
+          } > "$GITHUB_WORKSPACE/appcast/item-windows.xml"
 
       - name: Upload appcast fragment (Windows)
         if: runner.os == 'Windows' && env.SPARKLE_ED_PRIVATE_KEY != ''
