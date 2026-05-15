@@ -118,6 +118,15 @@ bool tryParseServerInit(QByteArrayView buffer, ServerInit *info, int *consumed);
 
 // --- Initial outbound configuration ---------------------------------
 
+/// Build the 20-byte SetPixelFormat (RFB msg type 0) locking the
+/// server into RGB565: bpp=16, depth=16, little-endian, true-color,
+/// red shifted 11, green shifted 5, blue shifted 0. Our decoder
+/// assumes RGB565 everywhere; without this message AMT picks its
+/// own default per firmware build and on some machines the pixels
+/// we receive don't match what we decode (resulting in a black or
+/// scrambled framebuffer even though dimensions come through fine).
+QByteArray buildSetPixelFormat();
+
 /// Build SetEncodings with the encodings we support. AMT requires RAW
 /// to always be present; we add RLE and DesktopSize.
 QByteArray buildSetEncodings();

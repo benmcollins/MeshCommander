@@ -75,6 +75,7 @@ private slots:
     void buildVersionAndChoice();
     void parseSecurityTypes();
     void parseServerInitWithName();
+    void setPixelFormatBytes();
     void framebufferUpdateRequestLayout();
     void keyAndPointerEventLayouts();
     void parseFrameUpdateAndRectHeader();
@@ -138,6 +139,32 @@ void TestKvmCodec::parseServerInitWithName()
     QCOMPARE(info.width, quint16(1024));
     QCOMPARE(info.height, quint16(768));
     QCOMPARE(info.name, QStringLiteral("AMTP"));
+}
+
+void TestKvmCodec::setPixelFormatBytes()
+{
+    const QByteArray f = buildSetPixelFormat();
+    QCOMPARE(f.size(), 20);
+    QCOMPARE(static_cast<unsigned char>(f.at(0)), 0u);   // SetPixelFormat msg type
+    QCOMPARE(static_cast<unsigned char>(f.at(1)), 0u);   // padding
+    QCOMPARE(static_cast<unsigned char>(f.at(2)), 0u);   // padding
+    QCOMPARE(static_cast<unsigned char>(f.at(3)), 0u);   // padding
+    QCOMPARE(static_cast<unsigned char>(f.at(4)), 16u);  // bpp
+    QCOMPARE(static_cast<unsigned char>(f.at(5)), 16u);  // depth
+    QCOMPARE(static_cast<unsigned char>(f.at(6)), 0u);   // big-endian = false
+    QCOMPARE(static_cast<unsigned char>(f.at(7)), 1u);   // true-color = true
+    QCOMPARE(static_cast<unsigned char>(f.at(8)), 0u);   // red-max high byte (= 0)
+    QCOMPARE(static_cast<unsigned char>(f.at(9)), 31u);  // red-max low byte  (= 31)
+    QCOMPARE(static_cast<unsigned char>(f.at(10)), 0u);  // green-max high
+    QCOMPARE(static_cast<unsigned char>(f.at(11)), 63u); // green-max low (= 63)
+    QCOMPARE(static_cast<unsigned char>(f.at(12)), 0u);  // blue-max high
+    QCOMPARE(static_cast<unsigned char>(f.at(13)), 31u); // blue-max low (= 31)
+    QCOMPARE(static_cast<unsigned char>(f.at(14)), 11u); // red-shift
+    QCOMPARE(static_cast<unsigned char>(f.at(15)), 5u);  // green-shift
+    QCOMPARE(static_cast<unsigned char>(f.at(16)), 0u);  // blue-shift
+    QCOMPARE(static_cast<unsigned char>(f.at(17)), 0u);  // padding
+    QCOMPARE(static_cast<unsigned char>(f.at(18)), 0u);  // padding
+    QCOMPARE(static_cast<unsigned char>(f.at(19)), 0u);  // padding
 }
 
 void TestKvmCodec::framebufferUpdateRequestLayout()

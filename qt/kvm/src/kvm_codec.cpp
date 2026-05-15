@@ -177,6 +177,30 @@ bool tryParseServerInit(QByteArrayView buffer, ServerInit *info, int *consumed)
 
 // --- Initial outbound configuration ---------------------------------
 
+QByteArray buildSetPixelFormat()
+{
+    // RFB SetPixelFormat: 1-byte type, 3-byte padding, 16-byte
+    // PIXEL_FORMAT block. We lock the server into RGB565 because
+    // every decode path in this file assumes 2 bytes/pixel with the
+    // R5/G6/B5 layout below.
+    QByteArray b;
+    b.reserve(20);
+    b.append(char(MsgSetPixelFormat));   // 0
+    b.append(3, char(0));                // padding
+    b.append(char(16));                  // bits-per-pixel
+    b.append(char(16));                  // depth
+    b.append(char(0));                   // big-endian flag (we want LE)
+    b.append(char(1));                   // true-color flag
+    b.append(pack16Be(31));              // red-max   = 2^5 - 1
+    b.append(pack16Be(63));              // green-max = 2^6 - 1
+    b.append(pack16Be(31));              // blue-max  = 2^5 - 1
+    b.append(char(11));                  // red-shift
+    b.append(char(5));                   // green-shift
+    b.append(char(0));                   // blue-shift
+    b.append(3, char(0));                // padding
+    return b;
+}
+
 QByteArray buildSetEncodings()
 {
     // Type byte + 1 padding + u16 number + (RLE, RAW, DesktopSize).

@@ -109,6 +109,11 @@ bool KvmSession::stepHandshake()
         m_width = info.width;
         m_height = info.height;
         emit desktopResized(m_width, m_height);
+        // Lock AMT into RGB565 before requesting any framebuffer. Our
+        // decoder hardcodes 2-byte pixels with R5/G6/B5 layout; some
+        // firmware builds default to a different format and would
+        // otherwise hand us bytes we'd decode as garbage / black.
+        writeFrame(buildSetPixelFormat());
         writeFrame(buildSetEncodings());
         // Match the legacy default: tell AMT to disable zlib on RLE
         // blocks so every block uses the uncompressed-marker path. The
