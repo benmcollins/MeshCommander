@@ -115,32 +115,24 @@ configure time and substitutes it into the bundle Info.plist as
 bundle — Sparkle just refuses to install any update because no
 signature can validate.
 
-### Required CI secrets
+### Required CI secret
 
 | Secret                       | Source |
 |------------------------------|--------|
-| `SPARKLE_ED_PRIVATE_KEY`     | Base64 EdDSA private key for the macOS appcast (single-line, no headers). The release workflow writes it to a temp file and passes it to `sign_update --ed-key-file`. |
-| `WINSPARKLE_ED_PRIVATE_KEY`  | Base64 EdDSA private key for the Windows appcast. Generated with `winsparkle-tool.exe generate-key`. Independent of the Sparkle key — same algorithm, different keypair. |
+| `SPARKLE_ED_PRIVATE_KEY`     | Base64 EdDSA private key (single-line, no headers). Used to sign both `.dmg` (via Sparkle's `sign_update`) and `.exe` (via WinSparkle's `winsparkle-tool sign`) — Sparkle and WinSparkle share key format, so one keypair covers both platforms. |
 
 ### Windows side (WinSparkle)
 
-The Windows build mirrors the macOS Sparkle wiring with
-[WinSparkle 0.9.2](https://github.com/vslavik/winsparkle):
+The Windows build uses [WinSparkle 0.9.2](https://github.com/vslavik/winsparkle).
+WinSparkle 0.8+ adopted Sparkle's EdDSA key format exactly, so the
+same `qt/app/sparkle_pub_ed_key` (and the same `SPARKLE_ED_PRIVATE_KEY`
+secret) drives both platforms. Nothing extra to provision once Sparkle
+is set up.
 
-1. Generate a keypair on a Windows machine:
-   ```
-   winsparkle-tool.exe generate-key
-   winsparkle-tool.exe public-key  > pubkey.txt
-   ```
-   The private key is stored in the Windows registry under
-   `HKCU\Software\WinSparkle`. Export it (also via `winsparkle-tool`)
-   into a single-line base64 string for `WINSPARKLE_ED_PRIVATE_KEY`.
-2. Copy the public-key string into `qt/app/winsparkle_pub_ed_key`
-   (commit it).
-3. The release workflow signs each `.exe` with `winsparkle-tool.exe
-   sign --private-key-file …` and merges the Windows `<item>` into
-   the same `appcast.xml` the macOS job produces. Each item carries
-   `<sparkle:os>` so Sparkle and WinSparkle each pick their own.
+The release workflow signs each `.exe` with `winsparkle-tool.exe sign
+--private-key-file …` and merges the Windows `<item>` into the same
+`appcast.xml` the macOS job produces. Each item carries `<sparkle:os>`
+so Sparkle and WinSparkle each pick their own.
 
 ### Code signing on Windows
 

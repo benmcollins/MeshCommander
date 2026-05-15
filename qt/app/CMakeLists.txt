@@ -277,9 +277,14 @@ elseif(WIN32 AND QUMESH_AUTOUPDATE)
     # calls at startup. Bake both into a generated header so the wiring
     # stays internal to the binary and we avoid MSVC/clang macro-quoting
     # differences that bite you with COMPILE_DEFINITIONS.
-    set(_winsparkle_pub_key_file "${CMAKE_CURRENT_SOURCE_DIR}/winsparkle_pub_ed_key")
-    if(EXISTS "${_winsparkle_pub_key_file}")
-        file(READ "${_winsparkle_pub_key_file}" WINSPARKLE_PUBLIC_ED_KEY)
+    #
+    # Sparkle and WinSparkle both use Ed25519 with the same key format
+    # (base64 single line, ~44 chars), so one keypair is reused across
+    # macOS and Windows — there's only `sparkle_pub_ed_key`, no separate
+    # winsparkle file.
+    set(_appcast_pub_key_file "${CMAKE_CURRENT_SOURCE_DIR}/sparkle_pub_ed_key")
+    if(EXISTS "${_appcast_pub_key_file}")
+        file(READ "${_appcast_pub_key_file}" WINSPARKLE_PUBLIC_ED_KEY)
         string(STRIP "${WINSPARKLE_PUBLIC_ED_KEY}" WINSPARKLE_PUBLIC_ED_KEY)
     else()
         set(WINSPARKLE_PUBLIC_ED_KEY "")

@@ -291,15 +291,17 @@ jobs:
           if-no-files-found: error
 
       - name: Sign update for WinSparkle (Windows, when secret provisioned)
-        if: runner.os == 'Windows' && env.WINSPARKLE_ED_PRIVATE_KEY != ''
+        if: runner.os == 'Windows' && env.SPARKLE_ED_PRIVATE_KEY != ''
         env:
-          WINSPARKLE_ED_PRIVATE_KEY: ${{ secrets.WINSPARKLE_ED_PRIVATE_KEY }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         shell: bash
         working-directory: qt/build
         run: |
           # Pull the same WinSparkle zip CMake fetches; we need
           # bin/winsparkle-tool.exe to sign the installer with the
-          # EdDSA private key. The .zip is ~10 MB.
+          # EdDSA private key. The .zip is ~10 MB. Sparkle and
+          # WinSparkle share key format, so the same
+          # SPARKLE_ED_PRIVATE_KEY signs both platforms.
           WS_VER=0.9.2
           WS_URL="https://github.com/vslavik/winsparkle/releases/download/v${WS_VER}/WinSparkle-${WS_VER}.zip"
           curl -sL "$WS_URL" -o /tmp/winsparkle.zip
@@ -307,7 +309,7 @@ jobs:
           7z x -y -o/tmp/winsparkle /tmp/winsparkle.zip > /dev/null
           TOOL="/tmp/winsparkle/WinSparkle-${WS_VER}/bin/winsparkle-tool.exe"
           KEY_FILE=$(mktemp)
-          printf '%s' "$WINSPARKLE_ED_PRIVATE_KEY" > "$KEY_FILE"
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$KEY_FILE"
           EXE=$(ls QuMesh-*-windows-x64.exe | head -1)
           # `winsparkle-tool sign` prints `sparkle:edSignature="..."`
           # to stdout for embedding in the appcast item.
@@ -339,9 +341,9 @@ jobs:
           } > ../../appcast/item-windows.xml
 
       - name: Upload appcast fragment (Windows)
-        if: runner.os == 'Windows' && env.WINSPARKLE_ED_PRIVATE_KEY != ''
+        if: runner.os == 'Windows' && env.SPARKLE_ED_PRIVATE_KEY != ''
         env:
-          WINSPARKLE_ED_PRIVATE_KEY: ${{ secrets.WINSPARKLE_ED_PRIVATE_KEY }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         uses: actions/upload-artifact@v4
         with:
           name: appcast-fragment-windows
