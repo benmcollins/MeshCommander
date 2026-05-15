@@ -29,6 +29,7 @@ qt_add_executable(qumesh
     src/kvmviewer.h
     src/certmodel.cpp
     src/certmodel.h
+    src/updater.h
 )
 
 set_source_files_properties(
@@ -164,6 +165,74 @@ if(APPLE)
     set_source_files_properties("${_macos_icns}"
         PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
     target_sources(qumesh PRIVATE "${_macos_icns}")
+endif()
+
+# --- Sparkle (macOS in-app auto-update) -------------------------------
+#
+# Pulled at configure time from Sparkle's GitHub Releases tarball (no
+# vendored binary in the repo). The framework is copied into the
+# bundle's Contents/Frameworks/ post-build, and Info.plist carries the
+# appcast URL + the EdDSA public key so Sparkle can verify each update
+# before installing.
+
+option(QUMESH_AUTOUPDATE "Build with in-app auto-update (Sparkle on macOS)" ON)
+
+if(APPLE AND QUMESH_AUTOUPDATE)
+    include(FetchContent)
+    FetchContent_Declare(
+        sparkle
+        URL      https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-2.6.4.tar.xz
+        URL_HASH SHA256=50612a06038abc931f16011d7903b8326a362c1074dabccb718404ce8e585f0b
+    )
+    FetchContent_MakeAvailable(sparkle)
+
+    set(_sparkle_framework "${sparkle_SOURCE_DIR}/Sparkle.framework")
+
+    add_library(Sparkle::Sparkle SHARED IMPORTED)
+    set_target_properties(Sparkle::Sparkle PROPERTIES
+        FRAMEWORK TRUE
+        IMPORTED_LOCATION             "${_sparkle_framework}/Sparkle"
+        INTERFACE_INCLUDE_DIRECTORIES "${_sparkle_framework}/Headers"
+    )
+
+    target_sources(qumesh PRIVATE src/updater.mm)
+    target_link_libraries(qumesh PRIVATE Sparkle::Sparkle "-framework AppKit")
+
+    # Sparkle.framework lives next to the app inside Contents/Frameworks
+    # at runtime; copy it in post-build so launch-from-build-tree also
+    # works, and add the matching rpath.
+    set_target_properties(qumesh PROPERTIES
+        INSTALL_RPATH "@executable_path/../Frameworks"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+    add_custom_command(TARGET qumesh POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_BUNDLE_DIR:qumesh>/Contents/Frameworks"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${_sparkle_framework}"
+            "$<TARGET_BUNDLE_DIR:qumesh>/Contents/Frameworks/Sparkle.framework"
+        VERBATIM
+    )
+
+    # Custom Info.plist template so we can inject the Sparkle keys.
+    # Read the EdDSA public key from a checked-in file; empty file is
+    # fine for unsigned dev builds (Sparkle just refuses to install).
+    set(_sparkle_pub_key_file "${CMAKE_CURRENT_SOURCE_DIR}/sparkle_pub_ed_key")
+    if(EXISTS "${_sparkle_pub_key_file}")
+        file(READ "${_sparkle_pub_key_file}" SPARKLE_PUBLIC_ED_KEY)
+        string(STRIP "${SPARKLE_PUBLIC_ED_KEY}" SPARKLE_PUBLIC_ED_KEY)
+    else()
+        set(SPARKLE_PUBLIC_ED_KEY "")
+    endif()
+    set(SPARKLE_FEED_URL
+        "https://github.com/benmcollins/QuMesh/releases/latest/download/appcast.xml")
+    set_target_properties(qumesh PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+    )
+else()
+    # Stub implementation; declares Updater as available()==false so QML
+    # can `import` it unconditionally and hide its UI.
+    target_sources(qumesh PRIVATE src/updater.cpp)
 endif()
 
 if(WIN32)

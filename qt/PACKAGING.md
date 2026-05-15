@@ -76,6 +76,51 @@ SHA-256 file digest and a DigiCert timestamp.
 For EV certificates that require a USB token, the runner must be
 self-hosted (the token can't be plugged into a GitHub-hosted VM).
 
+## In-app auto-update (Sparkle)
+
+QuMesh on macOS embeds [Sparkle](https://sparkle-project.org/) so users
+get a "Check for updates…" UX backed by GitHub Releases. The release
+workflow signs each `.dmg` with an EdDSA private key, generates an
+`appcast.xml` that lists the new release plus the prior history, and
+uploads it as a release asset. The bundled app's Info.plist points
+`SUFeedURL` at `https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml`,
+which always resolves to the current latest release's asset.
+
+### Generating the EdDSA keypair (one-time)
+
+Use Sparkle's `generate_keys` tool — the easiest source is the same
+tarball CMake fetches at build time:
+
+```
+curl -sLO https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-2.6.4.tar.xz
+tar -xf Sparkle-2.6.4.tar.xz
+./bin/generate_keys
+```
+
+The tool prints a base64 public key to stdout and either stores the
+private key in your macOS keychain (default) or to a file with
+`-f private.pem`. For CI, write the private key to a file and copy its
+contents into the `SPARKLE_ED_PRIVATE_KEY` repo secret.
+
+The base64 public key goes into `qt/app/sparkle_pub_ed_key` (just the
+key, no headers, no whitespace) and is committed. CMake reads it at
+configure time and substitutes it into the bundle Info.plist as
+`SUPublicEDKey`. Without a key the build still produces a runnable
+bundle — Sparkle just refuses to install any update because no
+signature can validate.
+
+### Required CI secret
+
+| Secret                       | Source |
+|------------------------------|--------|
+| `SPARKLE_ED_PRIVATE_KEY`     | Base64 EdDSA private key (single-line, no headers). The release workflow writes it to a temp file and passes it to `sign_update --ed-key-file`. |
+
+### Disabling Sparkle for a build
+
+Pass `-DQUMESH_AUTOUPDATE=OFF` at configure time. The Updater QML
+singleton then reports `available() === false`, so the in-app "Updates"
+button hides itself.
+
 ## Translations
 
 User-facing strings are wrapped in `qsTr(...)` and extracted by

@@ -198,6 +198,60 @@ jobs:
             exit $RC
           fi
 
+      - name: Sign update for Sparkle (macOS, when secret provisioned)
+        if: runner.os == 'macOS' && env.SPARKLE_ED_PRIVATE_KEY != ''
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        shell: bash
+        working-directory: qt/build
+        run: |
+          # Pull the same Sparkle tarball CMake fetches; we only need
+          # bin/sign_update from it. Cache-friendly: tar.xz is < 14 MB.
+          SPARKLE_VER=2.6.4
+          SPARKLE_URL="https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VER}/Sparkle-${SPARKLE_VER}.tar.xz"
+          curl -sL "$SPARKLE_URL" -o /tmp/sparkle.tar.xz
+          mkdir -p /tmp/sparkle && tar -xf /tmp/sparkle.tar.xz -C /tmp/sparkle
+          KEY_FILE=$(mktemp)
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$KEY_FILE"
+          DMG=$(ls QuMesh-*-macos.dmg | head -1)
+          # sign_update prints `sparkle:edSignature="..." length="..."`
+          # straight to stdout; capture it for the appcast item below.
+          SIG=$(/tmp/sparkle/bin/sign_update "$DMG" --ed-key-file "$KEY_FILE")
+          rm -f "$KEY_FILE"
+          # Stash the bits the publish job needs to assemble appcast.xml.
+          mkdir -p ../../appcast
+          TAG="${GITHUB_REF##*/}"
+          VERSION="${TAG#v}"
+          DMG_NAME=$(basename "$DMG")
+          PUBDATE=$(LC_ALL=en_US.UTF-8 date -u +"%a, %d %b %Y %H:%M:%S +0000")
+          # Use the tag annotation as release notes; fall back to a
+          # one-liner if the tag is not annotated.
+          NOTES=$(git tag -l --format='%(contents)' "$TAG")
+          if [ -z "$NOTES" ]; then NOTES="QuMesh $TAG"; fi
+          {
+            echo "<item>"
+            echo "  <title>$VERSION</title>"
+            echo "  <pubDate>$PUBDATE</pubDate>"
+            echo "  <description><![CDATA["
+            printf '%s\n' "$NOTES"
+            echo "  ]]></description>"
+            echo "  <enclosure url=\"https://github.com/${{ github.repository }}/releases/download/${TAG}/${DMG_NAME}\""
+            echo "             sparkle:version=\"$VERSION\""
+            echo "             $SIG"
+            echo "             type=\"application/octet-stream\" />"
+            echo "</item>"
+          } > ../../appcast/item-macos.xml
+
+      - name: Upload appcast fragment (macOS)
+        if: runner.os == 'macOS' && env.SPARKLE_ED_PRIVATE_KEY != ''
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: appcast-fragment-macos
+          path: appcast/item-macos.xml
+          if-no-files-found: error
+
       - name: Notarize (macOS, when secret provisioned)
         if: runner.os == 'macOS' && env.MAC_NOTARIZE_APPLE_ID != ''
         env:
@@ -252,6 +306,45 @@ jobs:
         with:
           name: qumesh-Windows
           path: dist/
+
+      - name: Download Sparkle appcast fragment (if produced)
+        uses: actions/download-artifact@v4
+        with:
+          name: appcast-fragment-macos
+          path: appcast/
+        continue-on-error: true
+
+      - name: Assemble Sparkle appcast
+        if: hashFiles('appcast/item-macos.xml') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Pull the previous release's appcast.xml (if any) and prepend
+          # the new <item> so the in-app "what's new" history grows over
+          # time. First-ever release: prior fetch fails, we start fresh.
+          PREV_ITEMS=""
+          if gh release download --repo "${{ github.repository }}" \
+                                  --pattern appcast.xml \
+                                  --dir prev_appcast 2>/dev/null; then
+            # Strip the channel/header/footer; keep just the <item>...</item>
+            # blocks for the prior history.
+            PREV_ITEMS=$(awk '/<item>/,/<\/item>/' prev_appcast/appcast.xml)
+          fi
+          NEW_ITEM=$(cat appcast/item-macos.xml)
+          mkdir -p dist
+          cat > dist/appcast.xml <<APPCAST
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <channel>
+              <title>QuMesh</title>
+              <link>https://github.com/${{ github.repository }}</link>
+              <description>QuMesh release feed</description>
+              <language>en</language>
+          ${NEW_ITEM}
+          ${PREV_ITEMS}
+            </channel>
+          </rss>
+          APPCAST
 
       - name: List artifacts
         run: ls -la dist/
