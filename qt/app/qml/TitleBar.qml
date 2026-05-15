@@ -90,6 +90,18 @@ Rectangle {
             font.letterSpacing: 1
             onClicked: root.openCertificates()
         }
+
+        // Hidden when no auto-update backend is wired in (non-Apple
+        // builds or QUMESH_AUTOUPDATE=OFF). Sparkle handles the entire
+        // dialog flow; the button just kicks off a manual check.
+        FlatButton {
+            visible: Updater.available()
+            text: qsTr("Updates")
+            font.family: Type.sans
+            font.pixelSize: Type.sizeXs
+            font.letterSpacing: 1
+            onClicked: Updater.checkForUpdates()
+        }
     }
 
     Rectangle {

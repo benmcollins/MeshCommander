@@ -12,6 +12,7 @@
 #include "migrationcontroller.h"
 #include "solcontroller.h"
 #include "terminal/terminalscreen.h"
+#include "updater.h"
 
 #include <QDir>
 #include <QLibraryInfo>
@@ -96,6 +97,13 @@ int main(int argc, char *argv[])
         QDir().mkpath(dir);
         certModel.setStorePath(QDir(dir).filePath(QStringLiteral("certificates.json")));
     }
+
+    // Sparkle wires itself into NSApplication during construction; the
+    // GUI thread must already exist (QGuiApplication above is what
+    // creates it). On non-Apple builds (or with auto-update disabled)
+    // this is the stub from updater.cpp — same QML surface, no-op.
+    qumesh::app::Updater updater;
+    qmlRegisterSingletonInstance("QuMesh", 1, 0, "Updater", &updater);
 
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "ComputerModel", &computerModel);
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "MigrationController",
