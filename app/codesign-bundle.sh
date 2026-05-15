@@ -3,7 +3,7 @@
 # Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 #
 # Sparkle-aware Developer ID code-sign sequence for the QuMesh bundle
-# on macOS. Invoked from `qt/app/CMakeLists.txt` at install time when
+# on macOS. Invoked from `app/CMakeLists.txt` at install time when
 # MAC_SIGNING_IDENTITY is provisioned. Runs after macdeployqt has
 # bundled Qt frameworks + plugins, and after Sparkle.framework has
 # been copied into Contents/Frameworks/.

@@ -116,7 +116,7 @@ target_link_libraries(qumesh PRIVATE
 
 # --- Branding -------------------------------------------------------
 #
-# The master SVGs in qt/branding/svg/ use `currentColor` so they pick
+# The master SVGs in branding/svg/ use `currentColor` so they pick
 # up the surrounding text colour in CSS — but Qt's SVG renderer
 # resolves it to black. Bake two variants at configure time (slate
 # for the light theme, near-white for the dark) and let `AppMark.qml`

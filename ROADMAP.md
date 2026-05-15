@@ -1,6 +1,6 @@
 # QuMesh — Roadmap
 
-QuMesh is a native Qt6 + QML console for Intel AMT devices, replacing the legacy NW.js-wrapped MeshCommander (`source/Commander.htm`). Cross-platform (macOS + Windows), one-shot import from the legacy app's saved config.
+QuMesh is a native Qt6 + QML console for Intel AMT devices, replacing the legacy NW.js-wrapped MeshCommander (`legacy/source/Commander.htm`). Cross-platform (macOS + Windows), one-shot import from the legacy app's saved config.
 
 ## Why
 
@@ -12,14 +12,14 @@ Each phase is one or more issues. The workflow per logical unit is: issue → br
 
 ### Phase 0 — Foundation (this issue)
 
-- `qt/` project skeleton, CMake, ROADMAP
+- Project skeleton, CMake, ROADMAP
 - Qt+QML minimal app that opens a window
 - QTest smoke test
 - GitHub Actions CI: macOS + Windows matrix
 
 ### Phase 1 — Config compatibility
 
-- **Migration tool** reading Chromium's leveldb localStorage at the legacy app's data dir, decrypting `computers` and `certificates` with the v2/legacy AES envelope (see `source/Commander.htm` for the format we patched, and the [legacy storage memory](../../../) for reference), and writing a native config under the new app's data directory.
+- **Migration tool** reading Chromium's leveldb localStorage at the legacy app's data dir, decrypting `computers` and `certificates` with the v2/legacy AES envelope (see `legacy/source/Commander.htm` for the format we patched, and the [legacy storage memory](../../../) for reference), and writing a native config under the new app's data directory.
 - Tests with synthetic leveldb fixtures + a real captured fixture from the legacy app.
 
 ### Phase 2 — Computer-list UI
@@ -39,7 +39,7 @@ Each phase is one or more issues. The workflow per logical unit is: issue → br
 ### Phase 4 — AMT Redirection transport
 
 - Authenticated TLS connection on port 16994/16995.
-- Auth/version negotiation (Intel's binary framing — port over from `source/amt-redir-*.js`).
+- Auth/version negotiation (Intel's binary framing — port over from `legacy/source/amt-redir-*.js`).
 - Generic redirection-channel object that SOL/IDE-R/KVM build on.
 
 ### Phase 5 — SOL terminal
@@ -54,7 +54,7 @@ Each phase is one or more issues. The workflow per logical unit is: issue → br
 
 ### Phase 7 — KVM
 
-- KVM channel decoder (Intel's RFB-variant — port from `source/amt-desktop-*.js`). ✅ (#23)
+- KVM channel decoder (Intel's RFB-variant — port from `legacy/source/amt-desktop-*.js`). ✅ (#23)
 - QML viewer with input forwarding. ✅ (#23)
 
 ### Phase 8 — Certificate store
@@ -74,8 +74,8 @@ land. The unsigned bundles still run; users see the OS's standard
 
 ## Reference
 
-The legacy implementation in `source/` is the canonical reference for AMT behavior. When implementing a feature, the corresponding `source/amt-*.js` module is authoritative. The forge.js library handles all the crypto / certificate operations — its C++ equivalent in this rewrite is OpenSSL via Qt or directly.
+The legacy implementation in `legacy/source/` is the canonical reference for AMT behavior. When implementing a feature, the corresponding `legacy/source/amt-*.js` module is authoritative. The forge.js library handles all the crypto / certificate operations — its C++ equivalent in this rewrite is OpenSSL via Qt or directly.
 
 ## Progressive cleanup
 
-Each phase PR must also delete the legacy files it replaces. Example: the WSMAN phase removes `source/amt-wsman-*.js`; the redirection phase removes `source/amt-redir-*.js`; etc. `source/Commander.htm` is monolithic, so it's deleted only when the Qt UI is feature-complete. The packaging phase (final) moves `qt/*` up to the repo root and removes the legacy build tooling (`mkapp*`, top-level `package.json`, `files/`).
+Each phase PR must also delete the legacy files it replaces. Example: the WSMAN phase removes `legacy/source/amt-wsman-*.js`; the redirection phase removes `legacy/source/amt-redir-*.js`; etc. `legacy/source/Commander.htm` is monolithic, so it's deleted only when the Qt UI is feature-complete. Once it's gone the entire `legacy/` tree (build tooling, `mkapp*`, `package.json`, `files/`) goes with it.

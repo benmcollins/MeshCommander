@@ -14,4 +14,4 @@ ctest --test-dir build --output-on-failure
 
 ## Legacy
 
-The original `MeshCommander` NW.js app (Intel's, repackaged for macOS) still lives at the repo root in `source/`, `mkapp*`, and `files/`. It's the reference implementation and is being removed progressively as Qt replacements land — see `ROADMAP.md` ("Progressive cleanup").
+The original `MeshCommander` NW.js app (Intel's, repackaged for macOS) lives under `legacy/` (`legacy/source/`, `legacy/mkapp*`, `legacy/files/`). It's the reference implementation and is being removed progressively as Qt replacements land — see `ROADMAP.md` ("Progressive cleanup").

@@ -7,7 +7,7 @@ needing developer tooling.
 
 ## Cutting a release
 
-1. Bump `PROJECT_VERSION` at the top of `qt/CMakeLists.txt`.
+1. Bump `PROJECT_VERSION` at the top of `CMakeLists.txt`.
 2. Commit and push, then tag:
    ```
    git tag v0.1.0
@@ -20,7 +20,6 @@ needing developer tooling.
 ## Local packaging (smoke test)
 
 ```
-cd qt
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 cd build
@@ -28,7 +27,7 @@ cpack -G DragNDrop      # macOS
 cpack -G NSIS           # Windows
 ```
 
-The output lands in `qt/build/`. Note: Homebrew Qt installs everything
+The output lands in `build/`. Note: Homebrew Qt installs everything
 as symlinks back into `/opt/homebrew/Cellar`, so a locally built DMG
 will reference those paths and won't run on another machine. Use the
 CI artifact for actual distribution.
@@ -54,15 +53,15 @@ macOS) notarization without any further code changes.
 Add them under **Settings → Secrets and variables → Actions** in this
 repo. The workflow imports the cert with `security import` +
 `set-key-partition-list`; the CMake install step then runs
-`qt/app/codesign-bundle.sh`, which signs Sparkle.framework's internal
+`app/codesign-bundle.sh`, which signs Sparkle.framework's internal
 helpers (XPCServices, Autoupdate, Updater.app) inner-out before
 sealing the app shell with hardened-runtime entitlements from
-`qt/app/QuMesh.entitlements`. The release workflow follows up with
+`app/QuMesh.entitlements`. The release workflow follows up with
 `notarytool submit --wait` and `stapler staple`.
 
 If you also have an Apple Developer ID **Installer** certificate and
 want a signed `.pkg` instead of a `.dmg`, switch CPack to the
-`productbuild` generator in `qt/CMakeLists.txt` and add
+`productbuild` generator in `CMakeLists.txt` and add
 `MAC_INSTALLER_IDENTITY` plumbing — out of scope for v1.
 
 ### Windows
@@ -103,7 +102,7 @@ private key in your macOS keychain (default) or to a file with
 `-f private.pem`. For CI, write the private key to a file and copy its
 contents into the `SPARKLE_ED_PRIVATE_KEY` repo secret.
 
-The base64 public key goes into `qt/app/sparkle_pub_ed_key` (just the
+The base64 public key goes into `app/sparkle_pub_ed_key` (just the
 key, no headers, no whitespace) and is committed. CMake reads it at
 configure time and substitutes it into the bundle Info.plist as
 `SUPublicEDKey`. Without a key the build still produces a runnable
@@ -120,7 +119,7 @@ signature can validate.
 
 The Windows build uses [WinSparkle 0.9.2](https://github.com/vslavik/winsparkle).
 WinSparkle 0.8+ adopted Sparkle's EdDSA key format exactly, so the
-same `qt/app/sparkle_pub_ed_key` (and the same `SPARKLE_ED_PRIVATE_KEY`
+same `app/sparkle_pub_ed_key` (and the same `SPARKLE_ED_PRIVATE_KEY`
 secret) drives both platforms. Nothing extra to provision once Sparkle
 is set up.
 
@@ -148,7 +147,7 @@ button hides itself.
 ## Translations
 
 User-facing strings are wrapped in `qsTr(...)` and extracted by
-`lupdate` into `qt/app/translations/qumesh_<locale>.ts`. The `app/`
+`lupdate` into `app/translations/qumesh_<locale>.ts`. The `app/`
 CMake target calls `qt_add_translations()` to wire this up:
 
 - `cmake --build build --target update_translations` runs `lupdate`
@@ -165,7 +164,7 @@ CMake target calls `qt_add_translations()` to wire this up:
 To add a new language:
 
 1. Append `translations/qumesh_<locale>.ts` to the `TS_FILES` list
-   in `qt/app/CMakeLists.txt`.
+   in `app/CMakeLists.txt`.
 2. Run the `update_translations` target — it will create the file
    and seed it from the source strings.
 3. Translate; rebuild.
