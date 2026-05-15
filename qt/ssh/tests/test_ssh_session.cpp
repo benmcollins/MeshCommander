@@ -18,6 +18,7 @@ private slots:
     void openWithUnreachableHostFails();
     void openWithNonSshPortFails();
     void closeIsIdempotent();
+    void aboutToDestroyFiresBeforeDestroyed();
 };
 
 void TestSshSession::constructDestructDoesNotCrash()
@@ -87,6 +88,21 @@ void TestSshSession::closeIsIdempotent()
     s.close();
     s.close();
     QCOMPARE(s.state(), SshSession::Disconnected);
+}
+
+void TestSshSession::aboutToDestroyFiresBeforeDestroyed()
+{
+    // SshTunnel relies on aboutToDestroy() running before the worker
+    // thread is quit so its pump can join cleanly. Verify the contract:
+    // exactly one aboutToDestroy() arrives, and it arrives before the
+    // standard destroyed() signal (which fires from ~QObject after our
+    // body runs).
+    auto *s = new SshSession();
+    QSignalSpy aboutSpy(s, &SshSession::aboutToDestroy);
+    QSignalSpy destroyedSpy(s, &QObject::destroyed);
+    delete s;
+    QCOMPARE(aboutSpy.size(), 1);
+    QCOMPARE(destroyedSpy.size(), 1);
 }
 
 QTEST_GUILESS_MAIN(TestSshSession)

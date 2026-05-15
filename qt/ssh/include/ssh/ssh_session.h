@@ -103,6 +103,14 @@ signals:
     /// per-machine config.
     void hostKeyTrusted(const QString &fingerprintSha256);
 
+    /// Emitted as the first action of `~SshSession`, before the worker
+    /// thread is quit. `SshTunnel` connects this with `DirectConnection`
+    /// to `SshTunnel::close` so its pump thread is stopped and joined
+    /// while the worker is still alive — without this the pump's
+    /// `BlockingQueuedConnection` invokes can race the worker's
+    /// destruction and dereference freed memory.
+    void aboutToDestroy();
+
 private:
     struct Private;
     std::unique_ptr<Private> d;

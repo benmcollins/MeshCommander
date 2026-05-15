@@ -43,9 +43,6 @@ public:
     /// Open the underlying SSH channel + socketpair pump.
     void open();
 
-    /// Close the tunnel and stop the pump. Safe to call from any state.
-    void close();
-
     /// The Qt-side socket descriptor. -1 until `opened()` has fired.
     /// First call transfers ownership of the fd to the caller; subsequent
     /// calls return -1.
@@ -53,6 +50,14 @@ public:
 
     [[nodiscard]] bool isOpen() const;
     [[nodiscard]] QString lastError() const;
+
+public slots:
+    /// Close the tunnel and stop the pump. Safe to call from any state
+    /// and to call multiple times. Used as a slot so the underlying
+    /// `SshSession` and the pump's `QThread::finished` can both drive
+    /// teardown via signal/slot, eliminating dangling-pointer races
+    /// between the pump thread and session shutdown.
+    void close();
 
 signals:
     void opened();
