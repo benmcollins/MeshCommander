@@ -182,7 +182,7 @@ Item {
             Button {
                 text: controller.state === KvmController.Disconnected
                       || controller.state === KvmController.Failed
-                    ? qsTr("Reconnect") : qsTr("Disconnect")
+                    ? qsTr("Connect") : qsTr("Disconnect")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 onClicked: {

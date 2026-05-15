@@ -1255,8 +1255,12 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
             item.trustedFingerprints = root.machineTrustedFingerprints;
             item.machineSshConfig = root.machineSshConfig || ({});
             item.label = root.machineName.length > 0 ? root.machineName : root.machineHost;
+            // initialTab is read once by Component.onCompleted; by the
+            // time we get here it has already run with the default 0, so
+            // also drive openTab() to actually switch the visible tab.
             item.initialTab = pendingTab;
             item.visible = true;
+            item.openTab(pendingTab);
         }
         onStatusChanged: if (status === Loader.Ready) openWindow()
         sourceComponent: SessionWindow {
