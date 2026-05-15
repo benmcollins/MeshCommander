@@ -102,6 +102,60 @@ struct InvokeResult
     int returnValue = -1;        ///< Vendor-specific status code from the Invoke reply.
 };
 
+/// Snapshot of `IPS_OptInService` — drives the AMT user-consent flow.
+struct OptInServiceResult
+{
+    bool ok = false;
+    QString error;
+    /// Runtime: `true` when a session that requires consent is in
+    /// progress and the operator hasn't yet entered the code AMT
+    /// shows on the target's local screen. Combines `OptInRequired`
+    /// from the firmware (which itself derives from the various
+    /// per-redir policy flags) with the per-firmware-version semantics.
+    bool optInRequired = false;
+    /// `IPS_OptInService.OptInState`: 0=NotStarted, 1=Requested,
+    /// 2=Displayed (code on screen, waiting), 3=Received,
+    /// 4=InSession (consent already granted).
+    int optInState = 0;
+    /// `true` when the current AMT login has the privilege to flip
+    /// the policy. Determines whether the UI offers a Disable button.
+    bool canModifyOptInPolicy = false;
+    /// `IPS_KVMRedirectionSettingData.OptInPolicy` — `true` means
+    /// KVM sessions require consent before the firmware unblocks the
+    /// framebuffer.
+    bool kvmOptInPolicy = false;
+};
+
+/// Read `IPS_OptInService` + `IPS_KVMRedirectionSettingData` in one
+/// helper. Two separate WSMAN Gets internally; results are merged into
+/// the single struct above.
+void getOptInStatus(WsmanClient *client,
+                    std::function<void(OptInServiceResult)> callback);
+
+/// Invoke `IPS_OptInService.StartOptIn` — AMT begins showing a 6-digit
+/// consent code on the target's local screen. The operator reads it
+/// and passes it back via `sendOptInCode`.
+void startOptIn(WsmanClient *client,
+                std::function<void(InvokeResult)> callback);
+
+/// Invoke `IPS_OptInService.SendOptInCode(code)` — submits the
+/// operator-entered code. On success the redir framebuffer / serial
+/// unblocks.
+void sendOptInCode(WsmanClient *client, quint32 code,
+                   std::function<void(InvokeResult)> callback);
+
+/// Invoke `IPS_OptInService.CancelOptIn` — abandons a pending consent
+/// prompt. Safe to call from any state.
+void cancelOptIn(WsmanClient *client,
+                 std::function<void(InvokeResult)> callback);
+
+/// Put `IPS_KVMRedirectionSettingData` with a new `OptInPolicy` value.
+/// `policyRequired` true makes consent mandatory; false disables.
+/// Fails (with a populated `error`) when the AMT login lacks the
+/// realm needed to modify the policy.
+void setKvmOptInPolicy(WsmanClient *client, bool policyRequired,
+                       std::function<void(InvokeResult)> callback);
+
 /// Send the DMTF `Identify` discovery message to the endpoint configured on
 /// `client` and invoke `callback` exactly once with the result. Requires
 /// no credentials; useful for connection sanity-checks.

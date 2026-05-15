@@ -108,6 +108,13 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(int capPlatformEraseMask READ capPlatformEraseMask NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capForceUefiHttpsBoot READ capForceUefiHttpsBoot NOTIFY bootCapabilitiesChanged)
 
+    // User-consent (OptIn) policy + runtime state. Populated after
+    // `refreshOverview` (and refreshed on demand via `refreshOptInStatus`).
+    Q_PROPERTY(bool optInRequired READ optInRequired NOTIFY optInStatusChanged)
+    Q_PROPERTY(int optInState READ optInState NOTIFY optInStatusChanged)
+    Q_PROPERTY(bool canModifyOptInPolicy READ canModifyOptInPolicy NOTIFY optInStatusChanged)
+    Q_PROPERTY(bool kvmOptInPolicy READ kvmOptInPolicy NOTIFY optInStatusChanged)
+
 public:
     explicit MachineDetailsController(QObject *parent = nullptr);
     ~MachineDetailsController() override;
@@ -179,6 +186,11 @@ public:
     }
     [[nodiscard]] bool capForceUefiHttpsBoot() const { return m_capForceUefiHttpsBoot; }
 
+    [[nodiscard]] bool optInRequired() const { return m_optInRequired; }
+    [[nodiscard]] int  optInState() const { return m_optInState; }
+    [[nodiscard]] bool canModifyOptInPolicy() const { return m_canModifyOptInPolicy; }
+    [[nodiscard]] bool kvmOptInPolicy() const { return m_kvmOptInPolicy; }
+
     [[nodiscard]] QVariantList eventLog() const { return m_eventLog; }
     [[nodiscard]] QVariantList userAccounts() const { return m_userAccounts; }
 
@@ -193,6 +205,21 @@ public:
     Q_INVOKABLE void refreshPower();
     Q_INVOKABLE void refreshEventLog();
     Q_INVOKABLE void refreshUserAccounts();
+    /// Read `IPS_OptInService` + `IPS_KVMRedirectionSettingData` and
+    /// update the four exposed properties. Also called by
+    /// `refreshOverview`.
+    Q_INVOKABLE void refreshOptInStatus();
+    /// Flip the persisted KVM consent policy. Fires
+    /// `optInPolicyChangeFailed` if AMT rejects the Put (most often
+    /// because the current login lacks the realm).
+    Q_INVOKABLE void setKvmOptInPolicyEnabled(bool enabled);
+    /// Start the AMT-side consent prompt — the firmware shows a
+    /// 6-digit code on the target's local screen.
+    Q_INVOKABLE void startOptIn();
+    /// Submit the operator-entered consent code.
+    Q_INVOKABLE void sendOptInCode(int code);
+    /// Abort a pending opt-in.
+    Q_INVOKABLE void cancelOptIn();
 
     /// CIM power-state codes:
     ///   2  = Power On
@@ -277,6 +304,18 @@ signals:
     void bootCapabilitiesChanged();
     void eventLogChanged();
     void userAccountsChanged();
+    void optInStatusChanged();
+    /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
+    /// the firmware-reported reason (most commonly the AMT login lacks
+    /// the realm to modify the policy).
+    void optInPolicyChangeFailed(const QString &error);
+    /// Result of `startOptIn` — when ok, AMT is now showing a code on
+    /// the target's local screen and the operator should be prompted
+    /// for it.
+    void optInStarted(bool ok, const QString &error);
+    /// Result of `sendOptInCode` — when ok, the redir framebuffer /
+    /// serial / IDE-R should unblock on the active session.
+    void optInCodeResult(bool ok, const QString &error);
     void powerChangeRequested(int state);
     void powerChangeCompleted(int state, bool ok, const QString &error);
     /// Emitted after `trustPendingCert(true)` — the QML layer persists
@@ -395,6 +434,11 @@ private:
 
     QVariantList m_eventLog;
     QVariantList m_userAccounts;
+
+    bool m_optInRequired = false;
+    int m_optInState = 0;
+    bool m_canModifyOptInPolicy = false;
+    bool m_kvmOptInPolicy = false;
 };
 
 } // namespace qumesh::app
