@@ -312,12 +312,16 @@ install(SCRIPT ${qumesh_deploy_script})
 
 if(APPLE AND DEFINED ENV{MAC_SIGNING_IDENTITY} AND NOT "$ENV{MAC_SIGNING_IDENTITY}" STREQUAL "")
     install(CODE "
-        execute_process(COMMAND codesign --force --deep --options runtime
-                                  --sign \"$ENV{MAC_SIGNING_IDENTITY}\"
-                                  \"\${CMAKE_INSTALL_PREFIX}/QuMesh.app\"
-                          RESULT_VARIABLE _sign_rc)
+        execute_process(
+            COMMAND bash
+                \"${CMAKE_CURRENT_SOURCE_DIR}/codesign-bundle.sh\"
+                \"\${CMAKE_INSTALL_PREFIX}/QuMesh.app\"
+                \"$ENV{MAC_SIGNING_IDENTITY}\"
+                \"${CMAKE_CURRENT_SOURCE_DIR}/QuMesh.entitlements\"
+            RESULT_VARIABLE _sign_rc
+        )
         if(NOT _sign_rc EQUAL 0)
-            message(FATAL_ERROR \"codesign failed (\${_sign_rc})\")
+            message(FATAL_ERROR \"codesign-bundle.sh failed (\${_sign_rc})\")
         endif()
     ")
 endif()

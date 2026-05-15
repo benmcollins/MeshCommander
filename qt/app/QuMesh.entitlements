@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- QtQuick's V4 engine uses JIT to speed up QML hot paths.
+	     Without this entitlement, the hardened runtime kills the
+	     process the first time V4 tries to write executable memory. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+
+	<!-- Sparkle's helper binaries (Autoupdate, Installer.xpc,
+	     Downloader.xpc, Updater.app) load dylibs at update time that
+	     may not be signed by our Team ID. Library validation is
+	     enabled by default under hardened runtime; disable it so
+	     in-place updates aren't blocked by Gatekeeper. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
