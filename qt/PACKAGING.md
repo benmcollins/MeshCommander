@@ -119,9 +119,32 @@ signature can validate.
 
 | Secret                       | Source |
 |------------------------------|--------|
-| `SPARKLE_ED_PRIVATE_KEY`     | Base64 EdDSA private key (single-line, no headers). The release workflow writes it to a temp file and passes it to `sign_update --ed-key-file`. |
+| `SPARKLE_ED_PRIVATE_KEY`     | Base64 EdDSA private key (single-line, no headers). Used to sign both `.dmg` (via Sparkle's `sign_update`) and `.exe` (via WinSparkle's `winsparkle-tool sign`) — Sparkle and WinSparkle share key format, so one keypair covers both platforms. |
 
-### Disabling Sparkle for a build
+### Windows side (WinSparkle)
+
+The Windows build uses [WinSparkle 0.9.2](https://github.com/vslavik/winsparkle).
+WinSparkle 0.8+ adopted Sparkle's EdDSA key format exactly, so the
+same `qt/app/sparkle_pub_ed_key` (and the same `SPARKLE_ED_PRIVATE_KEY`
+secret) drives both platforms. Nothing extra to provision once Sparkle
+is set up.
+
+The release workflow signs each `.exe` with `winsparkle-tool.exe sign
+--private-key-file …` and merges the Windows `<item>` into the same
+`appcast.xml` the macOS job produces. Each item carries `<sparkle:os>`
+so Sparkle and WinSparkle each pick their own.
+
+### Code signing on Windows
+
+There's no equivalent to Apple's Developer ID baked into the workflow
+yet — Windows code signing requires buying a certificate from a CA
+(Sectigo via SSL.com is $80–200/yr; Azure Trusted Signing is ~$10/mo).
+Without one, SmartScreen warns "Windows protected your PC" on first
+launch but the installer still works, and WinSparkle's *update*
+signature check is independent of Authenticode anyway. Wire this up
+later when a cert is acquired.
+
+### Disabling auto-update for a build
 
 Pass `-DQUMESH_AUTOUPDATE=OFF` at configure time. The Updater QML
 singleton then reports `available() === false`, so the in-app "Updates"
