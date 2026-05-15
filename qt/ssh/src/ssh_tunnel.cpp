@@ -426,6 +426,19 @@ void SshTunnel::open()
     }
     d->localFd = fd;
     d->opened = true;
+
+    // Two teardown paths, both routed through close():
+    //   1. SshSession dies first — its aboutToDestroy fires before the
+    //      worker thread is quit, so close() joins the pump while the
+    //      worker is still alive (no dangling-pointer invokes).
+    //   2. Pump exits naturally (EOF either side) — close() emits
+    //      closed(), which the opener's connection turns into
+    //      deleteLater so the orphan SshTunnel doesn't leak.
+    QObject::connect(d->session, &SshSession::aboutToDestroy,
+                     this, &SshTunnel::close, Qt::DirectConnection);
+    QObject::connect(d->pump.get(), &QThread::finished,
+                     this, &SshTunnel::close, Qt::QueuedConnection);
+
     d->pump->start();
     emit opened();
 }

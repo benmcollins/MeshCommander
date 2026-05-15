@@ -292,6 +292,13 @@ SshSession::SshSession(QObject *parent)
 
 SshSession::~SshSession()
 {
+    // Give any active SshTunnel a chance to stop and join its pump
+    // thread before we tear down the worker. Connected handlers are
+    // DirectConnection on the same (caller's) thread, so this returns
+    // only once every pump has wound down. Skipping this lets the pump
+    // race ahead and BlockingQueuedConnection-invoke a freed worker.
+    emit aboutToDestroy();
+
     if (d->worker != nullptr) {
         QMetaObject::invokeMethod(d->worker, "close", Qt::BlockingQueuedConnection);
     }
