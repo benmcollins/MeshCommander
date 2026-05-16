@@ -119,6 +119,70 @@ Rectangle {
         }
     }
 
+    /// Transient COLS×ROWS readout shown while the user drags the
+    /// window edge. Mirrors tmux/vim convention: appears the moment
+    /// the grid retiles, sticks around just long enough to read, then
+    /// fades. Not part of the Flickable so it doesn't scroll with
+    /// content; sits above on the default z-stack thanks to
+    /// declaration order.
+    Item {
+        id: sizeOverlay
+        anchors.centerIn: flick
+        width: sizeText.implicitWidth + 28
+        height: sizeText.implicitHeight + 14
+        opacity: 0
+        // First emission from screen.geometryChanged comes from
+        // Component.onCompleted's initial retile — we don't want the
+        // chip flashing on every SOL pane open, only on user-driven
+        // resizes.
+        property bool seenInitialResize: false
+
+        Accessible.ignored: true
+
+        Rectangle {
+            anchors.fill: parent
+            color: Colors.elevated
+            border.color: Colors.border
+            border.width: 1
+            radius: height / 2
+            opacity: 0.92
+        }
+
+        Text {
+            id: sizeText
+            anchors.centerIn: parent
+            text: qsTr("%1 × %2").arg(root.screen.columns).arg(root.screen.rows)
+            color: Colors.text
+            font.family: Type.mono
+            font.pixelSize: Type.sizeM
+        }
+
+        Behavior on opacity {
+            OpacityAnimator {
+                duration: Motion.fast
+                easing.type: Motion.easeOut
+            }
+        }
+
+        Timer {
+            id: hideTimer
+            interval: 900
+            onTriggered: sizeOverlay.opacity = 0
+        }
+
+        Connections {
+            target: root.screen
+            function onGeometryChanged() {
+                if (!sizeOverlay.seenInitialResize) {
+                    sizeOverlay.seenInitialResize = true;
+                    return;
+                }
+                sizeOverlay.opacity = 1;
+                hideTimer.restart();
+            }
+        }
+    }
+
     MouseArea {
         anchors.fill: parent
         onClicked: root.forceActiveFocus()
