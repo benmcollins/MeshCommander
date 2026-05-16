@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import QuMesh
 
@@ -58,6 +59,29 @@ Item {
         controller: controller
     }
 
+    FileDialog {
+        id: screenshotDialog
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "png"
+        nameFilters: [qsTr("PNG images (*.png)"), qsTr("All files (*)")]
+        title: qsTr("Save SOL screenshot")
+        // `grabToImage` is asynchronous and the QQuickItemGrabResult is
+        // garbage-collected once its JS reference drops, taking the FBO
+        // texture with it — losing the image before saveToFile runs.
+        // Stashing the result on a QML id keeps it alive across the
+        // async boundary; we drop the reference right after saving.
+        property var pendingGrab: null
+        onAccepted: {
+            const path = Paths.urlToLocalFile(screenshotDialog.selectedFile);
+            if (path.length === 0) return;
+            term.grabToImage(function(result) {
+                screenshotDialog.pendingGrab = result;
+                result.saveToFile(path);
+                screenshotDialog.pendingGrab = null;
+            });
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 14
@@ -95,6 +119,14 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
+
+            Button {
+                text: qsTr("Save screenshot")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeXs
+                enabled: term.width > 0 && term.height > 0
+                onClicked: screenshotDialog.open()
+            }
 
             Button {
                 text: controller.state === SolController.Connected
