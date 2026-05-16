@@ -61,8 +61,9 @@ private:
     int m_width = 0;
     int m_height = 0;
     int m_fps = 5;
-    qint64 m_moviSizeOffset = 0;   // offset of the movi LIST size field
-    qint64 m_moviDataStart = 0;    // first byte after movi LIST type
+    qint64 m_moviListStart = 0;    // file position of the movi "LIST" fourcc;
+                                   // idx1 chunk offsets are measured from here
+    qint64 m_moviSizeOffset = 0;   // movi LIST size field (patched at stop)
     qint64 m_aviHeaderTotalFramesOffset = 0;
     qint64 m_strhLengthOffset = 0;
     QVector<Entry> m_frames;
