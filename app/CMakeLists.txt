@@ -372,34 +372,48 @@ install(SCRIPT ${qumesh_deploy_script})
 # --- Code signing stubs ----------------------------------------------
 #
 # When CI provisions the relevant secrets, these blocks codesign the
-# bundle before CPack picks it up. Until then they are no-ops; the
-# unsigned bundle still produces a runnable .dmg / .exe (with the usual
-# Gatekeeper / SmartScreen prompts on first launch).
+# bundle before CPack assembles it. Without the secrets they are
+# no-ops, and the unsigned bundle still produces a runnable
+# .dmg / .exe (with the usual Gatekeeper / SmartScreen prompts on
+# first launch).
+#
+# The env-var check has to happen *inside* install(CODE …): the cpack
+# step (where MAC_SIGNING_IDENTITY / WIN_SIGN_THUMBPRINT are
+# injected) runs after configure, so a configure-time `if()` here
+# would always see empty values and skip the signing entirely.
 
-if(APPLE AND DEFINED ENV{MAC_SIGNING_IDENTITY} AND NOT "$ENV{MAC_SIGNING_IDENTITY}" STREQUAL "")
+if(APPLE)
     install(CODE "
-        execute_process(
-            COMMAND bash
-                \"${CMAKE_CURRENT_SOURCE_DIR}/codesign-bundle.sh\"
-                \"\${CMAKE_INSTALL_PREFIX}/QuMesh.app\"
-                \"$ENV{MAC_SIGNING_IDENTITY}\"
-                \"${CMAKE_CURRENT_SOURCE_DIR}/QuMesh.entitlements\"
-            RESULT_VARIABLE _sign_rc
-        )
-        if(NOT _sign_rc EQUAL 0)
-            message(FATAL_ERROR \"codesign-bundle.sh failed (\${_sign_rc})\")
+        if(NOT \"\$ENV{MAC_SIGNING_IDENTITY}\" STREQUAL \"\")
+            message(STATUS \"codesign-bundle.sh: signing QuMesh.app with \$ENV{MAC_SIGNING_IDENTITY}\")
+            execute_process(
+                COMMAND bash
+                    \"${CMAKE_CURRENT_SOURCE_DIR}/codesign-bundle.sh\"
+                    \"\${CMAKE_INSTALL_PREFIX}/QuMesh.app\"
+                    \"\$ENV{MAC_SIGNING_IDENTITY}\"
+                    \"${CMAKE_CURRENT_SOURCE_DIR}/QuMesh.entitlements\"
+                RESULT_VARIABLE _sign_rc
+            )
+            if(NOT _sign_rc EQUAL 0)
+                message(FATAL_ERROR \"codesign-bundle.sh failed (\${_sign_rc})\")
+            endif()
         endif()
     ")
 endif()
 
-if(WIN32 AND DEFINED ENV{WIN_SIGN_THUMBPRINT} AND NOT "$ENV{WIN_SIGN_THUMBPRINT}" STREQUAL "")
+if(WIN32)
     install(CODE "
-        execute_process(COMMAND signtool sign /sha1 \"$ENV{WIN_SIGN_THUMBPRINT}\"
-                                  /fd SHA256 /tr http://timestamp.digicert.com /td SHA256
-                                  \"\${CMAKE_INSTALL_PREFIX}/QuMesh.exe\"
-                          RESULT_VARIABLE _sign_rc)
-        if(NOT _sign_rc EQUAL 0)
-            message(FATAL_ERROR \"signtool sign failed (\${_sign_rc})\")
+        if(NOT \"\$ENV{WIN_SIGN_THUMBPRINT}\" STREQUAL \"\")
+            message(STATUS \"signtool: signing QuMesh.exe with thumbprint \$ENV{WIN_SIGN_THUMBPRINT}\")
+            execute_process(
+                COMMAND signtool sign /sha1 \"\$ENV{WIN_SIGN_THUMBPRINT}\"
+                                      /fd SHA256 /tr http://timestamp.digicert.com /td SHA256
+                                      \"\${CMAKE_INSTALL_PREFIX}/QuMesh.exe\"
+                RESULT_VARIABLE _sign_rc
+            )
+            if(NOT _sign_rc EQUAL 0)
+                message(FATAL_ERROR \"signtool sign failed (\${_sign_rc})\")
+            endif()
         endif()
     ")
 endif()
