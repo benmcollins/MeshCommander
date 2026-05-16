@@ -102,6 +102,11 @@ void TestMjpegAviRecorder::roundtrip_writesRiffAviStructure()
     // First idx entry: ckid + flags + offset + size.
     QCOMPARE(fourcc(data, idxOff + 8), QByteArray("00dc"));
     QCOMPARE(leU32(data, idxOff + 12), quint32(0x10));
+    // Per AVI spec, idx1 offsets are measured from the start of the
+    // movi LIST fourcc, so the first 00dc chunk is at offset 12
+    // ("LIST" + size + "movi" = 12 bytes). Decoders that use idx1
+    // (QuickTime, WMP) seek to (moviListStart + offset).
+    QCOMPARE(leU32(data, idxOff + 16), quint32(12));
 
     // The first frame chunk header sits at the start of `movi` data.
     int moviOff = data.indexOf(QByteArray("movi"));
@@ -111,6 +116,14 @@ void TestMjpegAviRecorder::roundtrip_writesRiffAviStructure()
     const int jpegStart = moviOff + 4 + 8;
     QCOMPARE(quint8(data.at(jpegStart)),     quint8(0xFF));
     QCOMPARE(quint8(data.at(jpegStart + 1)), quint8(0xD8));
+
+    // The byte that the idx1 offset *resolves to* must be the start
+    // of the first 00dc chunk. (moviListStart + 12) == position of the
+    // first "00dc".
+    int moviListOff = moviOff - 8; // LIST + size precedes movi by 8 bytes
+    QCOMPARE(fourcc(data, moviListOff), QByteArray("LIST"));
+    QCOMPARE(fourcc(data, moviListOff + leU32(data, idxOff + 16)),
+             QByteArray("00dc"));
 }
 
 void TestMjpegAviRecorder::resizedFrame_rescaledToStartDimensions()

@@ -141,11 +141,11 @@ bool MjpegAviRecorder::writeRiffHeader()
     patchU32At(m_file, hdrlSizeOff, static_cast<quint32>(strlEnd - (hdrlSizeOff + 4)));
 
     // LIST<size>movi — frames go here.
+    m_moviListStart = m_file.pos();
     writeFourCC(m_file, "LIST");
     m_moviSizeOffset = m_file.pos();
     writeU32(m_file, 0); // patched
     writeFourCC(m_file, "movi");
-    m_moviDataStart = m_file.pos();
     (void)riffSizeOff; // patched in stop()
     return true;
 }
@@ -173,15 +173,21 @@ bool MjpegAviRecorder::pushFrame(const QImage &image, int quality)
         if (!frame.save(&buf, "JPEG", quality)) return false;
     }
 
-    // 00dc<size><jpeg><pad-to-even>
+    // 00dc<size><jpeg><pad-to-even>. The idx1 chunk's `offset` field
+    // is measured from the start of the movi LIST fourcc (so the first
+    // 00dc chunk lives at offset 12: 4 bytes of "LIST" + 4 bytes of
+    // size + 4 bytes of "movi"). ffmpeg ignores idx1 if it looks wrong
+    // and reads movi sequentially, but QuickTime and Windows Media
+    // Player both use idx1 to seek — an off-by-12 here sends them
+    // into the AVI header and they render black frames.
+    const qint64 chunkOffset = m_file.pos() - m_moviListStart;
     writeFourCC(m_file, "00dc");
     writeU32(m_file, static_cast<quint32>(jpeg.size()));
-    const qint64 frameOffset = m_file.pos() - m_moviDataStart - 8; // start of "00dc"
     m_file.write(jpeg);
     if (jpeg.size() & 1) m_file.write("\x00", 1);
 
     Entry e;
-    e.offset = static_cast<quint32>(frameOffset);
+    e.offset = static_cast<quint32>(chunkOffset);
     e.size = static_cast<quint32>(jpeg.size());
     m_frames.append(e);
     return true;
