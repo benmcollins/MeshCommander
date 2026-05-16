@@ -21,6 +21,7 @@ namespace qumesh::ssh { class SshSession; }
 
 namespace qumesh::app {
 
+class AsciicastRecorder;
 class SshTunnelHost;
 
 /// QML-facing controller for one SOL session. Owns the redirection
@@ -45,6 +46,7 @@ class SolController : public QObject
     Q_PROPERTY(QString pendingCertNotBefore READ pendingCertNotBefore NOTIFY pendingCertChanged)
     Q_PROPERTY(QString pendingCertNotAfter READ pendingCertNotAfter NOTIFY pendingCertChanged)
     Q_PROPERTY(bool awaitingTrust READ awaitingTrust NOTIFY awaitingTrustChanged)
+    Q_PROPERTY(bool recording READ isRecording NOTIFY recordingChanged)
 
 public:
     enum class State {
@@ -75,6 +77,7 @@ public:
     [[nodiscard]] QString pendingCertNotBefore() const { return m_pendingCert.notBefore; }
     [[nodiscard]] QString pendingCertNotAfter() const { return m_pendingCert.notAfter; }
     [[nodiscard]] qumesh::terminal::TerminalScreen *screen() const { return m_screen; }
+    [[nodiscard]] bool isRecording() const;
 
     void setHost(const QString &v);
     /// Override the redirection port. Only exists for tests that need to
@@ -110,6 +113,16 @@ public:
     /// persist it via ComputerModel.
     Q_INVOKABLE void trustPendingCert(bool persist);
 
+    /// Start streaming the SOL output to `path` as asciicast v2. The
+    /// recorded file is replayable by asciinema / asciinema-player.
+    /// Returns true if the file was opened and the header written.
+    /// Bytes that arrived before `startRecording` are not retroactively
+    /// included — the recording starts from this point forward.
+    Q_INVOKABLE bool startRecording(const QString &path,
+                                    const QString &title = QString());
+    /// Stop the in-progress recording. Safe to call when not recording.
+    Q_INVOKABLE void stopRecording();
+
 signals:
     void hostChanged();
     void userChanged();
@@ -130,6 +143,7 @@ signals:
     /// reconnect quietly matched a pinned fingerprint. The QML side
     /// uses it to flash a small "verified" badge.
     void peerCertVerifiedByPin(const QString &fingerprint);
+    void recordingChanged();
 
 private:
     void setState(State s);
@@ -155,6 +169,7 @@ private:
     /// still negotiating; the controller resumes the dial once the
     /// host reaches Connected.
     bool m_openDeferred = false;
+    AsciicastRecorder *m_recorder = nullptr;
 };
 
 } // namespace qumesh::app
