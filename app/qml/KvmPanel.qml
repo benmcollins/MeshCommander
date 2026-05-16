@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import QuMesh
 
@@ -76,6 +77,18 @@ Item {
         controller: controller
     }
 
+    FileDialog {
+        id: screenshotDialog
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "png"
+        nameFilters: [qsTr("PNG images (*.png)"), qsTr("All files (*)")]
+        title: qsTr("Save KVM screenshot")
+        onAccepted: {
+            const path = Paths.urlToLocalFile(screenshotDialog.selectedFile);
+            if (path.length > 0) controller.saveScreenshot(path);
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 8
@@ -116,6 +129,14 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
+
+            Button {
+                text: qsTr("Save screenshot")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeXs
+                enabled: controller.state === KvmController.Connected
+                onClicked: screenshotDialog.open()
+            }
 
             Button {
                 text: qsTr("Send keys ▾")

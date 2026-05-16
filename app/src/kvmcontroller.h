@@ -106,6 +106,11 @@ public:
     Q_INVOKABLE void sendKey(quint32 keysym, bool down);
     /// Mouse pointer event in framebuffer coordinates.
     Q_INVOKABLE void sendPointer(int buttonMask, int x, int y);
+    /// Save the current framebuffer to a PNG file at `path`. Returns
+    /// true on success. False if the framebuffer is empty, the path is
+    /// empty, or QImage::save fails. `path` is a local filesystem path
+    /// (the QML caller converts `FileDialog.selectedFile` first).
+    Q_INVOKABLE bool saveScreenshot(const QString &path) const;
 
 signals:
     void hostChanged();

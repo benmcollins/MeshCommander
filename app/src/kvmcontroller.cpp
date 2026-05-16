@@ -240,6 +240,14 @@ void KvmController::sendPointer(int buttonMask, int x, int y)
     }
 }
 
+bool KvmController::saveScreenshot(const QString &path) const
+{
+    if (path.isEmpty() || m_framebuffer == nullptr) return false;
+    const QImage &img = m_framebuffer->image();
+    if (img.isNull() || img.width() == 0 || img.height() == 0) return false;
+    return img.save(path, "PNG");
+}
+
 void KvmController::teardown()
 {
     if (m_session) {
