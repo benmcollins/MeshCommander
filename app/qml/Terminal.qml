@@ -21,6 +21,23 @@ Rectangle {
     readonly property int cellHeight: metrics.height
     readonly property int padding: 10
 
+    /// Recompute the screen grid from the current viewport so text
+    /// runs edge-to-edge. Clamped to a sensible minimum so transient
+    /// zero-sized layout passes don't truncate the grid to nothing.
+    /// `screen.resize` is a no-op when dimensions don't change.
+    function _retileGrid() {
+        if (cellWidth <= 0 || cellHeight <= 0) return;
+        const cols = Math.max(20, Math.floor(flick.width / cellWidth));
+        const rows = Math.max(4,  Math.floor(flick.height / cellHeight));
+        if (rows !== screen.rows || cols !== screen.columns) {
+            screen.resize(rows, cols);
+        }
+    }
+
+    onCellWidthChanged: _retileGrid()
+    onCellHeightChanged: _retileGrid()
+    Component.onCompleted: _retileGrid()
+
     // Terminal surface tracks the theme — in dark mode it sits a notch
     // darker than the surrounding pane (a near-black serial-console
     // aesthetic); in light mode it goes pure white so the cursor /
@@ -50,6 +67,9 @@ Rectangle {
         contentHeight: rows.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+
+        onWidthChanged: root._retileGrid()
+        onHeightChanged: root._retileGrid()
 
         Column {
             id: rows

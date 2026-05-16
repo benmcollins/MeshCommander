@@ -19,6 +19,9 @@ private slots:
     void eraseInDisplayAll();
     void sgrColorAndReset();
     void sgrBoldAndUnderline();
+    void sgr256ColorFgAndBg();
+    void sgrTruecolorIsQuantized();
+    void sgrExtendedColorDoesNotLeakIntoNextCode();
     void utf8MultiByteIsPreserved();
     void backspaceBeforeBol();
     void osCSequenceIsIgnored();
@@ -130,6 +133,48 @@ void TestVt100Parser::osCSequenceIsIgnored()
     s.feed(QByteArrayLiteral("A\x1b]0;ignored title\x07Z"));
     QCOMPARE(s.cell(0, 0).ch, QChar(u'A'));
     QCOMPARE(s.cell(0, 1).ch, QChar(u'Z'));
+}
+
+void TestVt100Parser::sgr256ColorFgAndBg()
+{
+    TerminalScreen s;
+    // 256-color: fg 208 (orange), bg 17 (deep blue).
+    s.feed(QByteArrayLiteral("\x1b[38;5;208mA\x1b[48;5;17mB\x1b[0mC"));
+    QCOMPARE(s.cell(0, 0).fg, quint8(208));
+    QCOMPARE(s.cell(0, 0).bg, quint8(0xFF));
+    QCOMPARE(s.cell(0, 1).fg, quint8(208));
+    QCOMPARE(s.cell(0, 1).bg, quint8(17));
+    // Reset returns to default.
+    QCOMPARE(s.cell(0, 2).fg, quint8(0xFF));
+    QCOMPARE(s.cell(0, 2).bg, quint8(0xFF));
+}
+
+void TestVt100Parser::sgrTruecolorIsQuantized()
+{
+    TerminalScreen s;
+    // Pure red 255,0,0 — quantizes to xterm cube index 16 + 36*5 = 196.
+    s.feed(QByteArrayLiteral("\x1b[38;2;255;0;0mR\x1b[0m"));
+    QCOMPARE(s.cell(0, 0).fg, quint8(196));
+    // Truecolor bg with mid grey — should map somewhere inside the cube,
+    // not into ANSI base. We only assert the index is non-default and >= 16.
+    s.feed(QByteArrayLiteral("\x1b[48;2;128;128;128mG"));
+    QVERIFY(s.cell(0, 1).bg != quint8(0xFF));
+    QVERIFY(s.cell(0, 1).bg >= quint8(16));
+}
+
+void TestVt100Parser::sgrExtendedColorDoesNotLeakIntoNextCode()
+{
+    TerminalScreen s;
+    // The tail of an extended-color sequence must not be re-interpreted
+    // as a separate SGR. Here the `4` (would-be underline) is actually
+    // the green component of a truecolor fg.
+    s.feed(QByteArrayLiteral("\x1b[38;2;0;0;4mX"));
+    QCOMPARE(s.cell(0, 0).attrs & AttrUnderline, quint8(0));
+    // And in 256-color form: `1` after `5` is the palette index, not bold.
+    s.feed(QByteArrayLiteral("\x1b[0m\x1b[38;5;1;48;5;0mY"));
+    QCOMPARE(s.cell(0, 1).attrs & AttrBold, quint8(0));
+    QCOMPARE(s.cell(0, 1).fg, quint8(1));
+    QCOMPARE(s.cell(0, 1).bg, quint8(0));
 }
 
 void TestVt100Parser::scrolling()

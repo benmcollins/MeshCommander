@@ -3,31 +3,58 @@
 
 #include "terminal/terminalscreen.h"
 
+#include <cstdio>
+
 namespace qumesh::terminal {
 
 namespace {
 
-// Industrial-console palette (matches qml/Theme/Colors.qml accent
-// hues where reasonable). Indices 0–7 are the standard ANSI base;
-// 8–15 are the "bright" variants.
-constexpr const char *kAnsiPalette[16] = {
-    "#0E0F12", // 0 black
-    "#E25555", // 1 red
-    "#5EE08A", // 2 green
-    "#E0C46C", // 3 yellow
-    "#5BB1F0", // 4 blue
-    "#C58CF0", // 5 magenta
-    "#5EE0D8", // 6 cyan
-    "#C8CBD1", // 7 white
-    "#3A3D45", // 8 bright black
-    "#FF7878", // 9 bright red
-    "#7CF4A8", // 10 bright green
-    "#FFD888", // 11 bright yellow
-    "#7DC8FF", // 12 bright blue
-    "#D9A8FF", // 13 bright magenta
-    "#7CFFF4", // 14 bright cyan
-    "#FFFFFF", // 15 bright white
+// xterm-256 palette. Indices 0–7 are the standard ANSI base, 8–15
+// are the "bright" variants (both tuned to match qml/Theme/Colors.qml
+// where reasonable). 16–231 are the 6×6×6 RGB cube. 232–255 are the
+// 24-step grayscale ramp. Index 0xFF (the default sentinel) is
+// special-cased by `lineHtml` and never indexed into this table; that
+// also means the literal xterm-256 entry 255 is unreachable, which we
+// accept as it is near-white grayscale and rarely emitted.
+struct Palette
+{
+    char entries[256][8];
+    Palette()
+    {
+        static constexpr const char *kBase[16] = {
+            "#0E0F12", "#E25555", "#5EE08A", "#E0C46C",
+            "#5BB1F0", "#C58CF0", "#5EE0D8", "#C8CBD1",
+            "#3A3D45", "#FF7878", "#7CF4A8", "#FFD888",
+            "#7DC8FF", "#D9A8FF", "#7CFFF4", "#FFFFFF",
+        };
+        for (int i = 0; i < 16; ++i) {
+            std::snprintf(entries[i], sizeof(entries[i]), "%s", kBase[i]);
+        }
+        // 6×6×6 cube: r,g,b ∈ {0, 95, 135, 175, 215, 255}.
+        static constexpr int kSteps[6] = {0, 95, 135, 175, 215, 255};
+        for (int r = 0; r < 6; ++r) {
+            for (int g = 0; g < 6; ++g) {
+                for (int b = 0; b < 6; ++b) {
+                    const int idx = 16 + 36 * r + 6 * g + b;
+                    std::snprintf(entries[idx], sizeof(entries[idx]),
+                                  "#%02X%02X%02X", kSteps[r], kSteps[g], kSteps[b]);
+                }
+            }
+        }
+        // Grayscale ramp: 8, 18, 28, … 238.
+        for (int i = 0; i < 24; ++i) {
+            const int v = 8 + i * 10;
+            std::snprintf(entries[232 + i], sizeof(entries[232 + i]),
+                          "#%02X%02X%02X", v, v, v);
+        }
+    }
 };
+
+const Palette &palette()
+{
+    static const Palette p;
+    return p;
+}
 
 QString escapeHtml(QChar c)
 {
@@ -118,12 +145,12 @@ QString TerminalScreen::lineHtml(int row) const
         QString styles;
         if (fgIdx != 0xFF) {
             styles += QStringLiteral("color:");
-            styles += QLatin1String(kAnsiPalette[fgIdx & 0x0F]);
+            styles += QLatin1String(palette().entries[fgIdx]);
             styles += QLatin1Char(';');
         }
         if (bgIdx != 0xFF) {
             styles += QStringLiteral("background-color:");
-            styles += QLatin1String(kAnsiPalette[bgIdx & 0x0F]);
+            styles += QLatin1String(palette().entries[bgIdx]);
             styles += QLatin1Char(';');
         }
         if (c0.attrs & AttrBold)      styles += QStringLiteral("font-weight:bold;");
