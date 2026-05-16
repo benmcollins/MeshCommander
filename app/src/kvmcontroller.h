@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 #include <QVariantMap>
 
 #include "kvmframebuffer.h"
@@ -21,6 +22,7 @@ namespace qumesh::ssh { class SshSession; }
 
 namespace qumesh::app {
 
+class MjpegAviRecorder;
 class SshTunnelHost;
 
 /// QML-creatable controller for one KVM session. Owns the redirection
@@ -46,6 +48,7 @@ class KvmController : public QObject
     Q_PROPERTY(QString pendingCertNotBefore READ pendingCertNotBefore NOTIFY pendingCertChanged)
     Q_PROPERTY(QString pendingCertNotAfter READ pendingCertNotAfter NOTIFY pendingCertChanged)
     Q_PROPERTY(bool awaitingTrust READ awaitingTrust NOTIFY awaitingTrustChanged)
+    Q_PROPERTY(bool recording READ isRecording NOTIFY recordingChanged)
 
 public:
     enum class State {
@@ -78,6 +81,7 @@ public:
     [[nodiscard]] QString pendingCertFingerprint() const { return m_pendingCert.fingerprintSha256; }
     [[nodiscard]] QString pendingCertNotBefore() const { return m_pendingCert.notBefore; }
     [[nodiscard]] QString pendingCertNotAfter() const { return m_pendingCert.notAfter; }
+    [[nodiscard]] bool isRecording() const;
 
     void setHost(const QString &v);
     /// Override the redirection port. Tests only — production derives
@@ -111,6 +115,15 @@ public:
     /// empty, or QImage::save fails. `path` is a local filesystem path
     /// (the QML caller converts `FileDialog.selectedFile` first).
     Q_INVOKABLE bool saveScreenshot(const QString &path) const;
+    /// Start recording the framebuffer as MJPEG-in-AVI to `path` at
+    /// `fps`. The recorder samples the framebuffer on a timer; tiles
+    /// arrive at variable rates from the host, so fixed-rate sampling
+    /// keeps the AVI's playback timeline honest. Returns true if the
+    /// file was opened and the header was written.
+    Q_INVOKABLE bool startRecording(const QString &path, int fps = 5);
+    /// Stop the in-progress recording and finalise the AVI. Safe to
+    /// call when not recording.
+    Q_INVOKABLE void stopRecording();
 
 signals:
     void hostChanged();
@@ -130,6 +143,7 @@ signals:
     /// reconnect quietly matched a pinned fingerprint. The QML side
     /// uses it to flash a small "verified" badge.
     void peerCertVerifiedByPin(const QString &fingerprint);
+    void recordingChanged();
 
 private:
     void setState(State s);
@@ -154,6 +168,9 @@ private:
     qumesh::ssh::SshSession *m_sshSession = nullptr;
     SshTunnelHost *m_sshHost = nullptr;
     bool m_openDeferred = false;
+    MjpegAviRecorder *m_recorder = nullptr;
+    QTimer m_recordTimer;
+    bool m_framebufferDirty = false;
 };
 
 } // namespace qumesh::app

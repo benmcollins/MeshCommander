@@ -3,6 +3,7 @@
 
 #include "solcontroller.h"
 
+#include "asciicast_recorder.h"
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
 #include "redir/sol_session.h"
@@ -176,6 +177,8 @@ void SolController::open()
     });
     connect(m_session.data(), &SolSession::data, this, [this](const QByteArray &bytes) {
         m_screen->feed(bytes);
+        if (m_recorder != nullptr && m_recorder->isRecording())
+            m_recorder->pushBytes(bytes);
     });
     connect(m_session.data(), &SolSession::closed, this, [this](const QString &reason) {
         setLastError(reason);
@@ -221,8 +224,32 @@ void SolController::sendBytes(const QByteArray &bytes)
     m_session->sendInput(bytes);
 }
 
+bool SolController::isRecording() const
+{
+    return m_recorder != nullptr && m_recorder->isRecording();
+}
+
+bool SolController::startRecording(const QString &path, const QString &title)
+{
+    if (isRecording()) stopRecording();
+    if (m_recorder == nullptr) m_recorder = new AsciicastRecorder(this);
+    const int cols = m_screen->columns() > 0 ? m_screen->columns() : 80;
+    const int rows = m_screen->rows()    > 0 ? m_screen->rows()    : 24;
+    if (!m_recorder->start(path, cols, rows, title)) return false;
+    emit recordingChanged();
+    return true;
+}
+
+void SolController::stopRecording()
+{
+    if (!isRecording()) return;
+    m_recorder->stop();
+    emit recordingChanged();
+}
+
 void SolController::teardown()
 {
+    if (isRecording()) stopRecording();
     if (m_session) {
         m_session->disconnect(this);
         m_session->deleteLater();

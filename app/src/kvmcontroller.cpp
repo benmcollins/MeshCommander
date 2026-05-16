@@ -6,6 +6,7 @@
 #include "kvm/kvm_codec.h"
 #include "kvm/kvm_session.h"
 #include "kvmframebuffer.h"
+#include "mjpeg_avi_recorder.h"
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
 #include "ssh/ssh_session.h"
@@ -20,6 +21,16 @@ using qumesh::redir::RedirectionClient;
 KvmController::KvmController(QObject *parent)
     : QObject(parent), m_framebuffer(new KvmFramebuffer(this))
 {
+    m_recordTimer.setTimerType(Qt::PreciseTimer);
+    QObject::connect(&m_recordTimer, &QTimer::timeout, this, [this]() {
+        if (!m_recorder || !m_recorder->isRecording()) return;
+        if (!m_framebufferDirty) return;
+        if (m_framebuffer->image().isNull()) return;
+        m_recorder->pushFrame(m_framebuffer->image());
+        m_framebufferDirty = false;
+    });
+    QObject::connect(m_framebuffer, &KvmFramebuffer::tileApplied, this,
+                     [this](QRect) { m_framebufferDirty = true; });
 }
 
 KvmController::~KvmController() { teardown(); }
@@ -248,8 +259,44 @@ bool KvmController::saveScreenshot(const QString &path) const
     return img.save(path, "PNG");
 }
 
+bool KvmController::isRecording() const
+{
+    return m_recorder != nullptr && m_recorder->isRecording();
+}
+
+bool KvmController::startRecording(const QString &path, int fps)
+{
+    if (isRecording()) stopRecording();
+    if (m_framebuffer == nullptr) return false;
+    const QImage &img = m_framebuffer->image();
+    if (img.isNull() || img.width() == 0 || img.height() == 0) return false;
+    if (fps <= 0 || fps > 60) fps = 5;
+
+    if (m_recorder == nullptr) m_recorder = new MjpegAviRecorder(this);
+    if (!m_recorder->start(path, img.width(), img.height(), fps)) return false;
+
+    // Seed the AVI with frame 0 so playback starts on real content
+    // rather than a blank frame, even if no tiles arrive in the first
+    // sampling interval.
+    m_recorder->pushFrame(img);
+    m_framebufferDirty = false;
+
+    m_recordTimer.start(1000 / fps);
+    emit recordingChanged();
+    return true;
+}
+
+void KvmController::stopRecording()
+{
+    if (!isRecording()) return;
+    m_recordTimer.stop();
+    m_recorder->stop();
+    emit recordingChanged();
+}
+
 void KvmController::teardown()
 {
+    if (isRecording()) stopRecording();
     if (m_session) {
         m_session->disconnect(this);
         m_session->deleteLater();

@@ -89,6 +89,33 @@ Item {
         }
     }
 
+    FileDialog {
+        id: recordDialog
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "avi"
+        nameFilters: [qsTr("MJPEG AVI (*.avi)"), qsTr("All files (*)")]
+        title: qsTr("Record KVM session to AVI")
+        onAccepted: {
+            const path = Paths.urlToLocalFile(recordDialog.selectedFile);
+            if (path.length > 0) controller.startRecording(path);
+        }
+    }
+
+    // Wall-clock seconds since the active recording started. Driven by
+    // a 1 Hz tick rather than the recorder's frame timer so the chip
+    // updates smoothly even when no frames are being captured.
+    QtObject {
+        id: recState
+        property int elapsedSec: 0
+    }
+    Timer {
+        running: controller.recording
+        interval: 1000
+        repeat: true
+        onTriggered: recState.elapsedSec += 1
+        onRunningChanged: if (!running) recState.elapsedSec = 0
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 8
@@ -136,6 +163,45 @@ Item {
                 font.pixelSize: Type.sizeXs
                 enabled: controller.state === KvmController.Connected
                 onClicked: screenshotDialog.open()
+            }
+
+            // Pulsing red dot + elapsed time, shown only during recording.
+            Rectangle {
+                visible: controller.recording
+                implicitWidth: 8
+                implicitHeight: 8
+                radius: 4
+                color: Colors.error
+                SequentialAnimation on opacity {
+                    running: controller.recording
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.25; duration: 600 }
+                    NumberAnimation { from: 0.25; to: 1.0; duration: 600 }
+                }
+            }
+            Text {
+                visible: controller.recording
+                text: {
+                    const s = recState.elapsedSec;
+                    const m = Math.floor(s / 60);
+                    return qsTr("REC %1:%2").arg(m).arg(String(s % 60).padStart(2, "0"));
+                }
+                color: Colors.error
+                font.family: Type.mono
+                font.pixelSize: Type.sizeXs
+                font.features: ({ "tnum": 1 })
+            }
+
+            Button {
+                text: controller.recording ? qsTr("Stop recording")
+                                            : qsTr("Record video")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeXs
+                enabled: controller.state === KvmController.Connected
+                onClicked: {
+                    if (controller.recording) controller.stopRecording();
+                    else                       recordDialog.open();
+                }
             }
 
             Button {

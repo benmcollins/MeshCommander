@@ -41,6 +41,8 @@ qt_add_executable(test_kvmcontroller
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/kvmcontroller.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/kvmframebuffer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/kvmframebuffer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/mjpeg_avi_recorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/mjpeg_avi_recorder.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/sshtunnelhost.cpp
@@ -59,8 +61,35 @@ target_link_libraries(test_kvmcontroller PRIVATE
 )
 add_test(NAME test_kvmcontroller COMMAND test_kvmcontroller)
 
+qt_add_executable(test_asciicast_recorder
+    test_asciicast_recorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/asciicast_recorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/asciicast_recorder.h
+)
+target_include_directories(test_asciicast_recorder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_asciicast_recorder PRIVATE
+    Qt6::Core
+    Qt6::Test
+)
+add_test(NAME test_asciicast_recorder COMMAND test_asciicast_recorder)
+
+qt_add_executable(test_mjpeg_avi_recorder
+    test_mjpeg_avi_recorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/mjpeg_avi_recorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/mjpeg_avi_recorder.h
+)
+target_include_directories(test_mjpeg_avi_recorder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_mjpeg_avi_recorder PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+)
+add_test(NAME test_mjpeg_avi_recorder COMMAND test_mjpeg_avi_recorder)
+
 qt_add_executable(test_solcontroller
     test_solcontroller.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/asciicast_recorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/asciicast_recorder.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/solcontroller.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/solcontroller.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.cpp
