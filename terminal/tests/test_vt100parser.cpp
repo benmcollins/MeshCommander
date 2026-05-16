@@ -4,6 +4,7 @@
 #include "terminal/terminalscreen.h"
 #include "terminal/vt100parser.h"
 
+#include <QSignalSpy>
 #include <QtTest>
 
 using namespace qumesh::terminal;
@@ -22,6 +23,8 @@ private slots:
     void sgr256ColorFgAndBg();
     void sgrTruecolorIsQuantized();
     void sgrExtendedColorDoesNotLeakIntoNextCode();
+    void windowOpsReportsTextAreaSize();
+    void windowOpsIgnoresActiveOps();
     void utf8MultiByteIsPreserved();
     void backspaceBeforeBol();
     void osCSequenceIsIgnored();
@@ -175,6 +178,46 @@ void TestVt100Parser::sgrExtendedColorDoesNotLeakIntoNextCode()
     QCOMPARE(s.cell(0, 1).attrs & AttrBold, quint8(0));
     QCOMPARE(s.cell(0, 1).fg, quint8(1));
     QCOMPARE(s.cell(0, 1).bg, quint8(0));
+}
+
+void TestVt100Parser::windowOpsReportsTextAreaSize()
+{
+    TerminalScreen s;
+    s.resize(28, 108);
+    QSignalSpy spy(&s, &TerminalScreen::respond);
+
+    // CSI 18 t — "report text area size in characters".
+    s.feed(QByteArrayLiteral("\x1b[18t"));
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.takeFirst().at(0).toByteArray(), QByteArrayLiteral("\x1b[8;28;108t"));
+
+    // CSI 19 t — "report screen size in characters". For a serial
+    // session the screen size matches the text area.
+    s.feed(QByteArrayLiteral("\x1b[19t"));
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.takeFirst().at(0).toByteArray(), QByteArrayLiteral("\x1b[9;28;108t"));
+
+    // CSI 14 t — pixel size. We don't track pixels; the response
+    // approximates via cells × nominal 8×16 so callers that read it
+    // get a self-consistent number.
+    s.feed(QByteArrayLiteral("\x1b[14t"));
+    QCOMPARE(spy.count(), 1);
+    const QByteArray pix = spy.takeFirst().at(0).toByteArray();
+    QCOMPARE(pix, QByteArrayLiteral("\x1b[4;448;864t"));
+}
+
+void TestVt100Parser::windowOpsIgnoresActiveOps()
+{
+    TerminalScreen s;
+    QSignalSpy spy(&s, &TerminalScreen::respond);
+
+    // Active ops we deliberately don't honor: 1=de-iconify, 2=iconify,
+    // 3=move, 4=resize-pixels, 5=raise, 8=resize-chars.
+    s.feed(QByteArrayLiteral("\x1b[1t"));
+    s.feed(QByteArrayLiteral("\x1b[2t"));
+    s.feed(QByteArrayLiteral("\x1b[3;100;100t"));
+    s.feed(QByteArrayLiteral("\x1b[8;50;80t"));
+    QCOMPARE(spy.count(), 0);
 }
 
 void TestVt100Parser::scrolling()

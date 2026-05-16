@@ -315,4 +315,10 @@ void TerminalScreen::touch()
     emit screenUpdated();
 }
 
+void TerminalScreen::emitResponse(const QByteArray &bytes)
+{
+    if (bytes.isEmpty()) return;
+    emit respond(bytes);
+}
+
 } // namespace qumesh::terminal

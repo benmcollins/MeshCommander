@@ -96,6 +96,11 @@ public:
     /// Emit screenUpdated. Parser calls this after each `feed`.
     void touch();
 
+    /// Forward the bytes through the `respond` signal — used by the
+    /// parser to surface replies (e.g. xterm window-ops responses)
+    /// without depending on the SOL session directly.
+    void emitResponse(const QByteArray &bytes);
+
 signals:
     void geometryChanged();
     void cursorMoved();
@@ -103,6 +108,11 @@ signals:
     /// Emitted when the host requests a bell. The QML layer may flash
     /// the panel; no audible bell in v1.
     void bell();
+    /// Bytes the parser wants to send back to the host in reply to an
+    /// in-band query (xterm CSI Ps;Pt t window-ops, DSR, etc.). The
+    /// controller wires this to `SolSession::sendInput` so replies
+    /// travel up the redirection channel.
+    void respond(const QByteArray &bytes);
 
 private:
     int m_rows = 24;

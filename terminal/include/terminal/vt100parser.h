@@ -25,8 +25,9 @@ class TerminalScreen;
 ///   - CSI Pn ; Pn ... f  same as H
 ///   - CSI Pn J           erase in display (0=below, 1=above, 2=all)
 ///   - CSI Pn K           erase in line (0=right, 1=left, 2=whole)
-///   - CSI Pn m           SGR (colors / attributes)
+///   - CSI Pn m           SGR (colors / attributes; 16/256/truecolor)
 ///   - CSI s              save cursor
+///   - CSI Ps t           XTWINOPS — 14/18/19 reply with size; rest ignored
 ///   - CSI u              restore cursor
 ///   - CSI ? Pn h/l       DEC private modes (consumed, mostly ignored)
 ///   - OSC ... BEL/ST     consumed (window title etc., ignored)
@@ -52,6 +53,7 @@ private:
 
     void handleCsi();
     void handleSgr(const QVector<int> &params);
+    void handleWindowOps(const QVector<int> &params);
     void handleC0(unsigned char b);
     void putChar(QChar c);
     QChar consumeUtf8(unsigned char b);

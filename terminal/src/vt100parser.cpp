@@ -204,9 +204,49 @@ void Vt100Parser::handleCsi()
     case 'K': m_screen->eraseInLine(params.value(0, 0)); break;
     case 'm': handleSgr(params); break;
     case 's': m_screen->saveCursor(); break;
+    case 't': handleWindowOps(params); break;
     case 'u': m_screen->restoreCursor(); break;
     default: break;
     }
+}
+
+void Vt100Parser::handleWindowOps(const QVector<int> &params)
+{
+    // XTWINOPS (xterm window manipulation). We answer the read-only
+    // size queries — that's what `resize(1)` uses to learn the
+    // terminal geometry without the user having to type `stty`.
+    // Active operations (move window, raise, iconify, …) are ignored:
+    // we are a terminal emulator, not a window manager for the
+    // remote host.
+    const int op = params.value(0, 0);
+    const int rows = m_screen->rows();
+    const int cols = m_screen->columns();
+    QByteArray reply;
+    switch (op) {
+    case 14:
+        // Pixel size: report cells × nominal 8×16. `resize` doesn't
+        // consult pixel size and the few apps that do (legacy X) get
+        // a plausible number rather than nothing.
+        reply = QByteArrayLiteral("\x1b[4;")
+              + QByteArray::number(rows * 16) + ';'
+              + QByteArray::number(cols * 8) + 't';
+        break;
+    case 18:
+        reply = QByteArrayLiteral("\x1b[8;")
+              + QByteArray::number(rows) + ';'
+              + QByteArray::number(cols) + 't';
+        break;
+    case 19:
+        // Screen size matches text-area size for serial; we have no
+        // separate "monitor" geometry to report.
+        reply = QByteArrayLiteral("\x1b[9;")
+              + QByteArray::number(rows) + ';'
+              + QByteArray::number(cols) + 't';
+        break;
+    default:
+        return;
+    }
+    m_screen->emitResponse(reply);
 }
 
 namespace {

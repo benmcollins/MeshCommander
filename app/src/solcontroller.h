@@ -135,12 +135,6 @@ private:
     void setState(State s);
     void setLastError(const QString &e);
     void teardown();
-    /// Type `stty cols/rows; export TERM=…; clear` at the remote serial
-    /// side so getty/bash/vim know the dimensions and emit color. The
-    /// remote may be at a BIOS prompt with no shell, in which case the
-    /// bytes are harmlessly echoed and ignored. Sent once on session
-    /// open and again whenever the local grid resizes.
-    void sendTerminalSize(bool includeTermAndClear);
 
     QString m_host;
     quint16 m_portOverride = 0;
