@@ -162,7 +162,7 @@ private slots:
     void initialStateAndScreen();
     void openWithEmptyHostFails();
     void connectAndReceiveData();
-    void sendsSttyAndTermAfterOpen();
+    void respondsToWindowSizeQuery();
 };
 
 void TestSolController::initialStateAndScreen()
@@ -205,7 +205,7 @@ void TestSolController::connectAndReceiveData()
     QCOMPARE(c.state(), SolController::State::Disconnected);
 }
 
-void TestSolController::sendsSttyAndTermAfterOpen()
+void TestSolController::respondsToWindowSizeQuery()
 {
     MockServer server;
     QVERIFY(server.listen());
@@ -215,17 +215,17 @@ void TestSolController::sendsSttyAndTermAfterOpen()
     c.setPortForTest(server.port());
     c.setUser(QStringLiteral("admin"));
     c.setPassword(QStringLiteral("p"));
-    // Match the legacy default geometry so the assertion below is
-    // grounded in the screen rather than a window-derived size.
-    c.screen()->resize(24, 80);
+    c.screen()->resize(28, 108);
     c.open();
 
     QVERIFY(waitFor(5000, [&]() { return c.state() == SolController::State::Connected; }));
+    // Feed the XTWINOPS query that `resize(1)` sends. The reply must
+    // come back via the SOL data channel — that's how the remote
+    // sees our actual grid size without us ever typing a command.
+    c.screen()->feed(QByteArrayLiteral("\x1b[18t"));
     QVERIFY(waitFor(2000, [&]() {
-        return server.serialInput().contains("export TERM=xterm-256color");
+        return server.serialInput().contains("\x1b[8;28;108t");
     }));
-    QVERIFY(server.serialInput().contains("stty cols 80 rows 24"));
-    QVERIFY(server.serialInput().contains("clear"));
 
     c.close();
 }

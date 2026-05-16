@@ -10,8 +10,6 @@
 #include "ssh_tunnel_opener.h"
 #include "sshtunnelhost.h"
 
-#include <QTimer>
-
 namespace qumesh::app {
 
 using qumesh::redir::RedirectionClient;
@@ -21,12 +19,12 @@ using qumesh::terminal::TerminalScreen;
 SolController::SolController(QObject *parent)
     : QObject(parent), m_screen(new TerminalScreen(this))
 {
-    // Re-announce dimensions to the remote when the local grid is
-    // resized (typically because the QML pane changed shape). Only
-    // takes effect while a SOL session is actually open; the
-    // sendTerminalSize() body guards on m_session.
-    connect(m_screen, &TerminalScreen::geometryChanged, this, [this]() {
-        sendTerminalSize(false);
+    // The parser emits this whenever the host queries our terminal
+    // size with an XTWINOPS escape (CSI 18/19/14 t). Forward the
+    // reply down the SOL channel so `resize(1)` and friends can see
+    // it. No-op when no session is open.
+    connect(m_screen, &TerminalScreen::respond, this, [this](const QByteArray &bytes) {
+        if (m_session) m_session->sendInput(bytes);
     });
 }
 
@@ -175,12 +173,6 @@ void SolController::open()
 
     connect(m_session.data(), &SolSession::sessionOpened, this, [this]() {
         setState(State::Connected);
-        // The first display payload from the host typically arrives a
-        // beat after sessionOpened; defer the init keystrokes so they
-        // land at a prompt instead of mid-banner. The remote happily
-        // discards them anyway if no shell is listening (BIOS prompt,
-        // GRUB, etc.).
-        QTimer::singleShot(250, this, [this]() { sendTerminalSize(true); });
     });
     connect(m_session.data(), &SolSession::data, this, [this](const QByteArray &bytes) {
         m_screen->feed(bytes);
@@ -227,24 +219,6 @@ void SolController::sendBytes(const QByteArray &bytes)
 {
     if (!m_session) return;
     m_session->sendInput(bytes);
-}
-
-void SolController::sendTerminalSize(bool includeTermAndClear)
-{
-    if (!m_session || !m_session->isOpen()) return;
-    const int rows = m_screen->rows();
-    const int cols = m_screen->columns();
-    QString line = QStringLiteral("stty cols %1 rows %2").arg(cols).arg(rows);
-    if (includeTermAndClear) {
-        // `xterm-256color` is the de-facto modern serial-console TERM:
-        // bash, vim, less, tmux, and `ls --color` all key their color
-        // output off it. The legacy NW.js client defaulted to vt100
-        // (monochrome) which was already wrong in 2015.
-        line += QStringLiteral("; export TERM=xterm-256color; clear");
-    }
-    line.prepend(QLatin1Char('\n'));
-    line.append(QLatin1Char('\n'));
-    sendBytes(line.toUtf8());
 }
 
 void SolController::teardown()
