@@ -5,6 +5,8 @@
 
 #include "terminal/terminalscreen.h"
 
+#include <optional>
+
 namespace qumesh::terminal {
 
 namespace {
@@ -207,6 +209,68 @@ void Vt100Parser::handleCsi()
     }
 }
 
+namespace {
+
+/// Map an 8-bit RGB triple to the nearest xterm-256 cube index. Truecolor
+/// in (38;2;r;g;b) form gets quantized through the 6×6×6 palette since
+/// our Cell only stores a single byte per channel.
+quint8 quantizeRgbTo256(int r, int g, int b)
+{
+    auto step = [](int v) {
+        // xterm cube anchors at 0, 95, 135, 175, 215, 255. Pick the
+        // closest one rather than naive `v / 51` so values just under
+        // 95 don't round down to black.
+        if (v < 48) return 0;
+        if (v < 115) return 1;
+        return (v - 35) / 40; // 2..5 for the 135/175/215/255 buckets
+    };
+    const int ri = qBound(0, step(r), 5);
+    const int gi = qBound(0, step(g), 5);
+    const int bi = qBound(0, step(b), 5);
+    return static_cast<quint8>(16 + 36 * ri + 6 * gi + bi);
+}
+
+/// Consume an extended-color tail from an SGR param run starting at
+/// `*i` (which points at the `38` or `48`). Advances `*i` past the
+/// consumed indices and returns the resolved palette index, or
+/// `std::nullopt` if the sequence is malformed (in which case `*i`
+/// already points past the bad subseq so the outer loop can keep
+/// going without re-interpreting our tail as ordinary SGR codes).
+std::optional<quint8> consumeExtendedColor(const QVector<int> &params, int *i)
+{
+    const int n = params.size();
+    if (*i + 1 >= n) {
+        *i = n;
+        return std::nullopt;
+    }
+    const int mode = params.at(*i + 1);
+    if (mode == 5) {
+        if (*i + 2 >= n) {
+            *i = n;
+            return std::nullopt;
+        }
+        const int idx = params.at(*i + 2);
+        *i += 2;
+        return static_cast<quint8>(qBound(0, idx, 255));
+    }
+    if (mode == 2) {
+        if (*i + 4 >= n) {
+            *i = n;
+            return std::nullopt;
+        }
+        const int r = params.at(*i + 2);
+        const int g = params.at(*i + 3);
+        const int b = params.at(*i + 4);
+        *i += 4;
+        return quantizeRgbTo256(r, g, b);
+    }
+    // Unknown extension; skip just `mode` so we resync on the next ';'.
+    *i += 1;
+    return std::nullopt;
+}
+
+} // namespace
+
 void Vt100Parser::handleSgr(const QVector<int> &params)
 {
     if (params.isEmpty()) {
@@ -231,10 +295,16 @@ void Vt100Parser::handleSgr(const QVector<int> &params)
             m_screen->setAttr(AttrReverse, false);
         } else if (code >= 30 && code <= 37) {
             m_screen->setFg(static_cast<quint8>(code - 30));
+        } else if (code == 38) {
+            const std::optional<quint8> idx = consumeExtendedColor(params, &i);
+            if (idx.has_value()) m_screen->setFg(*idx);
         } else if (code == 39) {
             m_screen->setFg(0xFF);
         } else if (code >= 40 && code <= 47) {
             m_screen->setBg(static_cast<quint8>(code - 40));
+        } else if (code == 48) {
+            const std::optional<quint8> idx = consumeExtendedColor(params, &i);
+            if (idx.has_value()) m_screen->setBg(*idx);
         } else if (code == 49) {
             m_screen->setBg(0xFF);
         } else if (code >= 90 && code <= 97) {
@@ -242,8 +312,6 @@ void Vt100Parser::handleSgr(const QVector<int> &params)
         } else if (code >= 100 && code <= 107) {
             m_screen->setBg(static_cast<quint8>(code - 100 + 8));
         }
-        // 256-color (38;5;n / 48;5;n) and truecolor (38;2;r;g;b)
-        // intentionally not modeled in v1.
     }
 }
 

@@ -79,6 +79,10 @@ public:
     }
     bool listen() { return m_server->listen(QHostAddress::LocalHost); }
     quint16 port() const { return m_server->serverPort(); }
+    /// Bytes captured from `0x28 SerialDataToHost` payloads — the
+    /// stream the host sees on the serial side. Tests inspect this to
+    /// assert the controller's `stty`/`TERM` init landed.
+    QByteArray serialInput() const { return m_serialIn; }
 
 private:
     void handleData(QTcpSocket *s)
@@ -131,6 +135,7 @@ private:
                 const quint16 n = static_cast<unsigned char>(m_buf.at(8))
                                 | static_cast<unsigned char>(m_buf.at(9)) << 8;
                 if (m_buf.size() < 10 + n) return;
+                m_serialIn.append(m_buf.mid(10, n));
                 m_buf.remove(0, 10 + n);
             } else if (tag == 0x2B) {
                 if (m_buf.size() < 8) return;
@@ -143,6 +148,7 @@ private:
     }
 
     QByteArray m_buf;
+    QByteArray m_serialIn;
     int m_authStage = 0;
     QTcpServer *m_server;
 };
@@ -156,6 +162,7 @@ private slots:
     void initialStateAndScreen();
     void openWithEmptyHostFails();
     void connectAndReceiveData();
+    void sendsSttyAndTermAfterOpen();
 };
 
 void TestSolController::initialStateAndScreen()
@@ -196,6 +203,31 @@ void TestSolController::connectAndReceiveData()
 
     c.close();
     QCOMPARE(c.state(), SolController::State::Disconnected);
+}
+
+void TestSolController::sendsSttyAndTermAfterOpen()
+{
+    MockServer server;
+    QVERIFY(server.listen());
+
+    SolController c;
+    c.setHost(QStringLiteral("127.0.0.1"));
+    c.setPortForTest(server.port());
+    c.setUser(QStringLiteral("admin"));
+    c.setPassword(QStringLiteral("p"));
+    // Match the legacy default geometry so the assertion below is
+    // grounded in the screen rather than a window-derived size.
+    c.screen()->resize(24, 80);
+    c.open();
+
+    QVERIFY(waitFor(5000, [&]() { return c.state() == SolController::State::Connected; }));
+    QVERIFY(waitFor(2000, [&]() {
+        return server.serialInput().contains("export TERM=xterm-256color");
+    }));
+    QVERIFY(server.serialInput().contains("stty cols 80 rows 24"));
+    QVERIFY(server.serialInput().contains("clear"));
+
+    c.close();
 }
 
 QTEST_MAIN(TestSolController)
