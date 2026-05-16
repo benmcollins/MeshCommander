@@ -214,10 +214,21 @@ if(APPLE AND QUMESH_AUTOUPDATE)
         INSTALL_RPATH "@executable_path/../Frameworks"
         BUILD_WITH_INSTALL_RPATH TRUE
     )
+    # Use `ditto` to copy the framework, not `cmake -E copy_directory`:
+    # the CMake helper dereferences symlinks, which produces a malformed
+    # Sparkle.framework (both Versions/Current/ and Versions/B/ end up as
+    # full duplicate trees, and the top-level Sparkle/Headers/Resources
+    # symlinks become real files). codesign then refuses with
+    # "bundle format is ambiguous (could be app or framework)" and
+    # notarization rejects every nested binary. `ditto` preserves the
+    # symlink layout Sparkle expects. The `rm -rf` keeps re-builds clean,
+    # since ditto merges into an existing target rather than replacing it.
     add_custom_command(TARGET qumesh POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
             "$<TARGET_BUNDLE_DIR:qumesh>/Contents/Frameworks"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+            "$<TARGET_BUNDLE_DIR:qumesh>/Contents/Frameworks/Sparkle.framework"
+        COMMAND ditto
             "${_sparkle_framework}"
             "$<TARGET_BUNDLE_DIR:qumesh>/Contents/Frameworks/Sparkle.framework"
         VERBATIM
