@@ -371,11 +371,14 @@ jobs:
         shell: bash
         working-directory: build
         run: |
-          mkdir -p ../../artifacts
+          # Step runs with working-directory: build, so write to
+          # $GITHUB_WORKSPACE/artifacts/ — that matches what
+          # upload-artifact reads relative to the repo root.
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
           if [ "${{ runner.os }}" = "macOS" ]; then
-            cp QuMesh-*-macos.dmg ../../artifacts/
+            cp QuMesh-*-macos.dmg "$GITHUB_WORKSPACE/artifacts/"
           else
-            cp QuMesh-*-windows-x64.exe ../../artifacts/
+            cp QuMesh-*-windows-x64.exe "$GITHUB_WORKSPACE/artifacts/"
           fi
 
       - name: Upload artifact
