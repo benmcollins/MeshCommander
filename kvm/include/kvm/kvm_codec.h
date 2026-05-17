@@ -118,6 +118,14 @@ bool tryParseServerInit(QByteArrayView buffer, ServerInit *info, int *consumed);
 
 // --- Initial outbound configuration ---------------------------------
 
+/// Build SetPixelFormat (RFB message 0) locking the server into the
+/// little-endian RGB565 our decoder assumes. Without this, AMT firmware
+/// whose default ServerInit pixel format isn't already RGB565 — varies
+/// by firmware build and last negotiated state — sends raw bytes the
+/// decoder mis-interprets, producing a black or scrambled framebuffer.
+/// Sent immediately after ServerInit and before SetEncodings.
+QByteArray buildSetPixelFormat();
+
 /// Build SetEncodings with the encodings we support. AMT requires RAW
 /// to always be present; we add RLE and DesktopSize.
 QByteArray buildSetEncodings();

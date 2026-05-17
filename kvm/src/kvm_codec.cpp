@@ -177,6 +177,32 @@ bool tryParseServerInit(QByteArrayView buffer, ServerInit *info, int *consumed)
 
 // --- Initial outbound configuration ---------------------------------
 
+QByteArray buildSetPixelFormat()
+{
+    // RFB SetPixelFormat: 20 bytes total. Pins the server to little-endian
+    // RGB565 so the decoder's hard-coded bpp=2 / mask math is correct
+    // regardless of what the firmware advertised in ServerInit.
+    QByteArray b;
+    b.append(char(MsgSetPixelFormat));         // 0x00
+    b.append(char(0x00));                       // padding
+    b.append(char(0x00));
+    b.append(char(0x00));
+    b.append(char(16));                         // bits-per-pixel
+    b.append(char(16));                         // depth
+    b.append(char(0));                          // big-endian-flag (little)
+    b.append(char(1));                          // true-colour-flag
+    b.append(pack16Be(31));                     // red-max  (0xF800 >> 11)
+    b.append(pack16Be(63));                     // green-max (0x07E0 >> 5)
+    b.append(pack16Be(31));                     // blue-max  (0x001F)
+    b.append(char(11));                         // red-shift
+    b.append(char(5));                          // green-shift
+    b.append(char(0));                          // blue-shift
+    b.append(char(0x00));                       // padding
+    b.append(char(0x00));
+    b.append(char(0x00));
+    return b;
+}
+
 QByteArray buildSetEncodings()
 {
     // Type byte + 1 padding + u16 number + (RLE, RAW, DesktopSize).
