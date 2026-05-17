@@ -196,6 +196,25 @@ void MachineDetailsController::setTrustedFingerprints(QStringList v)
     emit trustedFingerprintsChanged();
 }
 
+QString MachineDetailsController::powerSourceLabel() const
+{
+    switch (m_powerSource) {
+    case 0:  return QStringLiteral("Plugged-in");
+    case 1:  return QStringLiteral("On battery");
+    default: return QStringLiteral("(unknown)");
+    }
+}
+
+QString MachineDetailsController::provisioningModeLabel() const
+{
+    // Mirrors `legacy/source/Commander.htm` line ~45371. Mode 4 = CCM,
+    // anything else (typically 1/2/3) at state 2 = ACM.
+    if (m_provisioningState != 2) return QStringLiteral("Pre-provisioning");
+    return m_provisioningMode == 4
+        ? QStringLiteral("Activated in CCM")
+        : QStringLiteral("Activated in ACM");
+}
+
 QString MachineDetailsController::powerStateLabel() const
 {
     switch (m_powerState) {
@@ -355,9 +374,51 @@ void MachineDetailsController::refreshOverview()
                 m_digestRealm  = r.digestRealm;
                 m_networkInterfaceEnabled = r.networkInterfaceEnabled;
                 m_rmcpPingResponseEnabled = r.rmcpPingResponseEnabled;
+                m_powerSource  = r.powerSource;
                 emit generalSettingsChanged();
             } else if (!r.error.isEmpty()) {
                 setLastError(QStringLiteral("GeneralSettings: %1").arg(r.error));
+            }
+            decInflight();
+        });
+
+    incInflight();
+    qumesh::wsman::getMeVersion(m_client,
+        [this](qumesh::wsman::MeVersionResult r) {
+            if (r.ok) {
+                m_meVersionString = r.versionString;
+                emit meVersionChanged();
+            }
+            // Soft failure: older firmware may not enumerate
+            // CIM_SoftwareIdentity. Leave the previous value in place.
+            decInflight();
+        });
+
+    incInflight();
+    qumesh::wsman::getSetupAndConfiguration(m_client,
+        [this](qumesh::wsman::SetupAndConfigResult r) {
+            if (r.ok) {
+                m_provisioningState = r.provisioningState;
+                m_provisioningMode  = r.provisioningMode;
+                emit setupConfigChanged();
+            }
+            // Soft failure: pre-AMT-5 firmware doesn't expose the
+            // service. Leave provisioning labels at "Pre-provisioning".
+            decInflight();
+        });
+
+    incInflight();
+    qumesh::wsman::getRedirectionStatus(m_client,
+        [this](qumesh::wsman::RedirectionStatusResult r) {
+            if (r.ok) {
+                m_redirectionListenerEnabled = r.redirectionListenerEnabled;
+                m_solEnabled    = r.solEnabled;
+                m_iderEnabled   = r.iderEnabled;
+                m_kvmEnabled    = r.kvmEnabled;
+                m_kvmAvailable  = r.kvmAvailable;
+                emit redirectionStatusChanged();
+            } else if (!r.error.isEmpty()) {
+                setLastError(QStringLiteral("Redirection: %1").arg(r.error));
             }
             decInflight();
         });

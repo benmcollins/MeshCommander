@@ -73,6 +73,22 @@ constexpr char kKvmRedirectionSettingDataResource[] =
     "http://intel.com/wbem/wscim/1/ips-schema/1/"
     "IPS_KVMRedirectionSettingData";
 
+constexpr char kSetupAndConfigurationResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/"
+    "AMT_SetupAndConfigurationService";
+
+constexpr char kSoftwareIdentityResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/"
+    "CIM_SoftwareIdentity";
+
+constexpr char kRedirectionServiceResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/"
+    "AMT_RedirectionService";
+
+constexpr char kKvmRedirectionSapResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/"
+    "CIM_KVMRedirectionSAP";
+
 QString newMessageId()
 {
     return QStringLiteral("uuid:") + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -196,6 +212,15 @@ void getGeneralSettings(WsmanClient *client,
                 findScalar(body, QStringLiteral("NetworkInterfaceEnabled")) == QStringLiteral("true");
             r.rmcpPingResponseEnabled =
                 findScalar(body, QStringLiteral("RmcpPingResponseEnabled")) == QStringLiteral("true");
+            // `PowerSource`: 0 = plugged-in / AC, 1 = on battery. Older
+            // firmware omits the field entirely — leave it at -1 so the
+            // QML can render "(unknown)" instead of "Plugged-in".
+            const QString ps = findScalar(body, QStringLiteral("PowerSource"));
+            if (!ps.isEmpty()) {
+                bool conv = false;
+                const int v = ps.toInt(&conv);
+                if (conv) r.powerSource = v;
+            }
             r.ok = !r.hostName.isEmpty() || !r.domainName.isEmpty()
                    || !r.digestRealm.isEmpty();
             if (!r.ok)
@@ -378,6 +403,214 @@ void getBootCapabilities(WsmanClient *client,
             r.ok = true;
         },
         std::move(callback));
+}
+
+void getSetupAndConfiguration(WsmanClient *client,
+                              std::function<void(SetupAndConfigResult)> callback)
+{
+    const QByteArray env = buildGetEnvelope(
+        QString::fromLatin1(kSetupAndConfigurationResource), {},
+        client ? client->endpoint().toString() : QString(),
+        newMessageId());
+    runRequest<SetupAndConfigResult>(client, env, {},
+        [](const QByteArray &body, SetupAndConfigResult &r) {
+            const QString ps = findScalar(body, QStringLiteral("ProvisioningState"));
+            const QString pm = findScalar(body, QStringLiteral("ProvisioningMode"));
+            bool conv = false;
+            if (!ps.isEmpty()) {
+                const int v = ps.toInt(&conv);
+                if (conv) r.provisioningState = v;
+            }
+            conv = false;
+            if (!pm.isEmpty()) {
+                const int v = pm.toInt(&conv);
+                if (conv) r.provisioningMode = v;
+            }
+            r.ok = r.provisioningState >= 0;
+            if (!r.ok)
+                r.error = QStringLiteral(
+                    "AMT_SetupAndConfigurationService body had no ProvisioningState");
+        },
+        std::move(callback));
+}
+
+void getMeVersion(WsmanClient *client,
+                  std::function<void(MeVersionResult)> callback)
+{
+    // CIM_SoftwareIdentity is a collection — `Enumerate` + `Pull`,
+    // then pick the row whose InstanceID is "AMT". A `Get` with an
+    // InstanceID selector works on some firmware but not all; the
+    // legacy code enumerates the lot, so we mirror that for safety.
+    struct Acc { QString version; bool found = false; };
+    auto acc = std::make_shared<Acc>();
+    auto onDone = std::make_shared<std::function<void(QString)>>();
+    auto cb = std::make_shared<std::function<void(MeVersionResult)>>(std::move(callback));
+
+    *onDone = [acc, cb](QString error) {
+        MeVersionResult r;
+        r.versionString = acc->version;
+        r.ok = error.isEmpty() && acc->found;
+        if (!r.ok && error.isEmpty())
+            error = QStringLiteral(
+                "CIM_SoftwareIdentity enumeration had no InstanceID='AMT'");
+        r.error = std::move(error);
+        (*cb)(std::move(r));
+    };
+
+    auto pullStep = std::make_shared<std::function<void(const QString &)>>();
+    *pullStep = [client, acc, pullStep, onDone](const QString &context) mutable {
+        const QByteArray env = buildPullEnvelope(
+            QString::fromLatin1(kSoftwareIdentityResource),
+            context, 64, client->endpoint().toString(), newMessageId());
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
+            [reply, acc, pullStep, onDone]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->hasError();
+                const auto errString = reply->errorString();
+                reply->deleteLater();
+                if (err) { (*onDone)(errString); return; }
+                const SoapResponse soap = parseResponse(body);
+                if (soap.isFault()) { (*onDone)(soap.fault); return; }
+                const PullChunk chunk = parsePullResponse(soap.bodyXml);
+                for (const QByteArray &item : chunk.items) {
+                    const QString id = findScalar(item, QStringLiteral("InstanceID"));
+                    if (id == QStringLiteral("AMT")) {
+                        acc->version = findScalar(item, QStringLiteral("VersionString"));
+                        acc->found = true;
+                        break;
+                    }
+                }
+                if (acc->found || chunk.endOfSequence
+                    || chunk.enumerationContext.isEmpty()) {
+                    (*onDone)({});
+                    return;
+                }
+                (*pullStep)(chunk.enumerationContext);
+            });
+    };
+
+    if (client == nullptr) { (*onDone)(QStringLiteral("client is null")); return; }
+    const QByteArray env = buildEnumerateEnvelope(
+        QString::fromLatin1(kSoftwareIdentityResource),
+        client->endpoint().toString(), newMessageId());
+    WsmanReply *reply = client->sendEnvelope(env);
+    QObject::connect(reply, &WsmanReply::finished, client,
+        [reply, pullStep, onDone]() mutable {
+            const QByteArray body = reply->readAll();
+            const auto err = reply->hasError();
+            const auto errString = reply->errorString();
+            reply->deleteLater();
+            if (err) { (*onDone)(errString); return; }
+            const SoapResponse soap = parseResponse(body);
+            if (soap.isFault()) { (*onDone)(soap.fault); return; }
+            const QString ctx = parseEnumerateContext(soap.bodyXml);
+            if (ctx.isEmpty()) { (*onDone)({}); return; }
+            (*pullStep)(ctx);
+        });
+}
+
+void getRedirectionStatus(WsmanClient *client,
+                          std::function<void(RedirectionStatusResult)> callback)
+{
+    // Two independent Gets — AMT_RedirectionService (always present)
+    // and CIM_KVMRedirectionSAP (AMT > 5 only). Merge into a single
+    // result like `getOptInStatus` does for OptIn+KVMSettings.
+    struct Acc {
+        RedirectionStatusResult r;
+        bool gotRedir = false;
+        bool gotKvm   = false;
+        std::function<void(RedirectionStatusResult)> cb;
+        bool fired = false;
+        void maybeFire() {
+            if (fired) return;
+            if (!gotRedir || !gotKvm) return;
+            fired = true;
+            r.ok = r.error.isEmpty();
+            cb(std::move(r));
+        }
+    };
+    auto acc = std::make_shared<Acc>();
+    acc->cb = std::move(callback);
+
+    if (client == nullptr) {
+        acc->r.error = QStringLiteral("client is null");
+        acc->gotRedir = acc->gotKvm = true;
+        acc->maybeFire();
+        return;
+    }
+
+    // --- AMT_RedirectionService -----------------------------------
+    {
+        const QByteArray env = buildGetEnvelope(
+            QString::fromLatin1(kRedirectionServiceResource), {},
+            client->endpoint().toString(), newMessageId());
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
+            [reply, acc]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->hasError();
+                const auto errString = reply->errorString();
+                reply->deleteLater();
+                acc->gotRedir = true;
+                if (err) {
+                    if (acc->r.error.isEmpty()) acc->r.error = errString;
+                    acc->maybeFire();
+                    return;
+                }
+                const SoapResponse soap = parseResponse(body);
+                if (soap.isFault()) {
+                    if (acc->r.error.isEmpty()) acc->r.error = soap.fault;
+                    acc->maybeFire();
+                    return;
+                }
+                acc->r.redirectionListenerEnabled =
+                    findScalar(soap.bodyXml, QStringLiteral("ListenerEnabled"))
+                        == QStringLiteral("true");
+                bool conv = false;
+                const int state = findScalar(soap.bodyXml,
+                                              QStringLiteral("EnabledState")).toInt(&conv);
+                if (conv) {
+                    acc->r.solEnabled  = (state & 2) != 0;
+                    acc->r.iderEnabled = (state & 1) != 0;
+                }
+                acc->maybeFire();
+            });
+    }
+
+    // --- CIM_KVMRedirectionSAP ------------------------------------
+    {
+        const QByteArray env = buildGetEnvelope(
+            QString::fromLatin1(kKvmRedirectionSapResource), {},
+            client->endpoint().toString(), newMessageId());
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
+            [reply, acc]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->hasError();
+                reply->deleteLater();
+                acc->gotKvm = true;
+                if (err) {
+                    // Soft failure — AMT 5 and earlier don't expose
+                    // this class. Leave kvmAvailable=false and don't
+                    // surface as a top-level error.
+                    acc->maybeFire();
+                    return;
+                }
+                const SoapResponse soap = parseResponse(body);
+                if (soap.isFault()) {
+                    // Same soft-failure rationale.
+                    acc->maybeFire();
+                    return;
+                }
+                acc->r.kvmAvailable = true;
+                bool conv = false;
+                const int state = findScalar(soap.bodyXml,
+                                              QStringLiteral("EnabledState")).toInt(&conv);
+                if (conv) acc->r.kvmEnabled = (state == 2 || state == 6);
+                acc->maybeFire();
+            });
+    }
 }
 
 void getTimeSettings(WsmanClient *client,

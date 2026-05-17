@@ -74,6 +74,28 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(QString digestRealm READ digestRealm NOTIFY generalSettingsChanged)
     Q_PROPERTY(bool networkInterfaceEnabled READ networkInterfaceEnabled NOTIFY generalSettingsChanged)
     Q_PROPERTY(bool rmcpPingResponseEnabled READ rmcpPingResponseEnabled NOTIFY generalSettingsChanged)
+    /// -1 = unknown, 0 = plugged in / AC, 1 = on battery.
+    Q_PROPERTY(int powerSource READ powerSource NOTIFY generalSettingsChanged)
+    /// Localized label matching `powerSource` (so QML doesn't need its
+    /// own switch).
+    Q_PROPERTY(QString powerSourceLabel READ powerSourceLabel NOTIFY generalSettingsChanged)
+
+    // Intel ME firmware version (CIM_SoftwareIdentity[InstanceID='AMT']).
+    Q_PROPERTY(QString meVersionString READ meVersionString NOTIFY meVersionChanged)
+
+    // Provisioning state (AMT_SetupAndConfigurationService).
+    Q_PROPERTY(int provisioningState READ provisioningState NOTIFY setupConfigChanged)
+    Q_PROPERTY(int provisioningMode  READ provisioningMode  NOTIFY setupConfigChanged)
+    Q_PROPERTY(QString provisioningModeLabel READ provisioningModeLabel
+                   NOTIFY setupConfigChanged)
+
+    // Active features — derived from AMT_RedirectionService + CIM_KVMRedirectionSAP.
+    Q_PROPERTY(bool redirectionListenerEnabled READ redirectionListenerEnabled
+                   NOTIFY redirectionStatusChanged)
+    Q_PROPERTY(bool solEnabled  READ solEnabled  NOTIFY redirectionStatusChanged)
+    Q_PROPERTY(bool iderEnabled READ iderEnabled NOTIFY redirectionStatusChanged)
+    Q_PROPERTY(bool kvmEnabled  READ kvmEnabled  NOTIFY redirectionStatusChanged)
+    Q_PROPERTY(bool kvmAvailable READ kvmAvailable NOTIFY redirectionStatusChanged)
 
     // Computer system.
     Q_PROPERTY(QString systemName READ systemName NOTIFY computerSystemChanged)
@@ -162,6 +184,20 @@ public:
     [[nodiscard]] QString digestRealm() const { return m_digestRealm; }
     [[nodiscard]] bool networkInterfaceEnabled() const { return m_networkInterfaceEnabled; }
     [[nodiscard]] bool rmcpPingResponseEnabled() const { return m_rmcpPingResponseEnabled; }
+    [[nodiscard]] int     powerSource() const { return m_powerSource; }
+    [[nodiscard]] QString powerSourceLabel() const;
+
+    [[nodiscard]] QString meVersionString() const { return m_meVersionString; }
+
+    [[nodiscard]] int provisioningState() const { return m_provisioningState; }
+    [[nodiscard]] int provisioningMode()  const { return m_provisioningMode; }
+    [[nodiscard]] QString provisioningModeLabel() const;
+
+    [[nodiscard]] bool redirectionListenerEnabled() const { return m_redirectionListenerEnabled; }
+    [[nodiscard]] bool solEnabled()   const { return m_solEnabled; }
+    [[nodiscard]] bool iderEnabled()  const { return m_iderEnabled; }
+    [[nodiscard]] bool kvmEnabled()   const { return m_kvmEnabled; }
+    [[nodiscard]] bool kvmAvailable() const { return m_kvmAvailable; }
 
     [[nodiscard]] QString systemName() const { return m_systemName; }
     [[nodiscard]] QString systemElementName() const { return m_systemElementName; }
@@ -299,6 +335,9 @@ signals:
     void computerSystemChanged();
     void ethernetChanged();
     void timeChanged();
+    void meVersionChanged();
+    void setupConfigChanged();
+    void redirectionStatusChanged();
     void awaitingTrustChanged();
     void pendingCertChanged();
     void bootCapabilitiesChanged();
@@ -410,6 +449,18 @@ private:
     QString m_digestRealm;
     bool m_networkInterfaceEnabled = false;
     bool m_rmcpPingResponseEnabled = false;
+    int m_powerSource = -1;
+
+    QString m_meVersionString;
+
+    int m_provisioningState = -1;
+    int m_provisioningMode  = -1;
+
+    bool m_redirectionListenerEnabled = false;
+    bool m_solEnabled  = false;
+    bool m_iderEnabled = false;
+    bool m_kvmEnabled  = false;
+    bool m_kvmAvailable = false;
 
     QString m_systemName;
     QString m_systemElementName;
