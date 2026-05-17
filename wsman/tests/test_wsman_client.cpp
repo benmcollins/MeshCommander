@@ -27,6 +27,8 @@ private slots:
     void getMeVersionPicksAmtInstanceFromEnumeration();
     void getRedirectionStatusSplitsEnabledStateBitmask();
     void getHardwareInventoryStitchesAllSections();
+    void getAuditLogStateDecodesBitmask();
+    void enumerateAuditLogParsesBinaryRecords();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -275,6 +277,22 @@ constexpr char kBatteryPullResponse[] =
     "<c:DesignVoltage>11400</c:DesignVoltage>"
     "</c:CIM_Battery>"
     "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+constexpr char kAuditLogStateResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:a=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuditLog\">"
+    "<s:Header/><s:Body>"
+    "<a:AMT_AuditLog>"
+    // 0x05 = bit 0 (enabled) + bit 2 (almost full)
+    "<a:AuditState>5</a:AuditState>"
+    "<a:OverwritePolicy>1</a:OverwritePolicy>"
+    "<a:CurrentNumberOfRecords>42</a:CurrentNumberOfRecords>"
+    "<a:PercentageFree>15</a:PercentageFree>"
+    "<a:MaxAllowedAuditors>4</a:MaxAllowedAuditors>"
+    "<a:EnabledState>2</a:EnabledState>"
+    "</a:AMT_AuditLog>"
+    "</s:Body></s:Envelope>";
 
 constexpr char kCardPullResponse[] =
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
@@ -669,6 +687,133 @@ void TestWsmanClient::getHardwareInventoryStitchesAllSections()
     QCOMPARE(result.battery.designCapacityMwh, 45000LL);
     QCOMPARE(result.battery.designVoltageMv,   11400LL);
     QCOMPARE(result.battery.serialNumber,      QStringLiteral("BAT-001"));
+}
+
+void TestWsmanClient::getAuditLogStateDecodesBitmask()
+{
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &) {
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                QByteArray(kAuditLogStateResponse));
+                 });
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    AuditLogState s;
+    QEventLoop loop;
+    getAuditLogState(&client, [&](AuditLogState r) { s = r; loop.quit(); });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(s.ok, qPrintable(s.error));
+    QCOMPARE(s.auditState, 5);
+    QCOMPARE(s.currentNumberOfRecords, 42);
+    QCOMPARE(s.percentageFree, 15);
+}
+
+void TestWsmanClient::enumerateAuditLogParsesBinaryRecords()
+{
+    // Hand-build two records into one chunk and verify the parser
+    // walks the binary fields correctly. Record one is a Local-
+    // initiator event with an event ID that lives in the audit string
+    // table; record two is an HTTP-digest event with a user name.
+    auto makeBE16 = [](quint16 v) {
+        QByteArray r; r.resize(2);
+        r[0] = char(v >> 8); r[1] = char(v & 0xFF);
+        return r;
+    };
+    auto makeBE32 = [](quint32 v) {
+        QByteArray r; r.resize(4);
+        r[0] = char(v >> 24); r[1] = char((v >> 16) & 0xFF);
+        r[2] = char((v >>  8) & 0xFF); r[3] = char(v & 0xFF);
+        return r;
+    };
+
+    const quint16 auditApp = 20;   // Security Audit Log
+    const quint16 eventOk  = 3;    // 2003 → "Security Audit Log Enabled"
+    const quint32 t        = 1700000000u;
+
+    QByteArray rec1;
+    rec1 += makeBE16(auditApp);
+    rec1 += makeBE16(eventOk);
+    rec1.append(char(2));          // InitiatorType: Local
+    rec1 += makeBE32(t);
+    rec1.append(char(0));          // MCLocationType
+    rec1.append(char(9));          // netlen
+    rec1.append("192.0.2.1", 9);
+    rec1.append(char(0));          // exlen
+
+    QByteArray rec2;
+    rec2 += makeBE16(17);          // RCO
+    rec2 += makeBE16(0);           // → 1700 "Performed Power Up"
+    rec2.append(char(0));          // HTTP digest
+    rec2.append(char(5));          // userlen
+    rec2.append("admin", 5);
+    rec2 += makeBE32(t);
+    rec2.append(char(0));          // MCLocationType
+    rec2.append(char(0));          // netlen
+    rec2.append(char(0));          // exlen
+
+    const QString b64a = QString::fromLatin1(rec1.toBase64());
+    const QString b64b = QString::fromLatin1(rec2.toBase64());
+
+    const QString response = QStringLiteral(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:g=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuditLog\">"
+        "<s:Header/><s:Body>"
+        "<g:ReadRecords_OUTPUT>"
+        "<g:TotalRecordCount>2</g:TotalRecordCount>"
+        "<g:RecordsReturned>2</g:RecordsReturned>"
+        "<g:EventRecords>%1</g:EventRecords>"
+        "<g:EventRecords>%2</g:EventRecords>"
+        "<g:ReturnValue>0</g:ReturnValue>"
+        "</g:ReadRecords_OUTPUT>"
+        "</s:Body></s:Envelope>").arg(b64a, b64b);
+    const QByteArray responseBytes = response.toUtf8();
+
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &) {
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                responseBytes);
+                 });
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    AuditLogResult res;
+    QEventLoop loop;
+    enumerateAuditLog(&client, [&](AuditLogResult r) { res = r; loop.quit(); });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(res.ok, qPrintable(res.error));
+    QCOMPARE(res.entries.size(), 2);
+
+    QCOMPARE(res.entries[0].auditAppId, 20);
+    QCOMPARE(res.entries[0].eventId,    3);
+    QCOMPARE(res.entries[0].auditAppLabel, QStringLiteral("Security Audit Log"));
+    QCOMPARE(res.entries[0].eventLabel,    QStringLiteral("Security Audit Log Enabled"));
+    QCOMPARE(res.entries[0].initiator,     QStringLiteral("Local"));
+    QCOMPARE(res.entries[0].unixSeconds,   1700000000LL);
+    QCOMPARE(res.entries[0].netAddress,    QStringLiteral("192.0.2.1"));
+
+    QCOMPARE(res.entries[1].auditAppId, 17);
+    QCOMPARE(res.entries[1].eventLabel, QStringLiteral("Performed Power Up"));
+    QCOMPARE(res.entries[1].initiator,  QStringLiteral("admin"));
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

@@ -9,6 +9,7 @@
 
 #include <QObject>
 #include <QUuid>
+#include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
 #include <memory>
@@ -109,6 +110,9 @@ constexpr char kPhysicalPackageResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_PhysicalPackage";
 constexpr char kBatteryResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Battery";
+
+constexpr char kAuditLogResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuditLog";
 
 QString newMessageId()
 {
@@ -1520,6 +1524,325 @@ void enumerateAll(WsmanClient *client, const char *resourceUri,
 }
 
 } // namespace
+
+namespace {
+
+// AMT audit-string table, ported from `legacy/source/Commander.htm`
+// `_AmtAuditStringTable`. Lookup keys: the bare AuditAppID (gives the
+// "audit application" label) and `AuditAppID * 100 + EventID` (gives
+// the specific event label).
+QString auditLookup(int key)
+{
+    switch (key) {
+    // Audit apps.
+    case 16: return QStringLiteral("Security Admin");
+    case 17: return QStringLiteral("RCO");
+    case 18: return QStringLiteral("Redirection Manager");
+    case 19: return QStringLiteral("Firmware Update Manager");
+    case 20: return QStringLiteral("Security Audit Log");
+    case 21: return QStringLiteral("Network Time");
+    case 22: return QStringLiteral("Network Administration");
+    case 23: return QStringLiteral("Storage Administration");
+    case 24: return QStringLiteral("Event Manager");
+    case 25: return QStringLiteral("Circuit Breaker Manager");
+    case 26: return QStringLiteral("Agent Presence Manager");
+    case 27: return QStringLiteral("Wireless Configuration");
+    case 28: return QStringLiteral("EAC");
+    case 29: return QStringLiteral("KVM");
+    case 30: return QStringLiteral("User Opt-In Events");
+    case 32: return QStringLiteral("Screen Blanking");
+    case 33: return QStringLiteral("Watchdog Events");
+    // Events (AuditAppID * 100 + EventID).
+    case 1600: return QStringLiteral("Provisioning Started");
+    case 1601: return QStringLiteral("Provisioning Completed");
+    case 1602: return QStringLiteral("ACL Entry Added");
+    case 1603: return QStringLiteral("ACL Entry Modified");
+    case 1604: return QStringLiteral("ACL Entry Removed");
+    case 1605: return QStringLiteral("ACL Access with Invalid Credentials");
+    case 1606: return QStringLiteral("ACL Entry State");
+    case 1607: return QStringLiteral("TLS State Changed");
+    case 1608: return QStringLiteral("TLS Server Certificate Set");
+    case 1609: return QStringLiteral("TLS Server Certificate Removed");
+    case 1610: return QStringLiteral("TLS Trusted Root Certificate Added");
+    case 1611: return QStringLiteral("TLS Trusted Root Certificate Removed");
+    case 1612: return QStringLiteral("TLS Preshared Key Set");
+    case 1613: return QStringLiteral("Kerberos Settings Modified");
+    case 1614: return QStringLiteral("Kerberos Main Key Modified");
+    case 1615: return QStringLiteral("Flash Wear-out Counters Reset");
+    case 1616: return QStringLiteral("Power Package Modified");
+    case 1617: return QStringLiteral("Set Realm Authentication Mode");
+    case 1618: return QStringLiteral("Upgrade Client to Admin Control Mode");
+    case 1619: return QStringLiteral("Unprovisioning Started");
+    case 1700: return QStringLiteral("Performed Power Up");
+    case 1701: return QStringLiteral("Performed Power Down");
+    case 1702: return QStringLiteral("Performed Power Cycle");
+    case 1703: return QStringLiteral("Performed Reset");
+    case 1704: return QStringLiteral("Set Boot Options");
+    case 1705: return QStringLiteral("Remote graceful power down initiated");
+    case 1706: return QStringLiteral("Remote graceful reset initiated");
+    case 1707: return QStringLiteral("Remote Standby initiated");
+    case 1708: return QStringLiteral("Remote Hibernate initiated");
+    case 1709: return QStringLiteral("Remote NMI initiated");
+    case 1800: return QStringLiteral("IDER Session Opened");
+    case 1801: return QStringLiteral("IDER Session Closed");
+    case 1802: return QStringLiteral("IDER Enabled");
+    case 1803: return QStringLiteral("IDER Disabled");
+    case 1804: return QStringLiteral("SoL Session Opened");
+    case 1805: return QStringLiteral("SoL Session Closed");
+    case 1806: return QStringLiteral("SoL Enabled");
+    case 1807: return QStringLiteral("SoL Disabled");
+    case 1808: return QStringLiteral("KVM Session Started");
+    case 1809: return QStringLiteral("KVM Session Ended");
+    case 1810: return QStringLiteral("KVM Enabled");
+    case 1811: return QStringLiteral("KVM Disabled");
+    case 1812: return QStringLiteral("VNC Password Failed 3 Times");
+    case 1900: return QStringLiteral("Firmware Updated");
+    case 1901: return QStringLiteral("Firmware Update Failed");
+    case 2000: return QStringLiteral("Security Audit Log Cleared");
+    case 2001: return QStringLiteral("Security Audit Policy Modified");
+    case 2002: return QStringLiteral("Security Audit Log Disabled");
+    case 2003: return QStringLiteral("Security Audit Log Enabled");
+    case 2004: return QStringLiteral("Security Audit Log Exported");
+    case 2005: return QStringLiteral("Security Audit Log Recovered");
+    case 2100: return QStringLiteral("Intel® ME Time Set");
+    case 2200: return QStringLiteral("TCPIP Parameters Set");
+    case 2201: return QStringLiteral("Host Name Set");
+    case 2202: return QStringLiteral("Domain Name Set");
+    case 2203: return QStringLiteral("VLAN Parameters Set");
+    case 2204: return QStringLiteral("Link Policy Set");
+    case 2205: return QStringLiteral("IPv6 Parameters Set");
+    case 2300: return QStringLiteral("Global Storage Attributes Set");
+    case 2301: return QStringLiteral("Storage EACL Modified");
+    case 2302: return QStringLiteral("Storage FPACL Modified");
+    case 2303: return QStringLiteral("Storage Write Operation");
+    case 2400: return QStringLiteral("Alert Subscribed");
+    case 2401: return QStringLiteral("Alert Unsubscribed");
+    case 2402: return QStringLiteral("Event Log Cleared");
+    case 2403: return QStringLiteral("Event Log Frozen");
+    case 2500: return QStringLiteral("CB Filter Added");
+    case 2501: return QStringLiteral("CB Filter Removed");
+    case 2502: return QStringLiteral("CB Policy Added");
+    case 2503: return QStringLiteral("CB Policy Removed");
+    case 2504: return QStringLiteral("CB Default Policy Set");
+    case 2505: return QStringLiteral("CB Heuristics Option Set");
+    case 2506: return QStringLiteral("CB Heuristics State Cleared");
+    case 2600: return QStringLiteral("Agent Watchdog Added");
+    case 2601: return QStringLiteral("Agent Watchdog Removed");
+    case 2602: return QStringLiteral("Agent Watchdog Action Set");
+    case 2700: return QStringLiteral("Wireless Profile Added");
+    case 2701: return QStringLiteral("Wireless Profile Removed");
+    case 2702: return QStringLiteral("Wireless Profile Updated");
+    case 2800: return QStringLiteral("EAC Posture Signer Set");
+    case 2801: return QStringLiteral("EAC Enabled");
+    case 2802: return QStringLiteral("EAC Disabled");
+    case 2803: return QStringLiteral("EAC Posture State");
+    case 2804: return QStringLiteral("EAC Set Options");
+    case 2900: return QStringLiteral("KVM Opt-in Enabled");
+    case 2901: return QStringLiteral("KVM Opt-in Disabled");
+    case 2902: return QStringLiteral("KVM Password Changed");
+    case 2903: return QStringLiteral("KVM Consent Succeeded");
+    case 2904: return QStringLiteral("KVM Consent Failed");
+    case 3000: return QStringLiteral("Opt-In Policy Change");
+    case 3001: return QStringLiteral("Send Consent Code Event");
+    case 3002: return QStringLiteral("Start Opt-In Blocked Event");
+    case 3301: return QStringLiteral("User has modified the Watchdog Action settings");
+    default: return {};
+    }
+}
+
+quint16 readBeU16(const QByteArray &b, int off)
+{
+    if (off + 1 >= b.size()) return 0;
+    return (quint16(quint8(b[off])) << 8) | quint8(b[off + 1]);
+}
+
+quint32 readBeU32(const QByteArray &b, int off)
+{
+    if (off + 3 >= b.size()) return 0;
+    return (quint32(quint8(b[off]))     << 24)
+         | (quint32(quint8(b[off + 1])) << 16)
+         | (quint32(quint8(b[off + 2])) <<  8)
+         |  quint32(quint8(b[off + 3]));
+}
+
+bool parseAuditRecord(const QByteArray &raw, AuditLogEntry &out)
+{
+    if (raw.size() < 5) return false;
+    out.auditAppId   = readBeU16(raw, 0);
+    out.eventId      = readBeU16(raw, 2);
+    out.initiatorType = quint8(raw[4]);
+    out.auditAppLabel = auditLookup(out.auditAppId);
+    out.eventLabel    = auditLookup(out.auditAppId * 100 + out.eventId);
+    if (out.eventLabel.isEmpty())
+        out.eventLabel = QStringLiteral("#%1").arg(out.eventId);
+
+    int ptr = 5;
+    switch (out.initiatorType) {
+    case 0: { // HTTP digest
+        if (ptr >= raw.size()) return false;
+        const int userlen = quint8(raw[ptr++]);
+        if (ptr + userlen > raw.size()) return false;
+        out.initiator = QString::fromUtf8(raw.constData() + ptr, userlen);
+        ptr += userlen;
+        break;
+    }
+    case 1: { // Kerberos — skip the 4-byte domain id, then SID
+        if (ptr + 5 > raw.size()) return false;
+        ptr += 4;
+        const int userlen = quint8(raw[ptr++]);
+        if (ptr + userlen > raw.size()) return false;
+        // SID is a packed binary blob; for now stringify as hex.
+        out.initiator = QString::fromLatin1(
+            QByteArray(raw.constData() + ptr, userlen).toHex());
+        ptr += userlen;
+        break;
+    }
+    case 2: out.initiator = QStringLiteral("Local"); break;
+    case 3: out.initiator = QStringLiteral("KVM Default Port"); break;
+    default: out.initiator = QStringLiteral("Unknown initiator %1")
+                                  .arg(out.initiatorType);
+    }
+
+    if (ptr + 4 > raw.size()) return true;
+    out.unixSeconds = readBeU32(raw, ptr);
+    ptr += 4;
+
+    if (ptr >= raw.size()) return true;
+    out.mcLocationType = quint8(raw[ptr++]);
+    if (ptr >= raw.size()) return true;
+    const int netlen = quint8(raw[ptr++]);
+    if (ptr + netlen > raw.size()) return true;
+    out.netAddress = QString::fromUtf8(raw.constData() + ptr, netlen);
+    ptr += netlen;
+
+    if (ptr >= raw.size()) return true;
+    const int exlen = quint8(raw[ptr++]);
+    if (ptr + exlen > raw.size()) return true;
+    out.ex = QByteArray(raw.constData() + ptr, exlen);
+    return true;
+}
+
+} // namespace
+
+void getAuditLogState(WsmanClient *client,
+                      std::function<void(AuditLogState)> callback)
+{
+    const QByteArray env = buildGetEnvelope(
+        QString::fromLatin1(kAuditLogResource), {},
+        client ? client->endpoint().toString() : QString(),
+        newMessageId());
+    runRequest<AuditLogState>(client, env, {},
+        [](const QByteArray &body, AuditLogState &r) {
+            const auto pickInt = [&](const QString &name, int &dst) {
+                const QString s = findScalar(body, name);
+                if (s.isEmpty()) return;
+                bool conv = false;
+                const int v = s.toInt(&conv);
+                if (conv) dst = v;
+            };
+            pickInt(QStringLiteral("AuditState"),             r.auditState);
+            pickInt(QStringLiteral("OverwritePolicy"),        r.overwritePolicy);
+            pickInt(QStringLiteral("CurrentNumberOfRecords"), r.currentNumberOfRecords);
+            pickInt(QStringLiteral("PercentageFree"),         r.percentageFree);
+            pickInt(QStringLiteral("MaxAllowedAuditors"),     r.maxAllowedAuditors);
+            pickInt(QStringLiteral("EnabledState"),           r.enabledState);
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void enumerateAuditLog(WsmanClient *client,
+                       std::function<void(AuditLogResult)> callback)
+{
+    struct Acc {
+        QList<AuditLogEntry> entries;
+        int totalReported = -1;
+        std::function<void(AuditLogResult)> cb;
+        bool fired = false;
+    };
+    auto acc = std::make_shared<Acc>();
+    acc->cb = std::move(callback);
+
+    if (client == nullptr) {
+        AuditLogResult r;
+        r.error = QStringLiteral("client is null");
+        acc->cb(std::move(r));
+        return;
+    }
+
+    auto finish = [acc](QString error) {
+        if (acc->fired) return;
+        acc->fired = true;
+        AuditLogResult r;
+        r.ok = error.isEmpty();
+        r.error = std::move(error);
+        r.entries = std::move(acc->entries);
+        acc->cb(std::move(r));
+    };
+
+    auto pullStep = std::make_shared<std::function<void(int)>>();
+    *pullStep = [client, acc, pullStep, finish](int startIndex) mutable {
+        QHash<QString, QString> params;
+        params.insert(QStringLiteral("StartIndex"),
+                      QString::number(startIndex));
+        const QByteArray env = buildInvokeEnvelope(
+            QString::fromLatin1(kAuditLogResource),
+            QStringLiteral("ReadRecords"), {}, params,
+            client->endpoint().toString(), newMessageId());
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
+            [reply, acc, pullStep, finish, startIndex]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->hasError();
+                const auto errString = reply->errorString();
+                reply->deleteLater();
+                if (err) { finish(errString); return; }
+                const SoapResponse soap = parseResponse(body);
+                if (soap.isFault()) { finish(soap.fault); return; }
+
+                bool conv = false;
+                const int total = findScalar(soap.bodyXml,
+                                              QStringLiteral("TotalRecordCount")).toInt(&conv);
+                if (conv) acc->totalReported = total;
+
+                // EventRecords come back as repeated base64-encoded
+                // <g:EventRecords>...</g:EventRecords> children.
+                // Walk the body XML element-by-element to pick them up
+                // by local name (any namespace) — substring scanning
+                // gets fooled by the matching close-tag suffix.
+                QXmlStreamReader reader(soap.bodyXml);
+                while (!reader.atEnd()) {
+                    reader.readNext();
+                    if (reader.isStartElement()
+                        && reader.name() == QStringLiteral("EventRecords")) {
+                        QByteArray b64 = reader.readElementText().toLatin1();
+                        b64.replace('\n', "").replace('\r', "").replace(' ', "");
+                        const QByteArray raw = QByteArray::fromBase64(b64);
+                        if (!raw.isEmpty()) {
+                            AuditLogEntry e;
+                            if (parseAuditRecord(raw, e)) acc->entries.append(e);
+                        }
+                    }
+                }
+
+                // Continue paging until we've collected every record
+                // the firmware claims exist. Guard against infinite
+                // loops if the server reports a larger total than it
+                // actually returns.
+                const int next = static_cast<int>(acc->entries.size()) + 1;
+                const bool more = acc->totalReported >= next - 1
+                                && acc->totalReported > 0
+                                && acc->entries.size() < acc->totalReported;
+                if (more && next > startIndex) {
+                    (*pullStep)(next);
+                } else {
+                    finish({});
+                }
+            });
+    };
+
+    (*pullStep)(1);
+}
 
 void getHardwareInventory(WsmanClient *client,
                           std::function<void(HardwareInventoryResult)> callback)

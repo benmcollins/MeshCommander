@@ -155,6 +155,7 @@ void MachineDetailsController::runPendingRefreshes()
     if (p & PendingEventLog)     refreshEventLog();
     if (p & PendingUserAccounts) refreshUserAccounts();
     if (p & PendingHardware)     refreshHardware();
+    if (p & PendingAuditLog)     refreshAuditLog();
 }
 
 void MachineDetailsController::setHost(const QString &v)
@@ -712,6 +713,65 @@ void MachineDetailsController::refreshHardware()
 
             m_hardwareInventory = std::move(inv);
             emit hardwareChanged();
+        });
+}
+
+void MachineDetailsController::refreshAuditLog()
+{
+    if (deferIfSshConnecting(PendingAuditLog)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    // Kick the state read and the records walk in parallel; QML only
+    // re-renders once both have completed by binding to the single
+    // `auditLogChanged` signal that each emits.
+    incInflight();
+    qumesh::wsman::getAuditLogState(m_client,
+        [this](qumesh::wsman::AuditLogState s) {
+            decInflight();
+            QVariantMap st;
+            st.insert(QStringLiteral("ok"), s.ok);
+            st.insert(QStringLiteral("auditState"),             s.auditState);
+            st.insert(QStringLiteral("overwritePolicy"),        s.overwritePolicy);
+            st.insert(QStringLiteral("currentNumberOfRecords"), s.currentNumberOfRecords);
+            st.insert(QStringLiteral("percentageFree"),         s.percentageFree);
+            st.insert(QStringLiteral("maxAllowedAuditors"),     s.maxAllowedAuditors);
+            st.insert(QStringLiteral("enabledState"),           s.enabledState);
+            // Decoded bits — bit 0 enabled, bit 1 locked, bit 2 almost
+            // full, bit 3 full, bit 4 no signing key.
+            st.insert(QStringLiteral("enabled"),     (s.auditState & 0x01) != 0);
+            st.insert(QStringLiteral("locked"),      (s.auditState & 0x02) != 0);
+            st.insert(QStringLiteral("almostFull"),  (s.auditState & 0x04) != 0);
+            st.insert(QStringLiteral("full"),        (s.auditState & 0x08) != 0);
+            st.insert(QStringLiteral("noSigningKey"), (s.auditState & 0x10) != 0);
+            m_auditLogState = std::move(st);
+            emit auditLogChanged();
+        });
+
+    incInflight();
+    qumesh::wsman::enumerateAuditLog(m_client,
+        [this](qumesh::wsman::AuditLogResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("Audit log: %1").arg(r.error));
+            QVariantList list;
+            list.reserve(r.entries.size());
+            for (const auto &e : r.entries) {
+                QVariantMap m;
+                m.insert(QStringLiteral("auditAppId"),    e.auditAppId);
+                m.insert(QStringLiteral("eventId"),       e.eventId);
+                m.insert(QStringLiteral("auditAppLabel"), e.auditAppLabel);
+                m.insert(QStringLiteral("eventLabel"),    e.eventLabel);
+                m.insert(QStringLiteral("initiatorType"), e.initiatorType);
+                m.insert(QStringLiteral("initiator"),     e.initiator);
+                m.insert(QStringLiteral("unixSeconds"),   qlonglong(e.unixSeconds));
+                m.insert(QStringLiteral("netAddress"),    e.netAddress);
+                list.append(m);
+            }
+            m_auditLogEntries = std::move(list);
+            emit auditLogChanged();
         });
 }
 
