@@ -75,6 +75,7 @@ private slots:
     void buildVersionAndChoice();
     void parseSecurityTypes();
     void parseServerInitWithName();
+    void buildSetPixelFormatPinsRgb565();
     void framebufferUpdateRequestLayout();
     void keyAndPointerEventLayouts();
     void parseFrameUpdateAndRectHeader();
@@ -138,6 +139,36 @@ void TestKvmCodec::parseServerInitWithName()
     QCOMPARE(info.width, quint16(1024));
     QCOMPARE(info.height, quint16(768));
     QCOMPARE(info.name, QStringLiteral("AMTP"));
+}
+
+void TestKvmCodec::buildSetPixelFormatPinsRgb565()
+{
+    // Locking the exact 20-byte wire matters: a single bad byte would
+    // break KVM on every machine. The decoder unconditionally treats
+    // pixels as little-endian RGB565, so the format we send must match
+    // that assumption exactly.
+    const QByteArray got = buildSetPixelFormat();
+    QCOMPARE(got.size(), 20);
+
+    QByteArray want;
+    want.append(char(0x00));      // msg type SetPixelFormat
+    want.append(char(0x00));      // padding
+    want.append(char(0x00));
+    want.append(char(0x00));
+    want.append(char(16));        // bpp
+    want.append(char(16));        // depth
+    want.append(char(0));         // big-endian = false (little-endian)
+    want.append(char(1));         // true-colour = true
+    want.append(be16(31));        // red-max
+    want.append(be16(63));        // green-max
+    want.append(be16(31));        // blue-max
+    want.append(char(11));        // red-shift
+    want.append(char(5));         // green-shift
+    want.append(char(0));         // blue-shift
+    want.append(char(0x00));      // padding
+    want.append(char(0x00));
+    want.append(char(0x00));
+    QCOMPARE(got, want);
 }
 
 void TestKvmCodec::framebufferUpdateRequestLayout()

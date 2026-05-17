@@ -265,9 +265,13 @@ void TestKvmSession::handshakeThroughFrameLoopWithRawTile()
     QCOMPARE(resizedSpy.first().at(0).toInt(), 320);
     QCOMPARE(resizedSpy.first().at(1).toInt(), 240);
 
-    // Wait for SetEncodings + FramebufferUpdateRequest to arrive.
-    QVERIFY(waitFor(2000, [&]() { return server.received.size() >= 14; }));
-    QCOMPARE(static_cast<unsigned char>(server.received.at(0)), quint8(MsgSetEncodings));
+    // Wait for SetPixelFormat (20 bytes) + SetEncodings (14+ bytes) to
+    // arrive. SetPixelFormat goes first to pin RGB565 before any
+    // framebuffer traffic.
+    QVERIFY(waitFor(2000, [&]() { return server.received.size() >= 34; }));
+    QCOMPARE(static_cast<unsigned char>(server.received.at(0)), quint8(MsgSetPixelFormat));
+    QCOMPARE(server.received.mid(0, 20), buildSetPixelFormat());
+    QCOMPARE(static_cast<unsigned char>(server.received.at(20)), quint8(MsgSetEncodings));
 
     // Send a single 4x4 red rect.
     server.m_socket->write(makeRawRectUpdate(0, 0, 4, 4, 0xF800));

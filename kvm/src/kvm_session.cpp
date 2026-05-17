@@ -109,6 +109,12 @@ bool KvmSession::stepHandshake()
         m_width = info.width;
         m_height = info.height;
         emit desktopResized(m_width, m_height);
+        // Pin the wire to little-endian RGB565 before anything else.
+        // The decoder assumes that format unconditionally; without this
+        // pin, firmwares whose ServerInit advertised a different default
+        // (e.g. 32-bit BGRA) keep sending pixels in that format and the
+        // framebuffer renders black or scrambled.
+        writeFrame(buildSetPixelFormat());
         writeFrame(buildSetEncodings());
         // Match the legacy default: tell AMT to disable zlib on RLE
         // blocks so every block uses the uncompressed-marker path. The
