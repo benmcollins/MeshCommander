@@ -40,6 +40,7 @@ private slots:
     void getPowerSchemesEnumeratesAndDetectsCurrentViaElementSettingData();
     void getAgentPresenceDecodesBase64DeviceIdAndStateEnums();
     void getEventSubscriptionsJoinsFiltersListenersAndSubscriptions();
+    void getWakeAlarmsExtractsNestedStartTimeAndInterval();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -2200,6 +2201,92 @@ void TestWsmanClient::getEventSubscriptionsJoinsFiltersListenersAndSubscriptions
              QStringLiteral("Intel(r) AMT:All Events"));
     QCOMPARE(result.subscriptions.first().listenerName,
              QStringLiteral("Subscription 1"));
+}
+
+void TestWsmanClient::getWakeAlarmsExtractsNestedStartTimeAndInterval()
+{
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     const bool isPull = body.contains(":Pull")
+                                       || body.contains("<wsen:Pull");
+                     QByteArray response;
+                     if (!isPull) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:EnumerateResponse>"
+                             "<wsen:EnumerationContext>ctx</wsen:EnumerationContext>"
+                             "</wsen:EnumerateResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:p=\"http://schemas.dmtf.org/wbem/wscim/1/common\""
+                             " xmlns:c=\"http://intel.com/wbem/wscim/1/ips-schema/1/IPS_AlarmClockOccurrence\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:IPS_AlarmClockOccurrence>"
+                             "<c:InstanceID>Intel(r) AMT:Alarm 1</c:InstanceID>"
+                             "<c:ElementName>Patch Tuesday Wake</c:ElementName>"
+                             "<c:StartTime><p:Datetime>2026-06-09T03:00:00Z</p:Datetime></c:StartTime>"
+                             "<c:Interval><p:Interval>P7DT0H0M</p:Interval></c:Interval>"
+                             "<c:DeleteOnCompletion>false</c:DeleteOnCompletion>"
+                             "</c:IPS_AlarmClockOccurrence>"
+                             "<c:IPS_AlarmClockOccurrence>"
+                             "<c:InstanceID>Intel(r) AMT:Alarm 2</c:InstanceID>"
+                             "<c:ElementName>One-shot Imaging</c:ElementName>"
+                             "<c:StartTime><p:Datetime>2026-05-20T22:30:00Z</p:Datetime></c:StartTime>"
+                             "<c:DeleteOnCompletion>true</c:DeleteOnCompletion>"
+                             "</c:IPS_AlarmClockOccurrence>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    WakeAlarmsResult result;
+    QEventLoop loop;
+    getWakeAlarms(&client, [&](WakeAlarmsResult r) {
+        result = r;
+        loop.quit();
+    });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.alarms.size(), 2);
+
+    const WakeAlarm &a = result.alarms.first();
+    QCOMPARE(a.instanceId,   QStringLiteral("Intel(r) AMT:Alarm 1"));
+    QCOMPARE(a.elementName,  QStringLiteral("Patch Tuesday Wake"));
+    QCOMPARE(a.startTimeIso, QStringLiteral("2026-06-09T03:00:00Z"));
+    QCOMPARE(a.intervalIso,  QStringLiteral("P7DT0H0M"));
+    QCOMPARE(a.deleteOnCompletion, false);
+
+    const WakeAlarm &b = result.alarms.at(1);
+    QCOMPARE(b.elementName,  QStringLiteral("One-shot Imaging"));
+    QCOMPARE(b.startTimeIso, QStringLiteral("2026-05-20T22:30:00Z"));
+    QVERIFY(b.intervalIso.isEmpty());
+    QCOMPARE(b.deleteOnCompletion, true);
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

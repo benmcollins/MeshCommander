@@ -448,6 +448,32 @@ void getEventSubscriptions(WsmanClient *client,
 /// Render a `CIM_ListenerDestination.DeliveryMode` enum into a label.
 [[nodiscard]] QString listenerDeliveryModeLabel(int code);
 
+/// One `IPS_AlarmClockOccurrence` row — a scheduled wake-on-alarm.
+/// The `startTime` / `interval` are arrives wrapped in nested
+/// `<Datetime>` / `<Interval>` elements and are surfaced here as raw
+/// ISO-8601 strings (the controller pre-formats them for display).
+struct WakeAlarm
+{
+    QString instanceId;
+    QString elementName;
+    QString startTimeIso;        ///< ISO-8601 timestamp.
+    QString intervalIso;         ///< ISO-8601 duration (`PnDTnHnM`); empty if non-recurring.
+    bool deleteOnCompletion = false;
+};
+
+/// Snapshot of all `IPS_AlarmClockOccurrence` rows. See #161 phase A.
+struct WakeAlarmsResult
+{
+    bool ok = false;
+    QString error;
+    QList<WakeAlarm> alarms;
+};
+
+/// Enumerate `IPS_AlarmClockOccurrence`. Older firmware (pre-AMT-8)
+/// doesn't expose the class and the result will be empty.
+void getWakeAlarms(WsmanClient *client,
+                   std::function<void(WakeAlarmsResult)> callback);
+
 /// Read `AMT_BootCapabilities` — which boot-source-override flags the
 /// firmware will accept. Drives the gating of menu entries
 /// (Secure Erase / Platform Erase / HTTPS Boot etc.).
