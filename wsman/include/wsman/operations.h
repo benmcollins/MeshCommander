@@ -510,6 +510,68 @@ struct AuditLogResult
 void getAuditLogState(WsmanClient *client,
                       std::function<void(AuditLogState)> callback);
 
+/// One installed certificate, decoded from `AMT_PublicKeyCertificate`.
+/// Subject / Issuer arrive as RFC2253 DN strings — already broken down
+/// into common slots by `splitDn`.
+struct DeviceCertificate
+{
+    QString instanceId;
+    /// Common Name; first label of the DN. Empty if missing.
+    QString subjectCn;
+    QString issuerCn;
+    QString subjectRaw;          ///< Original Subject DN string.
+    QString issuerRaw;           ///< Original Issuer DN string.
+    bool trustedRoot = false;
+    /// Decoded DER size in bytes — handy for the UI.
+    int derSizeBytes = 0;
+    QString x509Base64;          ///< Raw `X509Certificate` field, base64.
+};
+
+/// One installed key pair, from `AMT_PublicPrivateKeyPair`. We only
+/// surface enough to detect orphans (pairs with no matching cert).
+struct DeviceKeyPair
+{
+    QString instanceId;
+    int derSizeBytes = 0;        ///< For the orphan list.
+};
+
+/// One row of `AMT_TLSSettingData`. AMT exposes two: the LMS (local)
+/// instance and the remote-port (16993) instance.
+struct TlsSettingsRow
+{
+    QString instanceId;
+    bool enabled = false;
+    bool mutualAuthentication = false;
+    bool acceptNonSecureConnections = false;
+    QStringList trustedCn;
+};
+
+/// Aggregate result of `getDeviceCertStore`.
+struct DeviceCertResult
+{
+    bool ok = false;
+    QString error;
+    QList<DeviceCertificate> certificates;
+    QList<DeviceKeyPair>     keyPairs;
+    QList<TlsSettingsRow>    tlsSettings;
+    /// InstanceIDs the `AMT_TLSCredentialContext` enumeration marks
+    /// as the currently active TLS endpoint cert. Empty when no cert
+    /// is bound (firmware on default self-signed certs).
+    QStringList activeCertInstanceIds;
+};
+
+/// Split an RFC2253 DN like "CN=Intel(R) AMT, O=Intel" into a
+/// QHash<key, value> map. Whitespace around values is trimmed. The
+/// legacy `parseCertName` mirror.
+[[nodiscard]] QHash<QString, QString> splitDn(const QString &dn);
+
+/// Enumerate `AMT_PublicKeyCertificate`, `AMT_PublicPrivateKeyPair`,
+/// `AMT_TLSSettingData`, and `AMT_TLSCredentialContext` in parallel
+/// and stitch into a single result. Tolerates per-class faults — a
+/// faulted enumeration just leaves its list empty.
+void getDeviceCertStore(WsmanClient *client,
+                        std::function<void(DeviceCertResult)> callback);
+
 /// Walk every page of `AMT_AuditLog.ReadRecords` and return the parsed
 /// records. Pages are 16-record chunks per the AMT contract. Faulted
 /// pages short-circuit and return the entries collected so far with
