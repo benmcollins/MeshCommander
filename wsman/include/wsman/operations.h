@@ -125,14 +125,43 @@ struct SetupAndConfigResult
     int provisioningMode  = -1;
 };
 
-/// `CIM_SoftwareIdentity[InstanceID='AMT']` — the Intel ME firmware
-/// version. Distinct from the AMT software version returned by
-/// `Identify` (which is the wire-protocol version).
+/// `CIM_SoftwareIdentity` snapshot — the AMT firmware exposes several
+/// rows in this collection, each keyed by an `InstanceID` string and
+/// carrying a `VersionString`. The names of the well-known rows are
+/// firmware-version-dependent; the parser normalises them by case-
+/// insensitive substring match. `versionString` retains the AMT main
+/// version for backwards compatibility with existing callers.
 struct MeVersionResult
 {
     bool ok = false;
     QString error;
+
+    /// `InstanceID == "AMT"` — main AMT firmware version
+    /// (e.g. "16.1.25.2122"). Distinct from the WSMAN protocol version
+    /// returned by `Identify`.
     QString versionString;
+
+    /// `InstanceID == "AMT FW Recovery Version"` (or similar) — the
+    /// recovery image version, ships separately from the main FW.
+    QString recoveryVersion;
+
+    /// `InstanceID == "Build Number"`.
+    QString buildNumber;
+
+    /// `InstanceID == "Sku"` — typically a numeric bitmask string;
+    /// the controller decodes it into "Full AMT" vs "ISM" for display.
+    QString sku;
+
+    /// `InstanceID == "VendorID"`.
+    QString vendorId;
+
+    /// `InstanceID == "Flash"` — the SPI flash version, when reported.
+    QString flash;
+
+    /// Every `InstanceID → VersionString` pair returned by the firmware,
+    /// in the order received. Lets the UI surface unknown / vendor-
+    /// specific rows without code changes.
+    QList<QPair<QString, QString>> identities;
 };
 
 /// Per-redirection-channel enabled state. Decoded from

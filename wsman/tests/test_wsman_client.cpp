@@ -159,6 +159,22 @@ constexpr char kSoftwareIdentityPullResponse[] =
     "<c:InstanceID>Sku</c:InstanceID>"
     "<c:VersionString>X</c:VersionString>"
     "</c:CIM_SoftwareIdentity>"
+    "<c:CIM_SoftwareIdentity>"
+    "<c:InstanceID>Build Number</c:InstanceID>"
+    "<c:VersionString>2122</c:VersionString>"
+    "</c:CIM_SoftwareIdentity>"
+    "<c:CIM_SoftwareIdentity>"
+    "<c:InstanceID>AMT FW Recovery Version</c:InstanceID>"
+    "<c:VersionString>16.0.5</c:VersionString>"
+    "</c:CIM_SoftwareIdentity>"
+    "<c:CIM_SoftwareIdentity>"
+    "<c:InstanceID>VendorID</c:InstanceID>"
+    "<c:VersionString>8086</c:VersionString>"
+    "</c:CIM_SoftwareIdentity>"
+    "<c:CIM_SoftwareIdentity>"
+    "<c:InstanceID>Flash</c:InstanceID>"
+    "<c:VersionString>16.0.0.1</c:VersionString>"
+    "</c:CIM_SoftwareIdentity>"
     "</wsen:Items>"
     "<wsen:EndOfSequence/>"
     "</wsen:PullResponse>"
@@ -646,6 +662,24 @@ void TestWsmanClient::getMeVersionPicksAmtInstanceFromEnumeration()
 
     QVERIFY2(result.ok, qPrintable(result.error));
     QCOMPARE(result.versionString, QStringLiteral("16.1.25"));
+
+    // Fingerprint rows (#174) — the parser walks every row and routes
+    // the well-known InstanceIDs into named fields using case-insensitive
+    // substring matching so different firmware spellings all land in the
+    // same UI binding.
+    QCOMPARE(result.buildNumber,     QStringLiteral("2122"));
+    QCOMPARE(result.recoveryVersion, QStringLiteral("16.0.5"));
+    QCOMPARE(result.sku,             QStringLiteral("X"));
+    QCOMPARE(result.vendorId,        QStringLiteral("8086"));
+    QCOMPARE(result.flash,           QStringLiteral("16.0.0.1"));
+
+    // The generic identities list preserves every row in pull order
+    // (including non-AMT rows like BIOS) so the UI can surface vendor
+    // / future InstanceIDs without parser changes.
+    QCOMPARE(result.identities.size(), 7);
+    QCOMPARE(result.identities.at(0).first,  QStringLiteral("BIOS"));
+    QCOMPARE(result.identities.at(0).second, QStringLiteral("1.2.3"));
+    QCOMPARE(result.identities.at(1).first,  QStringLiteral("AMT"));
 }
 
 void TestWsmanClient::getRedirectionStatusSplitsEnabledStateBitmask()

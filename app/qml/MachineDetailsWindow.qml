@@ -492,6 +492,81 @@ AppWindow {
                             }
                         }
 
+                        // --- AMT INFO (firmware/SKU fingerprint, #174) ---
+                        // Surfaces the secondary CIM_SoftwareIdentity
+                        // rows so operators can tell ISM-vs-AMT and an
+                        // old build apart at a glance. Pairs with the
+                        // Boot Capabilities pane in Hardware to answer
+                        // "why doesn't action X work."
+                        Section {
+                            id: amtInfoSection
+                            title: qsTr("AMT INFO")
+                            visible: {
+                                const fp = controller.amtFingerprint;
+                                if (!fp) return false;
+                                return (fp.sku || fp.buildNumber || fp.recoveryVersion
+                                        || fp.vendorId || fp.flash || fp.skuLabel || "").length > 0;
+                            }
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            GridLayout {
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+
+                                Text { text: qsTr("SKU"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text {
+                                    text: controller.amtFingerprint.skuLabel
+                                          || controller.amtFingerprint.sku
+                                          || qsTr("(unknown)")
+                                    color: Colors.text
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeS
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Text { text: qsTr("Vendor ID"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text {
+                                    text: controller.amtFingerprint.vendorId || qsTr("(unknown)")
+                                    color: Colors.text
+                                    font.family: Type.mono
+                                    font.pixelSize: Type.sizeS
+                                    Layout.fillWidth: true
+                                }
+
+                                Text { text: qsTr("Main FW build"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text {
+                                    text: controller.amtFingerprint.buildNumber || qsTr("(unknown)")
+                                    color: Colors.text
+                                    font.family: Type.mono
+                                    font.pixelSize: Type.sizeS
+                                    Layout.fillWidth: true
+                                }
+
+                                Text { text: qsTr("Recovery FW"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text {
+                                    text: controller.amtFingerprint.recoveryVersion || qsTr("(unknown)")
+                                    color: Colors.text
+                                    font.family: Type.mono
+                                    font.pixelSize: Type.sizeS
+                                    Layout.fillWidth: true
+                                }
+
+                                Text { text: qsTr("Flash"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text {
+                                    text: controller.amtFingerprint.flash || qsTr("(unknown)")
+                                    color: Colors.text
+                                    font.family: Type.mono
+                                    font.pixelSize: Type.sizeS
+                                    Layout.fillWidth: true
+                                }
+                            }
+                        }
+
                         Section {
                             title: qsTr("ACTIVE FEATURES")
                             Layout.fillWidth: true

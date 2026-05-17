@@ -392,6 +392,40 @@ void MachineDetailsController::refreshOverview()
         [this](qumesh::wsman::MeVersionResult r) {
             if (r.ok) {
                 m_meVersionString = r.versionString;
+
+                // Build the fingerprint snapshot (#174). The Sku field
+                // is a numeric bitmask string when present; decode the
+                // single bit that distinguishes "Full AMT" from "ISM"
+                // so the UI can render a friendly label without needing
+                // to know the encoding.
+                QVariantMap fp;
+                fp.insert(QStringLiteral("amtVersion"),      r.versionString);
+                fp.insert(QStringLiteral("buildNumber"),     r.buildNumber);
+                fp.insert(QStringLiteral("recoveryVersion"), r.recoveryVersion);
+                fp.insert(QStringLiteral("sku"),             r.sku);
+                fp.insert(QStringLiteral("vendorId"),        r.vendorId);
+                fp.insert(QStringLiteral("flash"),           r.flash);
+
+                // SKU bitmask: bit 14 = ISM ("Intel Standard Manageability"),
+                // bit 15 = AMT (full vPro). When both are clear we have
+                // pre-provisioning / unprovisioned firmware. Older
+                // firmware reports the field as a plain string we can't
+                // decode — fall through to "(SKU code: X)" then.
+                bool numeric = false;
+                const quint64 skuMask = r.sku.toULongLong(&numeric);
+                QString skuLabel;
+                if (numeric) {
+                    constexpr quint64 kAmtBit = 1ULL << 15;
+                    constexpr quint64 kIsmBit = 1ULL << 14;
+                    if (skuMask & kAmtBit)      skuLabel = tr("Full AMT (vPro)");
+                    else if (skuMask & kIsmBit) skuLabel = tr("Intel Standard Manageability (ISM)");
+                    else                        skuLabel = tr("Pre-provisioning / unknown SKU");
+                } else if (!r.sku.isEmpty()) {
+                    skuLabel = tr("SKU code: %1").arg(r.sku);
+                }
+                fp.insert(QStringLiteral("skuLabel"), skuLabel);
+
+                m_amtFingerprint = fp;
                 emit meVersionChanged();
             }
             // Soft failure: older firmware may not enumerate

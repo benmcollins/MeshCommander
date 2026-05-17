@@ -674,24 +674,28 @@ void getSetupAndConfiguration(WsmanClient *client,
 void getMeVersion(WsmanClient *client,
                   std::function<void(MeVersionResult)> callback)
 {
-    // CIM_SoftwareIdentity is a collection — `Enumerate` + `Pull`,
-    // then pick the row whose InstanceID is "AMT". A `Get` with an
-    // InstanceID selector works on some firmware but not all; the
-    // legacy code enumerates the lot, so we mirror that for safety.
-    struct Acc { QString version; bool found = false; };
+    // CIM_SoftwareIdentity is a collection — `Enumerate` + `Pull` the
+    // whole thing. The legacy code only kept the row whose InstanceID
+    // is "AMT"; we keep all of them so the UI can fingerprint the
+    // firmware (SKU / build / recovery / vendor / flash). The InstanceID
+    // strings vary by firmware version — match by case-insensitive
+    // substring rather than exact equality so reduced-SKU ISM, future
+    // AMT releases, and vendor forks all populate the same UI rows.
+    struct Acc {
+        MeVersionResult r;
+        bool foundAmt = false;
+    };
     auto acc = std::make_shared<Acc>();
     auto onDone = std::make_shared<std::function<void(QString)>>();
     auto cb = std::make_shared<std::function<void(MeVersionResult)>>(std::move(callback));
 
     *onDone = [acc, cb](QString error) {
-        MeVersionResult r;
-        r.versionString = acc->version;
-        r.ok = error.isEmpty() && acc->found;
-        if (!r.ok && error.isEmpty())
+        acc->r.ok = error.isEmpty() && acc->foundAmt;
+        if (!acc->r.ok && error.isEmpty())
             error = QStringLiteral(
                 "CIM_SoftwareIdentity enumeration had no InstanceID='AMT'");
-        r.error = std::move(error);
-        (*cb)(std::move(r));
+        acc->r.error = std::move(error);
+        (*cb)(std::move(acc->r));
     };
 
     auto pullStep = std::make_shared<std::function<void(const QString &)>>();
@@ -712,14 +716,27 @@ void getMeVersion(WsmanClient *client,
                 const PullChunk chunk = parsePullResponse(soap.bodyXml);
                 for (const QByteArray &item : chunk.items) {
                     const QString id = findScalar(item, QStringLiteral("InstanceID"));
+                    const QString ver = findScalar(item, QStringLiteral("VersionString"));
+                    if (id.isEmpty()) continue;
+                    acc->r.identities.append(qMakePair(id, ver));
+
+                    const QString idLower = id.toLower();
                     if (id == QStringLiteral("AMT")) {
-                        acc->version = findScalar(item, QStringLiteral("VersionString"));
-                        acc->found = true;
-                        break;
+                        acc->r.versionString = ver;
+                        acc->foundAmt = true;
+                    } else if (idLower.contains(QStringLiteral("recovery"))) {
+                        acc->r.recoveryVersion = ver;
+                    } else if (idLower.contains(QStringLiteral("build"))) {
+                        acc->r.buildNumber = ver;
+                    } else if (idLower == QStringLiteral("sku")) {
+                        acc->r.sku = ver;
+                    } else if (idLower.contains(QStringLiteral("vendor"))) {
+                        acc->r.vendorId = ver;
+                    } else if (idLower == QStringLiteral("flash")) {
+                        acc->r.flash = ver;
                     }
                 }
-                if (acc->found || chunk.endOfSequence
-                    || chunk.enumerationContext.isEmpty()) {
+                if (chunk.endOfSequence || chunk.enumerationContext.isEmpty()) {
                     (*onDone)({});
                     return;
                 }
