@@ -102,7 +102,9 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(QString systemElementName READ systemElementName NOTIFY computerSystemChanged)
     Q_PROPERTY(QString systemUuid READ systemUuid NOTIFY computerSystemChanged)
 
-    // Ethernet settings.
+    // Ethernet settings — single-interface scalars (interface 0) kept
+    // for backward compat; the QML side now also reads
+    // `networkInterfaces` for the multi-NIC + IPv6 view.
     Q_PROPERTY(QString macAddress READ macAddress NOTIFY ethernetChanged)
     Q_PROPERTY(bool dhcpEnabled READ dhcpEnabled NOTIFY ethernetChanged)
     Q_PROPERTY(QString ipAddress READ ipAddress NOTIFY ethernetChanged)
@@ -110,6 +112,8 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(QString defaultGateway READ defaultGateway NOTIFY ethernetChanged)
     Q_PROPERTY(QString primaryDns READ primaryDns NOTIFY ethernetChanged)
     Q_PROPERTY(QString secondaryDns READ secondaryDns NOTIFY ethernetChanged)
+    Q_PROPERTY(QVariantList networkInterfaces READ networkInterfaces
+                   NOTIFY ethernetChanged)
 
     // Time.
     Q_PROPERTY(qint64 amtEpoch READ amtEpoch NOTIFY timeChanged)
@@ -219,6 +223,7 @@ public:
     [[nodiscard]] QString defaultGateway() const { return m_defaultGateway; }
     [[nodiscard]] QString primaryDns() const { return m_primaryDns; }
     [[nodiscard]] QString secondaryDns() const { return m_secondaryDns; }
+    [[nodiscard]] QVariantList networkInterfaces() const { return m_networkInterfaces; }
 
     [[nodiscard]] qint64 amtEpoch() const { return m_amtEpoch; }
 
@@ -491,6 +496,7 @@ private:
     QString m_defaultGateway;
     QString m_primaryDns;
     QString m_secondaryDns;
+    QVariantList m_networkInterfaces;
 
     qint64 m_amtEpoch = 0;
 

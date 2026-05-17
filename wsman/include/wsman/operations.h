@@ -54,10 +54,44 @@ struct ComputerSystemResult
     QString systemUuid;         ///< From `CIM_ComputerSystemPackage` or `Name`
 };
 
+/// One IPv6 endpoint, paired with an EthernetInterface by ordinal.
+struct IPv6PortSettings
+{
+    bool present = false;
+    QString instanceId;
+    QStringList addresses;        ///< `CurrentAddressInfo`, address-only.
+    QString defaultRouter;        ///< `CurrentDefaultRouter`.
+    QString primaryDns;           ///< `CurrentPrimaryDNS`.
+    QString secondaryDns;         ///< `CurrentSecondaryDNS`.
+};
+
+/// One row of `AMT_EthernetPortSettings`, plus the matching IPv6 block.
+struct EthernetInterface
+{
+    QString instanceId;           ///< e.g. "Intel(r) AMT Ethernet Port Settings 0".
+    QString macAddress;
+    bool dhcpEnabled = false;
+    bool ipSyncEnabled = false;
+    QString ipAddress;
+    QString subnetMask;
+    QString defaultGateway;
+    QString primaryDns;
+    QString secondaryDns;
+    /// `AMT_EthernetPortSettings.LinkPolicy` — raw integer codes.
+    /// 1 = S0/AC, 14 = Sx/AC, 16 = S0/DC, 224 = Sx/DC.
+    QList<int> linkPolicy;
+
+    IPv6PortSettings ipv6;
+};
+
 struct EthernetSettingsResult
 {
     bool ok = false;
     QString error;
+    QList<EthernetInterface> interfaces;
+
+    // Backward-compat scalars, populated from `interfaces[0]` so the
+    // existing single-NIC bindings keep working.
     QString macAddress;
     bool dhcpEnabled = false;
     bool ipv4Enabled = false;
@@ -66,8 +100,11 @@ struct EthernetSettingsResult
     QString defaultGateway;
     QString primaryDns;
     QString secondaryDns;
-    QString linkPolicy;          ///< AMT-only / OS-shared / etc. (best-effort)
+    QString linkPolicy;          ///< Reserved (kept for ABI; not populated).
 };
+
+/// Render a `LinkPolicy` bitmask code into a human-readable label.
+[[nodiscard]] QString linkPolicyLabel(int code);
 
 struct TimeSettingsResult
 {

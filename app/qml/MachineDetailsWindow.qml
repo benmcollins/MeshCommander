@@ -1024,10 +1024,6 @@ AppWindow {
                     contentHeight: networkCol.implicitHeight + 48
                     clip: true
 
-                    // Network data is fetched centrally via
-                    // `root.refreshCurrent()` when this section becomes
-                    // active.
-
                     ColumnLayout {
                         id: networkCol
                         spacing: 18
@@ -1048,42 +1044,125 @@ AppWindow {
                                 font.weight: Font.Medium
                             }
                             Text {
-                                text: controller.macAddress || qsTr("Wired interface 0")
+                                text: controller.networkInterfaces.length === 0
+                                    ? qsTr("Not yet fetched")
+                                    : qsTr("%1 interface(s)")
+                                        .arg(controller.networkInterfaces.length)
                                 color: Colors.text
-                                font.family: Type.mono
+                                font.family: Type.sans
                                 font.pixelSize: 20
                             }
                         }
 
-                        Section {
-                            title: qsTr("IPV4")
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 24
-                            Layout.rightMargin: 24
-
-                            GridLayout {
-                                columns: 2
-                                columnSpacing: 16
-                                rowSpacing: 6
+                        Repeater {
+                            model: controller.networkInterfaces
+                            delegate: ColumnLayout {
+                                required property var modelData
+                                required property int index
                                 Layout.fillWidth: true
+                                spacing: 12
 
-                                Text { text: qsTr("Addressing"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.dhcpEnabled ? qsTr("DHCP") : qsTr("Static"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                ColumnLayout {
+                                    spacing: 2
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: 24
+                                    Layout.rightMargin: 24
+                                    Layout.topMargin: 6
+                                    Text {
+                                        text: qsTr("INTERFACE %1").arg(parent.parent.index)
+                                        color: Colors.textMuted
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        font.letterSpacing: 2
+                                        font.weight: Font.Medium
+                                    }
+                                    Text {
+                                        text: parent.parent.modelData.macAddress
+                                            || parent.parent.modelData.instanceId
+                                        color: Colors.text
+                                        font.family: Type.mono
+                                        font.pixelSize: 18
+                                    }
+                                }
 
-                                Text { text: qsTr("IP address"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.ipAddress || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Section {
+                                    title: qsTr("IPV4")
+                                    accent: Colors.accent
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: 24
+                                    Layout.rightMargin: 24
 
-                                Text { text: qsTr("Subnet mask"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.subnetMask || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    GridLayout {
+                                        columns: 2
+                                        columnSpacing: 16
+                                        rowSpacing: 6
+                                        Layout.fillWidth: true
 
-                                Text { text: qsTr("Gateway"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.defaultGateway || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: qsTr("Addressing"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: parent.parent.parent.modelData.dhcpEnabled ? qsTr("DHCP") : qsTr("Static"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
-                                Text { text: qsTr("Primary DNS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.primaryDns || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: qsTr("IP sync with OS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: parent.parent.parent.modelData.ipSyncEnabled ? qsTr("Yes") : qsTr("No"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
-                                Text { text: qsTr("Secondary DNS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.secondaryDns || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: qsTr("IP address"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: parent.parent.parent.modelData.ipAddress || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+
+                                        Text { text: qsTr("Subnet mask"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: parent.parent.parent.modelData.subnetMask || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+
+                                        Text { text: qsTr("Gateway"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: parent.parent.parent.modelData.defaultGateway || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+
+                                        Text { text: qsTr("Primary DNS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: parent.parent.parent.modelData.primaryDns || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+
+                                        Text { text: qsTr("Secondary DNS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: parent.parent.parent.modelData.secondaryDns || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+
+                                        Text { text: qsTr("Link policy"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: parent.parent.parent.modelData.linkPolicyLabel || qsTr("(not set)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    }
+                                }
+
+                                Section {
+                                    title: qsTr("IPV6")
+                                    visible: (parent.modelData.ipv6
+                                              && parent.modelData.ipv6.present) === true
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: 24
+                                    Layout.rightMargin: 24
+
+                                    GridLayout {
+                                        columns: 2
+                                        columnSpacing: 16
+                                        rowSpacing: 6
+                                        Layout.fillWidth: true
+
+                                        Text { text: qsTr("Addresses"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: (parent.parent.parent.modelData.ipv6
+                                                       && parent.parent.parent.modelData.ipv6.addressesLabel)
+                                                       || qsTr("(none)")
+                                               color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true; wrapMode: Text.WrapAnywhere }
+
+                                        Text { text: qsTr("Default router"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: (parent.parent.parent.modelData.ipv6
+                                                       && parent.parent.parent.modelData.ipv6.defaultRouter)
+                                                       || qsTr("(none)")
+                                               color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+
+                                        Text { text: qsTr("Primary DNS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: (parent.parent.parent.modelData.ipv6
+                                                       && parent.parent.parent.modelData.ipv6.primaryDns)
+                                                       || qsTr("(none)")
+                                               color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+
+                                        Text { text: qsTr("Secondary DNS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                        Text { text: (parent.parent.parent.modelData.ipv6
+                                                       && parent.parent.parent.modelData.ipv6.secondaryDns)
+                                                       || qsTr("(none)")
+                                               color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    }
+                                }
                             }
                         }
                     }
