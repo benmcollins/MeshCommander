@@ -82,6 +82,12 @@ class MachineDetailsController : public QObject
 
     // Intel ME firmware version (CIM_SoftwareIdentity[InstanceID='AMT']).
     Q_PROPERTY(QString meVersionString READ meVersionString NOTIFY meVersionChanged)
+    /// Full AMT firmware fingerprint — SKU, build, recovery image,
+    /// vendor ID, flash version, plus a friendly SKU label. Keys mirror
+    /// the named fields on `MeVersionResult` so the QML binds straight
+    /// to `controller.amtFingerprint.sku` / `.skuLabel` / etc. Empty
+    /// until the first successful overview refresh. See issue #174.
+    Q_PROPERTY(QVariantMap amtFingerprint READ amtFingerprint NOTIFY meVersionChanged)
 
     // Provisioning state (AMT_SetupAndConfigurationService).
     Q_PROPERTY(int provisioningState READ provisioningState NOTIFY setupConfigChanged)
@@ -215,6 +221,7 @@ public:
     [[nodiscard]] QString powerSourceLabel() const;
 
     [[nodiscard]] QString meVersionString() const { return m_meVersionString; }
+    [[nodiscard]] QVariantMap amtFingerprint() const { return m_amtFingerprint; }
 
     [[nodiscard]] int provisioningState() const { return m_provisioningState; }
     [[nodiscard]] int provisioningMode()  const { return m_provisioningMode; }
@@ -502,6 +509,7 @@ private:
     int m_powerSource = -1;
 
     QString m_meVersionString;
+    QVariantMap m_amtFingerprint;
 
     int m_provisioningState = -1;
     int m_provisioningMode  = -1;
