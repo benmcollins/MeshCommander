@@ -600,10 +600,30 @@ void getBootCapabilities(WsmanClient *client,
             const auto truthy = [&](const QString &name) {
                 return findScalar(body, name) == QStringLiteral("true");
             };
-            r.biosSetup           = truthy(QStringLiteral("BIOSSetup"));
-            r.biosPause           = truthy(QStringLiteral("BIOSPause"));
-            r.secureErase         = truthy(QStringLiteral("SecureErase"));
-            r.forceUefiHttpsBoot  = truthy(QStringLiteral("ForceUEFIHTTPSBoot"));
+            r.ider                   = truthy(QStringLiteral("IDER"));
+            r.sol                    = truthy(QStringLiteral("SOL"));
+            r.biosReflash            = truthy(QStringLiteral("BIOSReflash"));
+            r.biosSetup              = truthy(QStringLiteral("BIOSSetup"));
+            r.biosPause              = truthy(QStringLiteral("BIOSPause"));
+            r.forcePxeBoot           = truthy(QStringLiteral("ForcePXEBoot"));
+            r.forceHddBoot           = truthy(QStringLiteral("ForceHDDBoot"));
+            r.forceCdOrDvdBoot       = truthy(QStringLiteral("ForceCDorDVDBoot"));
+            r.verbosityScreenBlank   = truthy(QStringLiteral("VerbosityScreenBlank"));
+            r.powerButtonLock        = truthy(QStringLiteral("PowerButtonLock"));
+            r.resetButtonLock        = truthy(QStringLiteral("ResetButtonLock"));
+            r.keyboardLock           = truthy(QStringLiteral("KeyboardLock"));
+            r.sleepButtonLock        = truthy(QStringLiteral("SleepButtonLock"));
+            r.userPasswordBypass     = truthy(QStringLiteral("UserPasswordBypass"));
+            r.forcedProgressEvents   = truthy(QStringLiteral("ForcedProgressEvents"));
+            r.verbosityVerbose       = truthy(QStringLiteral("VerbosityVerbose"));
+            r.verbosityQuiet         = truthy(QStringLiteral("VerbosityQuiet"));
+            r.configurationDataReset = truthy(QStringLiteral("ConfigurationDataReset"));
+            r.biosSecureBoot         = truthy(QStringLiteral("BIOSSecureBoot"));
+            r.secureErase            = truthy(QStringLiteral("SecureErase"));
+            r.forceWinReBoot         = truthy(QStringLiteral("ForceWinREBoot"));
+            r.forceUefiLocalPbaBoot  = truthy(QStringLiteral("ForceUEFILocalPBABoot"));
+            r.forceUefiHttpsBoot     = truthy(QStringLiteral("ForceUEFIHTTPSBoot"));
+            r.amtSecureBootControl   = truthy(QStringLiteral("AMTSecureBootControl"));
             // PlatformErase is a bitmask in newer firmware. Decode as
             // u32 when numeric; treat "true" as "all bits supported"
             // so older firmware still gets the menu surface.

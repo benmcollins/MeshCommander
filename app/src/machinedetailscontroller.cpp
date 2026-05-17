@@ -452,6 +452,40 @@ void MachineDetailsController::refreshOverview()
                 m_capPlatformErase      = r.platformErase;
                 m_capPlatformEraseMask  = r.platformEraseMask;
                 m_capForceUefiHttpsBoot = r.forceUefiHttpsBoot;
+
+                // Keyed snapshot for the read-only Boot Capabilities
+                // pane (#172). The QML iterates the map directly so the
+                // ordering is preserved by QVariantMap's sort. Labels
+                // are derived in QML — keep keys as the raw AMT names.
+                QVariantMap bc;
+                bc.insert(QStringLiteral("IDER"),                   r.ider);
+                bc.insert(QStringLiteral("SOL"),                    r.sol);
+                bc.insert(QStringLiteral("BIOSReflash"),            r.biosReflash);
+                bc.insert(QStringLiteral("BIOSSetup"),              r.biosSetup);
+                bc.insert(QStringLiteral("BIOSPause"),              r.biosPause);
+                bc.insert(QStringLiteral("ForcePXEBoot"),           r.forcePxeBoot);
+                bc.insert(QStringLiteral("ForceHDDBoot"),           r.forceHddBoot);
+                bc.insert(QStringLiteral("ForceCDorDVDBoot"),       r.forceCdOrDvdBoot);
+                bc.insert(QStringLiteral("VerbosityScreenBlank"),   r.verbosityScreenBlank);
+                bc.insert(QStringLiteral("PowerButtonLock"),        r.powerButtonLock);
+                bc.insert(QStringLiteral("ResetButtonLock"),        r.resetButtonLock);
+                bc.insert(QStringLiteral("KeyboardLock"),           r.keyboardLock);
+                bc.insert(QStringLiteral("SleepButtonLock"),        r.sleepButtonLock);
+                bc.insert(QStringLiteral("UserPasswordBypass"),     r.userPasswordBypass);
+                bc.insert(QStringLiteral("ForcedProgressEvents"),   r.forcedProgressEvents);
+                bc.insert(QStringLiteral("VerbosityVerbose"),       r.verbosityVerbose);
+                bc.insert(QStringLiteral("VerbosityQuiet"),         r.verbosityQuiet);
+                bc.insert(QStringLiteral("ConfigurationDataReset"), r.configurationDataReset);
+                bc.insert(QStringLiteral("BIOSSecureBoot"),         r.biosSecureBoot);
+                bc.insert(QStringLiteral("SecureErase"),            r.secureErase);
+                bc.insert(QStringLiteral("ForceWinREBoot"),         r.forceWinReBoot);
+                bc.insert(QStringLiteral("ForceUEFILocalPBABoot"),  r.forceUefiLocalPbaBoot);
+                bc.insert(QStringLiteral("ForceUEFIHTTPSBoot"),     r.forceUefiHttpsBoot);
+                bc.insert(QStringLiteral("AMTSecureBootControl"),   r.amtSecureBootControl);
+                bc.insert(QStringLiteral("PlatformErase"),          r.platformErase);
+                bc.insert(QStringLiteral("PlatformEraseMask"),      static_cast<int>(r.platformEraseMask));
+                m_bootCapabilities = bc;
+
                 emit bootCapabilitiesChanged();
             } else if (!r.error.isEmpty()) {
                 // Capabilities are advisory — log but don't blame the

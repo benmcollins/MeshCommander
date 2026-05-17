@@ -830,7 +830,6 @@ AppWindow {
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
-                            Layout.bottomMargin: 24
 
                             GridLayout {
                                 columns: 2
@@ -870,6 +869,173 @@ AppWindow {
                                               && controller.hardwareInventory.battery.serialNumber)
                                               || qsTr("(unknown)")
                                        color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                            }
+                        }
+
+                        // --- Boot capabilities (read-only, #172) ------
+                        // Surface AMT_BootCapabilities so the operator
+                        // can tell SKU-vs-user-error apart at a glance.
+                        // Power-menu gating already consults a subset of
+                        // these flags via the cap* booleans on the
+                        // controller; this pane shows the full picture.
+                        Section {
+                            id: bootCapsSection
+                            title: qsTr("BOOT CAPABILITIES")
+                            visible: Object.keys(controller.bootCapabilities).length > 0
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+                            Layout.bottomMargin: 24
+
+                            // Stable ordering and friendly labels for
+                            // the AMT_BootCapabilities flags. Keys map
+                            // 1:1 to keys in `controller.bootCapabilities`.
+                            readonly property var capEntries: [
+                                { key: "IDER",                   label: qsTr("IDE-R (storage redirection)") },
+                                { key: "SOL",                    label: qsTr("Serial-over-LAN") },
+                                { key: "ForcePXEBoot",           label: qsTr("Force PXE boot") },
+                                { key: "ForceHDDBoot",           label: qsTr("Force HDD boot") },
+                                { key: "ForceCDorDVDBoot",       label: qsTr("Force CD/DVD boot") },
+                                { key: "ForceWinREBoot",         label: qsTr("Force WinRE boot") },
+                                { key: "ForceUEFILocalPBABoot",  label: qsTr("Force UEFI local PBA boot") },
+                                { key: "ForceUEFIHTTPSBoot",     label: qsTr("Force UEFI HTTPS boot") },
+                                { key: "BIOSSetup",              label: qsTr("Enter BIOS setup") },
+                                { key: "BIOSPause",              label: qsTr("Pause BIOS POST") },
+                                { key: "BIOSReflash",            label: qsTr("BIOS reflash") },
+                                { key: "BIOSSecureBoot",         label: qsTr("BIOS Secure Boot control") },
+                                { key: "AMTSecureBootControl",   label: qsTr("AMT Secure Boot override") },
+                                { key: "SecureErase",            label: qsTr("Secure Erase") },
+                                { key: "PlatformErase",          label: qsTr("Platform Erase") },
+                                { key: "ConfigurationDataReset", label: qsTr("Configuration data reset") },
+                                { key: "UserPasswordBypass",     label: qsTr("User-password bypass") },
+                                { key: "ForcedProgressEvents",   label: qsTr("Forced progress events") },
+                                { key: "VerbosityScreenBlank",   label: qsTr("Screen-blank verbosity") },
+                                { key: "VerbosityVerbose",       label: qsTr("Verbose verbosity") },
+                                { key: "VerbosityQuiet",         label: qsTr("Quiet verbosity") },
+                                { key: "PowerButtonLock",        label: qsTr("Power button lock") },
+                                { key: "ResetButtonLock",        label: qsTr("Reset button lock") },
+                                { key: "KeyboardLock",           label: qsTr("Keyboard lock") },
+                                { key: "SleepButtonLock",        label: qsTr("Sleep button lock") },
+                            ]
+
+                            // Decode of the PlatformErase sub-bitmask.
+                            // Order and bit indices come from the
+                            // BootCapabilitiesResult struct.
+                            readonly property var platformEraseBits: [
+                                { bit: 1,  label: qsTr("Pyrite revert") },
+                                { bit: 2,  label: qsTr("Secure erase all SSDs") },
+                                { bit: 6,  label: qsTr("TPM clear") },
+                                { bit: 16, label: qsTr("OEM custom action") },
+                                { bit: 25, label: qsTr("Clear BIOS NVM variables") },
+                                { bit: 26, label: qsTr("BIOS reload of golden configuration") },
+                                { bit: 31, label: qsTr("CSME unconfigure") },
+                            ]
+
+                            GridLayout {
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+
+                                Repeater {
+                                    model: bootCapsSection.capEntries
+
+                                    delegate: RowLayout {
+                                        id: capRow
+                                        required property var modelData
+                                        spacing: 8
+                                        Layout.fillWidth: true
+                                        Layout.columnSpan: 2
+
+                                        readonly property bool supported:
+                                            controller.bootCapabilities[capRow.modelData.key] === true
+
+                                        Rectangle {
+                                            implicitWidth: bootCapChipText.implicitWidth + 16
+                                            implicitHeight: bootCapChipText.implicitHeight + 6
+                                            radius: 4
+                                            color: capRow.supported
+                                                ? Qt.rgba(Colors.accent.r, Colors.accent.g, Colors.accent.b, 0.18)
+                                                : Qt.rgba(Colors.textFaint.r, Colors.textFaint.g, Colors.textFaint.b, 0.10)
+                                            border.color: capRow.supported
+                                                ? Qt.rgba(Colors.accent.r, Colors.accent.g, Colors.accent.b, 0.40)
+                                                : Colors.borderMuted
+                                            border.width: 1
+
+                                            Text {
+                                                id: bootCapChipText
+                                                anchors.centerIn: parent
+                                                text: capRow.supported ? qsTr("Yes") : qsTr("No")
+                                                color: capRow.supported ? Colors.accent : Colors.textFaint
+                                                font.family: Type.sans
+                                                font.pixelSize: Type.sizeXs
+                                                font.weight: Font.Medium
+                                                font.letterSpacing: 1
+                                            }
+                                        }
+
+                                        Text {
+                                            text: capRow.modelData.label
+                                            color: capRow.supported ? Colors.text : Colors.textFaint
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeS
+                                            font.strikeout: !capRow.supported
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Platform-erase sub-bitmask. Only shown
+                            // when Platform Erase is supported — the
+                            // bits are meaningless on firmware that
+                            // doesn't advertise the action at all.
+                            ColumnLayout {
+                                visible: controller.bootCapabilities.PlatformErase === true
+                                spacing: 4
+                                Layout.fillWidth: true
+                                Layout.topMargin: 8
+
+                                Text {
+                                    text: qsTr("PLATFORM ERASE SUB-ACTIONS")
+                                    color: Colors.textMuted
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                    font.letterSpacing: 2
+                                    font.weight: Font.Medium
+                                }
+
+                                Repeater {
+                                    model: bootCapsSection.platformEraseBits
+
+                                    delegate: RowLayout {
+                                        id: peRow
+                                        required property var modelData
+                                        spacing: 8
+                                        Layout.fillWidth: true
+
+                                        readonly property bool supported:
+                                            ((controller.bootCapabilities.PlatformEraseMask || 0)
+                                             & (1 << peRow.modelData.bit)) !== 0
+
+                                        Rectangle {
+                                            implicitWidth: 10
+                                            implicitHeight: 10
+                                            radius: 5
+                                            color: peRow.supported ? Colors.accent : Colors.borderMuted
+                                        }
+                                        Text {
+                                            text: peRow.modelData.label
+                                            color: peRow.supported ? Colors.text : Colors.textFaint
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeS
+                                            font.strikeout: !peRow.supported
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

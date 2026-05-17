@@ -157,16 +157,39 @@ struct RedirectionStatusResult
     bool kvmAvailable = false;
 };
 
-/// Subset of `AMT_BootCapabilities` flags the UI gates power actions on.
-/// Each is `true` when the firmware reports the capability.
+/// Decoded `AMT_BootCapabilities` snapshot. Each scalar is `true` when
+/// the firmware reports the capability. The first few fields drive
+/// existing power-menu visibility; the rest are surfaced as a read-only
+/// pane (see #172) so operators can tell SKU-vs-user-error apart at a
+/// glance.
 struct BootCapabilitiesResult
 {
     bool ok = false;
     QString error;
+    bool ider = false;
+    bool sol = false;
+    bool biosReflash = false;
     bool biosSetup = false;
     bool biosPause = false;
+    bool forcePxeBoot = false;
+    bool forceHddBoot = false;
+    bool forceCdOrDvdBoot = false;
+    bool verbosityScreenBlank = false;
+    bool powerButtonLock = false;
+    bool resetButtonLock = false;
+    bool keyboardLock = false;
+    bool sleepButtonLock = false;
+    bool userPasswordBypass = false;
+    bool forcedProgressEvents = false;
+    bool verbosityVerbose = false;
+    bool verbosityQuiet = false;
+    bool configurationDataReset = false;
+    bool biosSecureBoot = false;
     bool secureErase = false;
+    bool forceWinReBoot = false;
+    bool forceUefiLocalPbaBoot = false;
     bool forceUefiHttpsBoot = false;
+    bool amtSecureBootControl = false;
     /// `true` when the firmware advertises any Platform Erase support.
     bool platformErase = false;
     /// Raw bitmask AMT returns under `PlatformErase`. Bits:
