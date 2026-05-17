@@ -1066,10 +1066,15 @@ AppWindow {
                         Repeater {
                             model: controller.networkInterfaces
                             delegate: ColumnLayout {
+                                id: nicDelegate
                                 required property var modelData
                                 required property int index
                                 Layout.fillWidth: true
                                 spacing: 12
+
+                                // Cached IPv6 sub-map. Bindings in a hidden Section
+                                // still evaluate, so default to {} when absent.
+                                readonly property var ipv6: nicDelegate.modelData.ipv6 || ({})
 
                                 ColumnLayout {
                                     spacing: 2
@@ -1078,7 +1083,7 @@ AppWindow {
                                     Layout.rightMargin: 24
                                     Layout.topMargin: 6
                                     Text {
-                                        text: qsTr("INTERFACE %1").arg(parent.parent.index)
+                                        text: qsTr("INTERFACE %1").arg(nicDelegate.index)
                                         color: Colors.textMuted
                                         font.family: Type.sans
                                         font.pixelSize: Type.sizeXs
@@ -1086,8 +1091,8 @@ AppWindow {
                                         font.weight: Font.Medium
                                     }
                                     Text {
-                                        text: parent.parent.modelData.macAddress
-                                            || parent.parent.modelData.instanceId
+                                        text: nicDelegate.modelData.macAddress
+                                            || nicDelegate.modelData.instanceId
                                         color: Colors.text
                                         font.family: Type.mono
                                         font.pixelSize: 18
@@ -1108,35 +1113,34 @@ AppWindow {
                                         Layout.fillWidth: true
 
                                         Text { text: qsTr("Addressing"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: parent.parent.parent.modelData.dhcpEnabled ? qsTr("DHCP") : qsTr("Static"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: nicDelegate.modelData.dhcpEnabled ? qsTr("DHCP") : qsTr("Static"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
                                         Text { text: qsTr("IP sync with OS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: parent.parent.parent.modelData.ipSyncEnabled ? qsTr("Yes") : qsTr("No"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: nicDelegate.modelData.ipSyncEnabled ? qsTr("Yes") : qsTr("No"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
                                         Text { text: qsTr("IP address"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: parent.parent.parent.modelData.ipAddress || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: nicDelegate.modelData.ipAddress || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
                                         Text { text: qsTr("Subnet mask"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: parent.parent.parent.modelData.subnetMask || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: nicDelegate.modelData.subnetMask || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
                                         Text { text: qsTr("Gateway"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: parent.parent.parent.modelData.defaultGateway || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: nicDelegate.modelData.defaultGateway || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
                                         Text { text: qsTr("Primary DNS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: parent.parent.parent.modelData.primaryDns || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: nicDelegate.modelData.primaryDns || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
                                         Text { text: qsTr("Secondary DNS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: parent.parent.parent.modelData.secondaryDns || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: nicDelegate.modelData.secondaryDns || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
                                         Text { text: qsTr("Link policy"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: parent.parent.parent.modelData.linkPolicyLabel || qsTr("(not set)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                        Text { text: nicDelegate.modelData.linkPolicyLabel || qsTr("(not set)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     }
                                 }
 
                                 Section {
                                     title: qsTr("IPV6")
-                                    visible: (parent.modelData.ipv6
-                                              && parent.modelData.ipv6.present) === true
+                                    visible: nicDelegate.ipv6.present === true
                                     Layout.fillWidth: true
                                     Layout.leftMargin: 24
                                     Layout.rightMargin: 24
@@ -1148,27 +1152,19 @@ AppWindow {
                                         Layout.fillWidth: true
 
                                         Text { text: qsTr("Addresses"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: (parent.parent.parent.modelData.ipv6
-                                                       && parent.parent.parent.modelData.ipv6.addressesLabel)
-                                                       || qsTr("(none)")
+                                        Text { text: nicDelegate.ipv6.addressesLabel || qsTr("(none)")
                                                color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true; wrapMode: Text.WrapAnywhere }
 
                                         Text { text: qsTr("Default router"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: (parent.parent.parent.modelData.ipv6
-                                                       && parent.parent.parent.modelData.ipv6.defaultRouter)
-                                                       || qsTr("(none)")
+                                        Text { text: nicDelegate.ipv6.defaultRouter || qsTr("(none)")
                                                color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
                                         Text { text: qsTr("Primary DNS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: (parent.parent.parent.modelData.ipv6
-                                                       && parent.parent.parent.modelData.ipv6.primaryDns)
-                                                       || qsTr("(none)")
+                                        Text { text: nicDelegate.ipv6.primaryDns || qsTr("(none)")
                                                color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
                                         Text { text: qsTr("Secondary DNS"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                        Text { text: (parent.parent.parent.modelData.ipv6
-                                                       && parent.parent.parent.modelData.ipv6.secondaryDns)
-                                                       || qsTr("(none)")
+                                        Text { text: nicDelegate.ipv6.secondaryDns || qsTr("(none)")
                                                color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     }
                                 }
