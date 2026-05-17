@@ -500,6 +500,74 @@ void executeBrowse(WsmanClient *client, const QString &classOrUri,
                    const QHash<QString, QString> &selectors,
                    std::function<void(WsmanBrowseResult)> callback);
 
+/// One `AMT_SystemDefensePolicy` row — a named filter set with a
+/// priority and direction flags. The actual filter contents live in
+/// the AMT_Hdr8021Filter / AMT_IPHeadersFilter classes.
+struct SystemDefensePolicy
+{
+    QString instanceId;
+    QString policyName;
+    int priority = 0;
+    /// Bit 0 of the legacy `AntiSpoofingSupport`-style flag word —
+    /// `true` when the policy transmits on the wire (the firmware uses
+    /// the term `tx_enabled` in the schema docs).
+    bool txEnabled = false;
+    bool rxEnabled = false;
+    /// Default policy that catches all otherwise-unmatched packets.
+    bool defaultPolicy = false;
+};
+
+/// One `AMT_Hdr8021Filter` (L2) row — VLAN / ethertype / 802.1 priority.
+struct Hdr8021Filter
+{
+    QString instanceId;
+    QString name;
+    int filterDirection = -1;       ///< 1=in, 2=out, 3=both.
+    int vlanTag = -1;               ///< -1 = not set.
+    int etherType = -1;
+    int priority = -1;
+};
+
+/// One `AMT_IPHeadersFilter` (L3/L4) row.
+struct IpHeadersFilter
+{
+    QString instanceId;
+    QString name;
+    int filterDirection = -1;
+    QString srcAddress;
+    QString dstAddress;
+    int protocol = -1;              ///< IPv4 protocol number, -1 if any.
+    int srcPort = -1;
+    int dstPort = -1;
+};
+
+/// One `AMT_NetworkFilter` sub-rule reference.
+struct NetworkFilterRow
+{
+    QString instanceId;
+    QString name;
+    QString filterClass;            ///< Either `Hdr8021Filter` or `IPHeadersFilter`.
+};
+
+/// Snapshot of the System Defense classes (#165 phase A). ACM-only —
+/// the controller decides visibility off `provisioningMode`. `supported`
+/// is `false` when the firmware doesn't expose the classes at all
+/// (ISM SKUs / older AMT).
+struct SystemDefenseResult
+{
+    bool ok = false;
+    QString error;
+    bool supported = true;
+    QList<SystemDefensePolicy> policies;
+    QList<Hdr8021Filter>       hdrFilters;
+    QList<IpHeadersFilter>     ipFilters;
+    QList<NetworkFilterRow>    subFilters;
+};
+
+/// Enumerate the System Defense classes. See #165 phase A.
+void getSystemDefense(WsmanClient *client,
+                      std::function<void(SystemDefenseResult)> callback);
+
 /// Read `AMT_BootCapabilities` — which boot-source-override flags the
 /// firmware will accept. Drives the gating of menu entries
 /// (Secure Erase / Platform Erase / HTTPS Boot etc.).

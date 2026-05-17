@@ -42,6 +42,7 @@ private slots:
     void getEventSubscriptionsJoinsFiltersListenersAndSubscriptions();
     void getWakeAlarmsExtractsNestedStartTimeAndInterval();
     void executeBrowsePrefixesClassNamesAndCarriesRawXml();
+    void getSystemDefenseEnumeratesAllFourFilterClasses();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -2347,6 +2348,147 @@ void TestWsmanClient::executeBrowsePrefixesClassNamesAndCarriesRawXml()
     // The raw response body lands in `xml` for the operator to read.
     QVERIFY2(result.xml.contains("<g:HostName>test-host</g:HostName>"),
              result.xml.constData());
+}
+
+void TestWsmanClient::getSystemDefenseEnumeratesAllFourFilterClasses()
+{
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     const bool isPolicy = body.contains("AMT_SystemDefensePolicy");
+                     const bool isHdr    = body.contains("AMT_Hdr8021Filter");
+                     const bool isIp     = body.contains("AMT_IPHeadersFilter");
+                     const bool isNet    = body.contains("AMT_NetworkFilter");
+                     const bool isPull = body.contains(":Pull")
+                                       || body.contains("<wsen:Pull");
+
+                     QByteArray response;
+                     if (!isPull) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:EnumerateResponse>"
+                             "<wsen:EnumerationContext>ctx</wsen:EnumerationContext>"
+                             "</wsen:EnumerateResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else if (isPolicy) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_SystemDefensePolicy\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:AMT_SystemDefensePolicy>"
+                             "<c:InstanceID>Block-All</c:InstanceID>"
+                             "<c:PolicyName>Block all inbound</c:PolicyName>"
+                             "<c:Priority>10</c:Priority>"
+                             "<c:DefaultPolicy>true</c:DefaultPolicy>"
+                             "</c:AMT_SystemDefensePolicy>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else if (isHdr) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_Hdr8021Filter\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:AMT_Hdr8021Filter>"
+                             "<c:InstanceID>L2-IPv4</c:InstanceID>"
+                             "<c:Name>Match-IPv4</c:Name>"
+                             "<c:FilterDirection>1</c:FilterDirection>"
+                             "<c:EtherType>2048</c:EtherType>"
+                             "</c:AMT_Hdr8021Filter>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else if (isIp) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_IPHeadersFilter\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:AMT_IPHeadersFilter>"
+                             "<c:InstanceID>L3-DNS</c:InstanceID>"
+                             "<c:Name>Allow-DNS</c:Name>"
+                             "<c:FilterDirection>2</c:FilterDirection>"
+                             "<c:HdrProtocolID8>17</c:HdrProtocolID8>"
+                             "<c:HdrDestPortStart>53</c:HdrDestPortStart>"
+                             "</c:AMT_IPHeadersFilter>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else if (isNet) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_NetworkFilter\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:AMT_NetworkFilter>"
+                             "<c:InstanceID>nf-1</c:InstanceID>"
+                             "<c:Name>L2-IPv4</c:Name>"
+                             "<c:CreationClassName>AMT_Hdr8021Filter</c:CreationClassName>"
+                             "</c:AMT_NetworkFilter>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    SystemDefenseResult result;
+    QEventLoop loop;
+    getSystemDefense(&client, [&](SystemDefenseResult r) {
+        result = r;
+        loop.quit();
+    });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QVERIFY(result.supported);
+    QCOMPARE(result.policies.size(),   1);
+    QCOMPARE(result.hdrFilters.size(), 1);
+    QCOMPARE(result.ipFilters.size(),  1);
+    QCOMPARE(result.subFilters.size(), 1);
+
+    QCOMPARE(result.policies.first().policyName,
+             QStringLiteral("Block all inbound"));
+    QCOMPARE(result.policies.first().defaultPolicy, true);
+
+    QCOMPARE(result.hdrFilters.first().etherType, 2048);
+    QCOMPARE(result.ipFilters.first().dstPort,    53);
+    QCOMPARE(result.ipFilters.first().protocol,   17);
+    QCOMPARE(result.subFilters.first().filterClass,
+             QStringLiteral("AMT_Hdr8021Filter"));
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

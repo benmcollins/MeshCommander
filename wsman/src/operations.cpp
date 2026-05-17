@@ -66,6 +66,18 @@ constexpr char kFilterCollectionSubscriptionResource[] =
 constexpr char kAlarmClockOccurrenceResource[] =
     "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_AlarmClockOccurrence";
 
+constexpr char kSystemDefensePolicyResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_SystemDefensePolicy";
+
+constexpr char kHdr8021FilterResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_Hdr8021Filter";
+
+constexpr char kIpHeadersFilterResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_IPHeadersFilter";
+
+constexpr char kNetworkFilterResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_NetworkFilter";
+
 constexpr char kBootSettingDataResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_BootSettingData";
@@ -1468,6 +1480,139 @@ void executeBrowse(WsmanClient *client, const QString &classOrUri,
             r.itemCount = items.size();
             r.ok = true;
             (*cb)(std::move(r));
+        });
+}
+
+void getSystemDefense(WsmanClient *client,
+                      std::function<void(SystemDefenseResult)> callback)
+{
+    // Four parallel enumerates. The firmware returns SOAP fault on
+    // every class for non-ACM / pre-AMT-6 boxes; treat consistent
+    // failure across all four as "not supported" rather than an error.
+    struct Acc {
+        SystemDefenseResult r;
+        bool gotPolicies = false;
+        bool gotHdr      = false;
+        bool gotIp       = false;
+        bool gotSub      = false;
+        int faulted      = 0;
+        std::function<void(SystemDefenseResult)> cb;
+        void maybeFire() {
+            if (!gotPolicies || !gotHdr || !gotIp || !gotSub) return;
+            if (faulted == 4) {
+                r.supported = false;
+                r.ok = true;
+            } else {
+                r.ok = true;
+            }
+            cb(std::move(r));
+        }
+    };
+    auto acc = std::make_shared<Acc>();
+    acc->cb = std::move(callback);
+
+    enumerateAll(client, kSystemDefensePolicyResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotPolicies = true;
+            if (!err.isEmpty()) ++acc->faulted;
+            for (const QByteArray &it : items) {
+                SystemDefensePolicy p;
+                p.instanceId = findScalar(it, QStringLiteral("InstanceID"));
+                p.policyName = findScalar(it, QStringLiteral("PolicyName"));
+                bool conv = false;
+                const int pr = findScalar(it,
+                    QStringLiteral("Priority")).toInt(&conv);
+                if (conv) p.priority = pr;
+                p.txEnabled = findScalar(it,
+                    QStringLiteral("AntiSpoofingSupport")) == QStringLiteral("true");
+                p.rxEnabled = findScalar(it,
+                    QStringLiteral("PolicyEnabled")) == QStringLiteral("true");
+                p.defaultPolicy = findScalar(it,
+                    QStringLiteral("DefaultPolicy")) == QStringLiteral("true");
+                if (!p.instanceId.isEmpty())
+                    acc->r.policies.append(std::move(p));
+            }
+            acc->maybeFire();
+        });
+
+    enumerateAll(client, kHdr8021FilterResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotHdr = true;
+            if (!err.isEmpty()) ++acc->faulted;
+            for (const QByteArray &it : items) {
+                Hdr8021Filter f;
+                f.instanceId = findScalar(it, QStringLiteral("InstanceID"));
+                f.name       = findScalar(it, QStringLiteral("Name"));
+                bool conv = false;
+                f.filterDirection = findScalar(it,
+                    QStringLiteral("FilterDirection")).toInt(&conv);
+                if (!conv) f.filterDirection = -1;
+                conv = false;
+                f.vlanTag = findScalar(it,
+                    QStringLiteral("VLANTag")).toInt(&conv);
+                if (!conv) f.vlanTag = -1;
+                conv = false;
+                f.etherType = findScalar(it,
+                    QStringLiteral("EtherType")).toInt(&conv);
+                if (!conv) f.etherType = -1;
+                conv = false;
+                f.priority = findScalar(it,
+                    QStringLiteral("Priority")).toInt(&conv);
+                if (!conv) f.priority = -1;
+                if (!f.instanceId.isEmpty())
+                    acc->r.hdrFilters.append(std::move(f));
+            }
+            acc->maybeFire();
+        });
+
+    enumerateAll(client, kIpHeadersFilterResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotIp = true;
+            if (!err.isEmpty()) ++acc->faulted;
+            for (const QByteArray &it : items) {
+                IpHeadersFilter f;
+                f.instanceId  = findScalar(it, QStringLiteral("InstanceID"));
+                f.name        = findScalar(it, QStringLiteral("Name"));
+                bool conv = false;
+                f.filterDirection = findScalar(it,
+                    QStringLiteral("FilterDirection")).toInt(&conv);
+                if (!conv) f.filterDirection = -1;
+                f.srcAddress = findScalar(it,
+                    QStringLiteral("HdrSrcAddress"));
+                f.dstAddress = findScalar(it,
+                    QStringLiteral("HdrDestAddress"));
+                conv = false;
+                f.protocol = findScalar(it,
+                    QStringLiteral("HdrProtocolID8")).toInt(&conv);
+                if (!conv) f.protocol = -1;
+                conv = false;
+                f.srcPort = findScalar(it,
+                    QStringLiteral("HdrSrcPortStart")).toInt(&conv);
+                if (!conv) f.srcPort = -1;
+                conv = false;
+                f.dstPort = findScalar(it,
+                    QStringLiteral("HdrDestPortStart")).toInt(&conv);
+                if (!conv) f.dstPort = -1;
+                if (!f.instanceId.isEmpty())
+                    acc->r.ipFilters.append(std::move(f));
+            }
+            acc->maybeFire();
+        });
+
+    enumerateAll(client, kNetworkFilterResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotSub = true;
+            if (!err.isEmpty()) ++acc->faulted;
+            for (const QByteArray &it : items) {
+                NetworkFilterRow n;
+                n.instanceId  = findScalar(it, QStringLiteral("InstanceID"));
+                n.name        = findScalar(it, QStringLiteral("Name"));
+                n.filterClass = findScalar(it,
+                    QStringLiteral("CreationClassName"));
+                if (!n.instanceId.isEmpty())
+                    acc->r.subFilters.append(std::move(n));
+            }
+            acc->maybeFire();
         });
 }
 

@@ -175,6 +175,13 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(QVariantMap wsmanBrowseResult READ wsmanBrowseResult
                    NOTIFY wsmanBrowseResultChanged)
 
+    // System Defense (#165 Phase A) — ACM-only read-only snapshot.
+    // `supported=false` when the firmware doesn't expose the classes
+    // (ISM SKUs). QML further hides the pane when provisioningMode == 4
+    // (CCM) since System Defense is administered in ACM.
+    Q_PROPERTY(QVariantMap systemDefense READ systemDefense
+                   NOTIFY systemDefenseChanged)
+
     // Boot capabilities — which power-to-X menu entries we show.
     Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
@@ -305,6 +312,7 @@ public:
     [[nodiscard]] QVariantMap  eventSubscriptions() const { return m_eventSubscriptions; }
     [[nodiscard]] QVariantList wakeAlarms() const        { return m_wakeAlarms; }
     [[nodiscard]] QVariantMap  wsmanBrowseResult() const { return m_wsmanBrowseResult; }
+    [[nodiscard]] QVariantMap  systemDefense() const     { return m_systemDefense; }
 
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
@@ -341,6 +349,9 @@ public:
     Q_INVOKABLE void wsmanBrowse(const QString &classOrUri,
                                  const QString &kind,
                                  const QVariantMap &selectors);
+    /// Enumerate the System Defense classes for the ACM-only pane.
+    /// See #165 phase A.
+    Q_INVOKABLE void refreshSystemDefense();
     /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.
     /// Auto-called as part of `refreshPower` so the dialog is ready
     /// when the operator clicks the Power Policy button. See #162.
@@ -461,6 +472,7 @@ signals:
     void eventSubscriptionsChanged();
     void wakeAlarmsChanged();
     void wsmanBrowseResultChanged();
+    void systemDefenseChanged();
     void optInStatusChanged();
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
@@ -527,6 +539,7 @@ private:
         PendingAgentPresence       = 1 << 11,
         PendingEventSubscriptions  = 1 << 12,
         PendingWakeAlarms          = 1 << 13,
+        PendingSystemDefense       = 1 << 14,
     };
     int m_pendingRefreshes = 0;
     /// `true` between `setSshConfig(enabled=true)` and the session
@@ -627,6 +640,7 @@ private:
     QVariantMap  m_eventSubscriptions;
     QVariantList m_wakeAlarms;
     QVariantMap  m_wsmanBrowseResult;
+    QVariantMap  m_systemDefense;
 
     bool m_optInRequired = false;
     int m_optInState = 0;
