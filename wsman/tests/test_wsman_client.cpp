@@ -33,6 +33,7 @@ private slots:
     void getEthernetSettingsReturnsMultipleInterfacesWithIPv6();
     void getDeviceCertStoreStitchesCertsKeysAndTls();
     void splitDnHelperHandlesEmptyAndMultiple();
+    void getRemoteAccessStitchesEnvPoliciesServersAndProxies();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -1266,6 +1267,213 @@ void TestWsmanClient::getDeviceCertStoreStitchesCertsKeysAndTls()
     QCOMPARE(res.activeCertInstanceIds.size(), 1);
     QCOMPARE(res.activeCertInstanceIds.first(),
              QStringLiteral("Intel(r) AMT Certificate: Handle: 0"));
+}
+
+void TestWsmanClient::getRemoteAccessStitchesEnvPoliciesServersAndProxies()
+{
+    // Build a `Periodic` policy ExtendedData blob: type=0 (interval) +
+    // seconds=3600 — 8 bytes BE — and base64 it.
+    auto be32 = [](quint32 v) {
+        QByteArray r; r.resize(4);
+        r[0] = char(v >> 24); r[1] = char((v >> 16) & 0xFF);
+        r[2] = char((v >>  8) & 0xFF); r[3] = char(v & 0xFF);
+        return r;
+    };
+    QByteArray periodicExt;
+    periodicExt += be32(0);          // type 0 = interval
+    periodicExt += be32(3600);       // every 3600 s
+    const QString periodicExtB64 = QString::fromLatin1(periodicExt.toBase64());
+
+    static const char *envDetectResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:e=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_EnvironmentDetectionSettingData\">"
+        "<s:Header/><s:Body>"
+        "<e:AMT_EnvironmentDetectionSettingData>"
+        "<e:DetectionStrings>corp.example.com</e:DetectionStrings>"
+        "<e:DetectionStrings>internal.example.com</e:DetectionStrings>"
+        "</e:AMT_EnvironmentDetectionSettingData>"
+        "</s:Body></s:Envelope>";
+
+    static const char *userInitResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:u=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_UserInitiatedConnectionService\">"
+        "<s:Header/><s:Body>"
+        "<u:AMT_UserInitiatedConnectionService>"
+        "<u:EnabledState>32771</u:EnabledState>"
+        "</u:AMT_UserInitiatedConnectionService>"
+        "</s:Body></s:Envelope>";
+
+    const QString policyRuleResponseTmpl = QStringLiteral(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:p=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_RemoteAccessPolicyRule\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        "<p:AMT_RemoteAccessPolicyRule>"
+        "<p:PolicyRuleName>User Initiated</p:PolicyRuleName>"
+        "<p:Trigger>0</p:Trigger>"
+        "<p:TunnelLifeTime>0</p:TunnelLifeTime>"
+        "</p:AMT_RemoteAccessPolicyRule>"
+        "<p:AMT_RemoteAccessPolicyRule>"
+        "<p:PolicyRuleName>Periodic</p:PolicyRuleName>"
+        "<p:Trigger>2</p:Trigger>"
+        "<p:TunnelLifeTime>1800</p:TunnelLifeTime>"
+        "<p:ExtendedData>%1</p:ExtendedData>"
+        "</p:AMT_RemoteAccessPolicyRule>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>"
+    ).arg(periodicExtB64);
+    const QByteArray policyRuleResponse = policyRuleResponseTmpl.toUtf8();
+
+    static const char *appliesResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:a=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\""
+        " xmlns:w=\"http://schemas.xmlsoap.org/ws/2004/09/transfer\""
+        " xmlns:p=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_RemoteAccessPolicyAppliesToMPS\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        "<p:AMT_RemoteAccessPolicyAppliesToMPS>"
+        "<p:PolicySet>"
+          "<a:Address>/wsman</a:Address>"
+          "<a:ReferenceParameters>"
+            "<w:ResourceURI>http://intel.com/wbem/wscim/1/amt-schema/1/AMT_RemoteAccessPolicyRule</w:ResourceURI>"
+            "<w:SelectorSet><w:Selector Name=\"PolicyRuleName\">Periodic</w:Selector></w:SelectorSet>"
+          "</a:ReferenceParameters>"
+        "</p:PolicySet>"
+        "<p:ManagedElement>"
+          "<a:Address>/wsman</a:Address>"
+          "<a:ReferenceParameters>"
+            "<w:ResourceURI>http://intel.com/wbem/wscim/1/amt-schema/1/AMT_ManagementPresenceRemoteSAP</w:ResourceURI>"
+            "<w:SelectorSet><w:Selector Name=\"Name\">MPS-1</w:Selector></w:SelectorSet>"
+          "</a:ReferenceParameters>"
+        "</p:ManagedElement>"
+        "</p:AMT_RemoteAccessPolicyAppliesToMPS>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    static const char *mpsResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:m=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_ManagementPresenceRemoteSAP\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        "<m:AMT_ManagementPresenceRemoteSAP>"
+        "<m:Name>MPS-1</m:Name>"
+        "<m:AccessInfo>mps.example.com</m:AccessInfo>"
+        "<m:Port>4433</m:Port>"
+        "<m:CN>mps.example.com</m:CN>"
+        "<m:MpsType>0</m:MpsType>"
+        "</m:AMT_ManagementPresenceRemoteSAP>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    static const char *proxyServiceResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:p=\"http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HTTPProxyService\">"
+        "<s:Header/><s:Body>"
+        "<p:IPS_HTTPProxyService>"
+        "<p:EnabledState>2</p:EnabledState>"
+        "</p:IPS_HTTPProxyService>"
+        "</s:Body></s:Envelope>";
+
+    static const char *proxyAccessPointResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:p=\"http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HTTPProxyAccessPoint\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        "<p:IPS_HTTPProxyAccessPoint>"
+        "<p:AccessInfo>proxy.corp.example.com</p:AccessInfo>"
+        "<p:Port>3128</p:Port>"
+        "<p:NetworkDnsSuffix>example.com</p:NetworkDnsSuffix>"
+        "</p:IPS_HTTPProxyAccessPoint>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     const bool isPull = body.contains(":Pull>")
+                                      || body.contains("<wsen:Pull");
+                     QByteArray response;
+                     if (!isPull && body.contains("AMT_EnvironmentDetectionSettingData")) {
+                         response = envDetectResponse;
+                     } else if (!isPull && body.contains("AMT_UserInitiatedConnectionService")) {
+                         response = userInitResponse;
+                     } else if (!isPull && body.contains("IPS_HTTPProxyService")) {
+                         response = proxyServiceResponse;
+                     } else if (!isPull) {
+                         response = QByteArray(kEnumerateResponse);
+                     } else if (body.contains("AMT_RemoteAccessPolicyRule")) {
+                         response = policyRuleResponse;
+                     } else if (body.contains("AMT_RemoteAccessPolicyAppliesToMPS")) {
+                         response = appliesResponse;
+                     } else if (body.contains("AMT_ManagementPresenceRemoteSAP")) {
+                         response = mpsResponse;
+                     } else if (body.contains("IPS_HTTPProxyAccessPoint")) {
+                         response = proxyAccessPointResponse;
+                     } else {
+                         // empty pull for MpsUsernamePassword etc.
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\">"
+                             "<s:Header/><s:Body><wsen:PullResponse>"
+                             "<wsen:Items/><wsen:EndOfSequence/>"
+                             "</wsen:PullResponse></s:Body></s:Envelope>";
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    RemoteAccessResult res;
+    QEventLoop loop;
+    getRemoteAccess(&client, [&](RemoteAccessResult r) {
+        res = r;
+        loop.quit();
+    });
+    QTimer::singleShot(8000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(res.ok, qPrintable(res.error));
+    QCOMPARE(res.envDetection.domains.size(), 2);
+    QCOMPARE(res.envDetection.domains.first(),
+             QStringLiteral("corp.example.com"));
+    QCOMPARE(res.userInitiated.enabledState, 32771);
+
+    // Two policies — User Initiated (no extended data) and Periodic
+    // (interval 3600). Order is the legacy emit order.
+    QCOMPARE(res.policies.size(), 2);
+    QCOMPARE(res.policies[0].name, QStringLiteral("User Initiated"));
+    QCOMPARE(res.policies[1].name, QStringLiteral("Periodic"));
+    QVERIFY(res.policies[1].periodicInterval);
+    QCOMPARE(res.policies[1].periodicSeconds, 3600);
+    QCOMPARE(res.policies[1].tunnelLifeTime, 1800);
+    QCOMPARE(res.policies[1].mpsNames.size(), 1);
+    QCOMPARE(res.policies[1].mpsNames.first(), QStringLiteral("MPS-1"));
+
+    QCOMPARE(res.servers.size(), 1);
+    QCOMPARE(res.servers.first().accessInfo,
+             QStringLiteral("mps.example.com"));
+    QCOMPARE(res.servers.first().port, 4433);
+
+    QVERIFY(res.httpProxySupported);
+    QCOMPARE(res.httpProxies.size(), 1);
+    QCOMPARE(res.httpProxies.first().accessInfo,
+             QStringLiteral("proxy.corp.example.com"));
+
+    QCOMPARE(userInitiatedCiraLabel(32771),
+             QStringLiteral("BIOS + OS enabled"));
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

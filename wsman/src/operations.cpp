@@ -125,6 +125,23 @@ constexpr char kTlsSettingDataResource[] =
 constexpr char kTlsCredentialContextResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_TLSCredentialContext";
 
+constexpr char kEnvironmentDetectionResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_EnvironmentDetectionSettingData";
+constexpr char kUserInitiatedConnectionResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_UserInitiatedConnectionService";
+constexpr char kRemoteAccessPolicyRuleResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_RemoteAccessPolicyRule";
+constexpr char kRemoteAccessPolicyAppliesToMpsResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_RemoteAccessPolicyAppliesToMPS";
+constexpr char kManagementPresenceRemoteSapResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_ManagementPresenceRemoteSAP";
+constexpr char kMpsUsernamePasswordResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_MPSUsernamePassword";
+constexpr char kHttpProxyServiceResource[] =
+    "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HTTPProxyService";
+constexpr char kHttpProxyAccessPointResource[] =
+    "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HTTPProxyAccessPoint";
+
 QString newMessageId()
 {
     return QStringLiteral("uuid:") + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -2589,6 +2606,266 @@ void getDeviceCertStore(WsmanClient *client,
     kick(Kind::KeyPair, kPublicPrivateKeyPairResource);
     kick(Kind::Tls,     kTlsSettingDataResource);
     kick(Kind::Ctx,     kTlsCredentialContextResource);
+}
+
+QString userInitiatedCiraLabel(int code)
+{
+    switch (code) {
+    case 32768: return QStringLiteral("Disabled");
+    case 32769: return QStringLiteral("BIOS enabled");
+    case 32770: return QStringLiteral("OS enabled");
+    case 32771: return QStringLiteral("BIOS + OS enabled");
+    default:    return QStringLiteral("State %1").arg(code);
+    }
+}
+
+namespace {
+
+QStringList parseDetectionStrings(const QByteArray &bodyXml)
+{
+    QStringList out;
+    QXmlStreamReader r(bodyXml);
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement() && r.name() == QStringLiteral("DetectionStrings")) {
+            const QString s = r.readElementText();
+            if (!s.isEmpty()) out.append(s);
+        }
+    }
+    return out;
+}
+
+/// Decode `AMT_RemoteAccessPolicyRule.ExtendedData` for Periodic
+/// triggers. The blob is base64 over 12 bytes:
+///   [4 BE] type — 0 = interval, 1 = time-of-day
+///   if interval: [4 BE] seconds
+///   if time-of-day: [4 BE] hour, [4 BE] minute
+void decodeExtendedData(const QString &b64, RemoteAccessPolicy &p)
+{
+    const QByteArray raw = QByteArray::fromBase64(b64.toLatin1());
+    if (raw.size() < 8) return;
+    const auto be32 = [](const QByteArray &b, int o) {
+        if (o + 3 >= b.size()) return quint32{0};
+        return (quint32(quint8(b[o]))     << 24)
+             | (quint32(quint8(b[o + 1])) << 16)
+             | (quint32(quint8(b[o + 2])) <<  8)
+             |  quint32(quint8(b[o + 3]));
+    };
+    const quint32 type = be32(raw, 0);
+    if (type == 0) {
+        p.periodicInterval = true;
+        p.periodicSeconds  = int(be32(raw, 4));
+    } else if (type == 1 && raw.size() >= 12) {
+        p.periodicTimeOfDay = true;
+        p.periodicHour   = int(be32(raw, 4));
+        p.periodicMinute = int(be32(raw, 8));
+    }
+}
+
+/// Walk a `AMT_RemoteAccessPolicyAppliesToMPS` item-XML and pull the
+/// two embedded EPRs out: the policy rule's `PolicyRuleName` and the
+/// MPS server's `Name`. Returns {policyRuleName, mpsServerName}.
+std::pair<QString, QString> parseLinkRow(const QByteArray &item)
+{
+    QString policyName, mpsName;
+    QXmlStreamReader r(item);
+    int currentEprIsPolicy = -1; // 1 = policy, 0 = mps, -1 = unknown
+    bool sawResourceUri = false;
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement()) {
+            if (r.name() == QStringLiteral("ResourceURI")) {
+                const QString uri = r.readElementText();
+                if (uri.endsWith(QStringLiteral("AMT_RemoteAccessPolicyRule"))) {
+                    currentEprIsPolicy = 1;
+                } else if (uri.endsWith(QStringLiteral("AMT_ManagementPresenceRemoteSAP"))) {
+                    currentEprIsPolicy = 0;
+                } else {
+                    currentEprIsPolicy = -1;
+                }
+                sawResourceUri = true;
+            } else if (r.name() == QStringLiteral("Selector") && sawResourceUri) {
+                const auto attrs = r.attributes();
+                const QString name = attrs.value(QStringLiteral("Name")).toString();
+                const QString val = r.readElementText();
+                if (currentEprIsPolicy == 1
+                    && name == QStringLiteral("PolicyRuleName"))
+                    policyName = val;
+                if (currentEprIsPolicy == 0 && name == QStringLiteral("Name"))
+                    mpsName = val;
+            }
+        }
+    }
+    return {policyName, mpsName};
+}
+
+} // namespace
+
+void getRemoteAccess(WsmanClient *client,
+                     std::function<void(RemoteAccessResult)> callback)
+{
+    enum class Kind {
+        EnvDetect, UserInit, PolicyRule, PolicyApplies, Mps,
+        MpsAuth, ProxyService, ProxyAccessPoint, _Count
+    };
+    constexpr int kCount = int(Kind::_Count);
+
+    struct State {
+        std::array<bool, kCount> done{};
+        std::array<QList<QByteArray>, kCount> items;
+        std::array<QString, kCount> errors;
+        std::function<void(RemoteAccessResult)> cb;
+        bool fired = false;
+    };
+    auto st = std::make_shared<State>();
+    st->cb = std::move(callback);
+
+    if (client == nullptr) {
+        RemoteAccessResult r;
+        r.error = QStringLiteral("client is null");
+        st->cb(std::move(r));
+        return;
+    }
+
+    auto maybeFire = [st]() {
+        if (st->fired) return;
+        for (bool d : st->done) if (!d) return;
+        st->fired = true;
+        RemoteAccessResult r;
+
+        // Environment detection.
+        if (!st->items[int(Kind::EnvDetect)].isEmpty()) {
+            r.envDetection.domains = parseDetectionStrings(
+                st->items[int(Kind::EnvDetect)].first());
+        }
+
+        // User-initiated.
+        if (!st->items[int(Kind::UserInit)].isEmpty()) {
+            const QByteArray &b = st->items[int(Kind::UserInit)].first();
+            bool conv = false;
+            const int v = findScalar(b, QStringLiteral("EnabledState")).toInt(&conv);
+            if (conv) r.userInitiated.enabledState = v;
+        }
+
+        // MPS server list.
+        for (const QByteArray &item : st->items[int(Kind::Mps)]) {
+            MpsServer s;
+            s.name       = findScalar(item, QStringLiteral("Name"));
+            s.accessInfo = findScalar(item, QStringLiteral("AccessInfo"));
+            bool conv = false;
+            const int p = findScalar(item, QStringLiteral("Port")).toInt(&conv);
+            if (conv) s.port = p;
+            s.cn = findScalar(item, QStringLiteral("CN"));
+            conv = false;
+            const int mt = findScalar(item, QStringLiteral("MpsType")).toInt(&conv);
+            if (conv) s.mpsType = mt;
+            r.servers.append(s);
+        }
+
+        // Policy rules (User Initiated / Alert / Periodic).
+        QHash<QString, RemoteAccessPolicy> policyByName;
+        for (const QByteArray &item : st->items[int(Kind::PolicyRule)]) {
+            RemoteAccessPolicy p;
+            p.name = findScalar(item, QStringLiteral("PolicyRuleName"));
+            bool conv = false;
+            const int tr = findScalar(item, QStringLiteral("Trigger")).toInt(&conv);
+            if (conv) p.trigger = tr;
+            const int tl = findScalar(item, QStringLiteral("TunnelLifeTime")).toInt(&conv);
+            if (conv) p.tunnelLifeTime = tl;
+            const QString ext = findScalar(item, QStringLiteral("ExtendedData"));
+            if (!ext.isEmpty()) decodeExtendedData(ext, p);
+            policyByName.insert(p.name, p);
+        }
+
+        // Linkage policy → MPS via PolicyAppliesToMPS.
+        for (const QByteArray &item : st->items[int(Kind::PolicyApplies)]) {
+            auto [pn, mn] = parseLinkRow(item);
+            if (pn.isEmpty() || mn.isEmpty()) continue;
+            if (!policyByName.contains(pn)) continue;
+            policyByName[pn].mpsNames.append(mn);
+        }
+
+        // Emit policies in a stable order.
+        const QStringList order = {
+            QStringLiteral("User Initiated"),
+            QStringLiteral("Alert"),
+            QStringLiteral("Periodic"),
+        };
+        for (const QString &n : order)
+            if (policyByName.contains(n))
+                r.policies.append(policyByName.value(n));
+        // Any out-of-band policies the firmware may add.
+        for (auto it = policyByName.constBegin(); it != policyByName.constEnd(); ++it)
+            if (!order.contains(it.key())) r.policies.append(it.value());
+
+        // HTTP proxies.
+        if (!st->items[int(Kind::ProxyService)].isEmpty()) {
+            r.httpProxySupported = true;
+            for (const QByteArray &item : st->items[int(Kind::ProxyAccessPoint)]) {
+                MpsHttpProxy p;
+                p.accessInfo = findScalar(item, QStringLiteral("AccessInfo"));
+                bool conv = false;
+                const int port = findScalar(item, QStringLiteral("Port")).toInt(&conv);
+                if (conv) p.port = port;
+                p.networkDnsSuffix = findScalar(item,
+                                                 QStringLiteral("NetworkDnsSuffix"));
+                r.httpProxies.append(p);
+            }
+        }
+
+        // Whole-call ok if at least the env-detection or user-initiated
+        // Get succeeded — anything else is optional.
+        r.ok = !st->items[int(Kind::EnvDetect)].isEmpty()
+            || !st->items[int(Kind::UserInit)].isEmpty();
+        if (!r.ok)
+            for (const QString &e : st->errors)
+                if (!e.isEmpty()) { r.error = e; break; }
+        st->cb(std::move(r));
+    };
+
+    auto kickEnum = [client, st, maybeFire](Kind k, const char *uri) {
+        enumerateAll(client, uri,
+            [st, k, maybeFire](QList<QByteArray> items, QString error) mutable {
+                const int idx = int(k);
+                st->items[idx]  = std::move(items);
+                st->errors[idx] = error;
+                st->done[idx]   = true;
+                maybeFire();
+            });
+    };
+    auto kickGet = [client, st, maybeFire](Kind k, const char *uri) {
+        const QByteArray env = buildGetEnvelope(QString::fromLatin1(uri), {},
+            client->endpoint().toString(), newMessageId());
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
+            [reply, k, st, maybeFire]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->hasError();
+                const auto errString = reply->errorString();
+                reply->deleteLater();
+                const int idx = int(k);
+                if (!err) {
+                    const SoapResponse soap = parseResponse(body);
+                    if (!soap.isFault())
+                        st->items[idx].append(soap.bodyXml);
+                    else
+                        st->errors[idx] = soap.fault;
+                } else {
+                    st->errors[idx] = errString;
+                }
+                st->done[idx] = true;
+                maybeFire();
+            });
+    };
+
+    kickGet(Kind::EnvDetect,         kEnvironmentDetectionResource);
+    kickGet(Kind::UserInit,          kUserInitiatedConnectionResource);
+    kickEnum(Kind::PolicyRule,       kRemoteAccessPolicyRuleResource);
+    kickEnum(Kind::PolicyApplies,    kRemoteAccessPolicyAppliesToMpsResource);
+    kickEnum(Kind::Mps,              kManagementPresenceRemoteSapResource);
+    kickEnum(Kind::MpsAuth,          kMpsUsernamePasswordResource);
+    kickGet(Kind::ProxyService,      kHttpProxyServiceResource);
+    kickEnum(Kind::ProxyAccessPoint, kHttpProxyAccessPointResource);
 }
 
 } // namespace qumesh::wsman

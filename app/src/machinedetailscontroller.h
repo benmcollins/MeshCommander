@@ -136,6 +136,9 @@ class MachineDetailsController : public QObject
     // Device certificate store — read-only.
     Q_PROPERTY(QVariantMap  deviceCertStore READ deviceCertStore NOTIFY deviceCertStoreChanged)
 
+    // CIRA / Remote-access — read-only.
+    Q_PROPERTY(QVariantMap  remoteAccess READ remoteAccess NOTIFY remoteAccessChanged)
+
     // Boot capabilities — which power-to-X menu entries we show.
     Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
@@ -250,6 +253,7 @@ public:
     [[nodiscard]] QVariantMap  auditLogState() const     { return m_auditLogState; }
     [[nodiscard]] QVariantList auditLogEntries() const   { return m_auditLogEntries; }
     [[nodiscard]] QVariantMap  deviceCertStore() const   { return m_deviceCertStore; }
+    [[nodiscard]] QVariantMap  remoteAccess() const      { return m_remoteAccess; }
 
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
@@ -265,6 +269,7 @@ public:
     Q_INVOKABLE void refreshHardware();
     Q_INVOKABLE void refreshAuditLog();
     Q_INVOKABLE void refreshDeviceCerts();
+    Q_INVOKABLE void refreshRemoteAccess();
     /// Read `IPS_OptInService` + `IPS_KVMRedirectionSettingData` and
     /// update the four exposed properties. Also called by
     /// `refreshOverview`.
@@ -370,6 +375,7 @@ signals:
     void hardwareChanged();
     void auditLogChanged();
     void deviceCertStoreChanged();
+    void remoteAccessChanged();
     void optInStatusChanged();
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
@@ -431,6 +437,7 @@ private:
         PendingHardware     = 1 << 6,
         PendingAuditLog     = 1 << 7,
         PendingDeviceCerts  = 1 << 8,
+        PendingRemoteAccess = 1 << 9,
     };
     int m_pendingRefreshes = 0;
     /// `true` between `setSshConfig(enabled=true)` and the session
@@ -520,6 +527,7 @@ private:
     QVariantMap  m_auditLogState;
     QVariantList m_auditLogEntries;
     QVariantMap  m_deviceCertStore;
+    QVariantMap  m_remoteAccess;
 
     bool m_optInRequired = false;
     int m_optInState = 0;

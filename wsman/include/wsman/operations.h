@@ -572,6 +572,77 @@ struct DeviceCertResult
 void getDeviceCertStore(WsmanClient *client,
                         std::function<void(DeviceCertResult)> callback);
 
+/// One Management Presence Server — from `AMT_ManagementPresenceRemoteSAP`.
+struct MpsServer
+{
+    QString name;                ///< `Name` (the InstanceID equivalent).
+    QString accessInfo;
+    int port = 0;
+    QString cn;                  ///< Optional trusted CN.
+    int mpsType = 0;             ///< 0 = CIRA (external), 1 = CILA.
+};
+
+/// One HTTP proxy — from `IPS_HTTPProxyAccessPoint` (AMT 11+).
+struct MpsHttpProxy
+{
+    QString accessInfo;
+    int port = 0;
+    QString networkDnsSuffix;
+};
+
+/// One remote-access policy — `AMT_RemoteAccessPolicyRule`. AMT exposes
+/// at most three rules (`User Initiated`, `Alert`, `Periodic`) and the
+/// matching MPS servers come from the `…AppliesToMPS` link enumeration.
+struct RemoteAccessPolicy
+{
+    QString name;                ///< "User Initiated" / "Alert" / "Periodic"
+    int trigger = -1;            ///< CIM Trigger code (0=User, 1=Alert, 2=Periodic).
+    int tunnelLifeTime = 0;
+    /// Periodic-only extras decoded from `ExtendedData`:
+    bool periodicInterval = false; ///< When true, `periodicSeconds` is meaningful.
+    int periodicSeconds = 0;
+    bool periodicTimeOfDay = false; ///< When true, `periodicHour`/`periodicMinute`.
+    int periodicHour = 0;
+    int periodicMinute = 0;
+    /// MPS-server names this policy applies to (matches `MpsServer.name`).
+    QStringList mpsNames;
+};
+
+struct EnvironmentDetection
+{
+    QStringList domains;
+};
+
+struct UserInitiatedCira
+{
+    /// 32768 Disabled / 32769 BIOS / 32770 OS / 32771 BIOS+OS.
+    int enabledState = 32768;
+};
+
+struct RemoteAccessResult
+{
+    bool ok = false;
+    QString error;
+    EnvironmentDetection envDetection;
+    UserInitiatedCira    userInitiated;
+    QList<RemoteAccessPolicy> policies;
+    QList<MpsServer>          servers;
+    QList<MpsHttpProxy>       httpProxies;
+    /// `true` when AMT actually exposed `IPS_HTTPProxyService` — older
+    /// firmware (< 11) doesn't, and the QML should hide the section
+    /// rather than render "(no proxies configured)".
+    bool httpProxySupported = false;
+};
+
+/// Render the `AMT_UserInitiatedConnectionService.EnabledState` numeric
+/// code into a human-readable label.
+[[nodiscard]] QString userInitiatedCiraLabel(int code);
+
+/// Run the legacy `PullRemoteAccess` BatchEnum and stitch the eight
+/// classes into one result. Read-only — edit flows are out of scope.
+void getRemoteAccess(WsmanClient *client,
+                     std::function<void(RemoteAccessResult)> callback);
+
 /// Walk every page of `AMT_AuditLog.ReadRecords` and return the parsed
 /// records. Pages are 16-record chunks per the AMT contract. Faulted
 /// pages short-circuit and return the entries collected so far with
