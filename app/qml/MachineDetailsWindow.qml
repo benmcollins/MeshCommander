@@ -719,9 +719,10 @@ AppWindow {
                         Repeater {
                             model: controller.hardwareInventory.processors || []
                             delegate: Section {
+                                id: cpuSection
                                 required property var modelData
                                 required property int index
-                                title: qsTr("PROCESSOR %1").arg(index + 1)
+                                title: qsTr("PROCESSOR %1").arg(cpuSection.index + 1)
                                 Layout.fillWidth: true
                                 Layout.leftMargin: 24
                                 Layout.rightMargin: 24
@@ -733,18 +734,18 @@ AppWindow {
                                     Layout.fillWidth: true
 
                                     Text { text: qsTr("Manufacturer"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.manufacturer || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: cpuSection.modelData.manufacturer || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Family"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.familyLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                                    Text { text: cpuSection.modelData.familyLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                                     Text { text: qsTr("Version"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.version || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: cpuSection.modelData.version || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Max socket speed"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.maxClockSpeedMhz > 0
-                                        ? qsTr("%1 MHz").arg(parent.parent.modelData.maxClockSpeedMhz)
+                                    Text { text: cpuSection.modelData.maxClockSpeedMhz > 0
+                                        ? qsTr("%1 MHz").arg(cpuSection.modelData.maxClockSpeedMhz)
                                         : qsTr("(unknown)")
                                         color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Status"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.cpuStatusLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: cpuSection.modelData.cpuStatusLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                 }
                             }
                         }
@@ -753,9 +754,10 @@ AppWindow {
                         Repeater {
                             model: controller.hardwareInventory.memoryModules || []
                             delegate: Section {
+                                id: memSection
                                 required property var modelData
                                 required property int index
-                                title: qsTr("MEMORY MODULE %1").arg(index + 1)
+                                title: qsTr("MEMORY MODULE %1").arg(memSection.index + 1)
                                 Layout.fillWidth: true
                                 Layout.leftMargin: 24
                                 Layout.rightMargin: 24
@@ -767,22 +769,22 @@ AppWindow {
                                     Layout.fillWidth: true
 
                                     Text { text: qsTr("Bank label"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.bankLabel || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: memSection.modelData.bankLabel || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Size"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.capacityBytes > 0
-                                        ? qsTr("%1 MB").arg(Math.round(parent.parent.modelData.capacityBytes / (1024 * 1024)))
+                                    Text { text: memSection.modelData.capacityBytes > 0
+                                        ? qsTr("%1 MB").arg(Math.round(memSection.modelData.capacityBytes / (1024 * 1024)))
                                         : qsTr("(unknown)")
                                         color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Type"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.memoryTypeLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: memSection.modelData.memoryTypeLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Form factor"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.formFactorLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: memSection.modelData.formFactorLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Manufacturer"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.manufacturer || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: memSection.modelData.manufacturer || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Part number"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.partNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: memSection.modelData.partNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Serial number"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.serialNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: memSection.modelData.serialNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                 }
                             }
                         }
@@ -791,9 +793,10 @@ AppWindow {
                         Repeater {
                             model: controller.hardwareInventory.storageDevices || []
                             delegate: Section {
+                                id: storageSection
                                 required property var modelData
                                 required property int index
-                                title: qsTr("STORAGE %1").arg(index + 1)
+                                title: qsTr("STORAGE %1").arg(storageSection.index + 1)
                                 Layout.fillWidth: true
                                 Layout.leftMargin: 24
                                 Layout.rightMargin: 24
@@ -805,14 +808,14 @@ AppWindow {
                                     Layout.fillWidth: true
 
                                     Text { text: qsTr("Model"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.model || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: storageSection.modelData.model || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Serial number"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                    Text { text: parent.parent.modelData.serialNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: storageSection.modelData.serialNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                     Text { text: qsTr("Capacity"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
                                     // Schema MaxMediaSize is in units of 1000 bytes (kB);
                                     // convert to MB.
-                                    Text { text: parent.parent.modelData.maxMediaSizeKb > 0
-                                        ? qsTr("%1 MB").arg(Math.round(parent.parent.modelData.maxMediaSizeKb * 1000 / (1024 * 1024)))
+                                    Text { text: storageSection.modelData.maxMediaSizeKb > 0
+                                        ? qsTr("%1 MB").arg(Math.round(storageSection.modelData.maxMediaSizeKb * 1000 / (1024 * 1024)))
                                         : qsTr("(unknown)")
                                         color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                 }
@@ -1228,14 +1231,21 @@ AppWindow {
 
                         // --- WiFi port + radio --------------------------
                         Section {
+                            id: wifiPortSection
                             title: qsTr("WIFI PORT")
-                            visible: controller.wireless
-                                  && controller.wireless.port
-                                  && controller.wireless.port.present === true
+                            visible: (controller.wireless
+                                       && controller.wireless.port
+                                       && controller.wireless.port.present) === true
                             accent: Colors.accent
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
+
+                            // `port` is referenced by every binding below; bindings in
+                            // hidden Sections still evaluate, so cache it (or {}) here
+                            // so the property reads never throw.
+                            readonly property var wifiPort: (controller.wireless
+                                                              && controller.wireless.port) || ({})
 
                             GridLayout {
                                 columns: 2
@@ -1244,32 +1254,36 @@ AppWindow {
                                 Layout.fillWidth: true
 
                                 Text { text: qsTr("Port state"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.wireless.port.portStateLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: wifiPortSection.wifiPort.portStateLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                 Text { text: qsTr("Radio"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.wireless.port.radioStateLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: wifiPortSection.wifiPort.radioStateLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                 Text { text: qsTr("Current SSID"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.wireless.port.currentSsid || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: wifiPortSection.wifiPort.currentSsid || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                 Text {
                                     text: qsTr("Local profile sync")
                                     color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS
-                                    visible: controller.wireless.port.localProfileSyncEnabled !== -1
+                                    visible: wifiPortSection.wifiPort.localProfileSyncEnabled !== undefined
+                                          && wifiPortSection.wifiPort.localProfileSyncEnabled !== -1
                                 }
                                 Text {
-                                    text: controller.wireless.port.localProfileSyncEnabled === 1
+                                    text: wifiPortSection.wifiPort.localProfileSyncEnabled === 1
                                         ? qsTr("Enabled") : qsTr("Disabled")
                                     color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true
-                                    visible: controller.wireless.port.localProfileSyncEnabled !== -1
+                                    visible: wifiPortSection.wifiPort.localProfileSyncEnabled !== undefined
+                                          && wifiPortSection.wifiPort.localProfileSyncEnabled !== -1
                                 }
                                 Text {
                                     text: qsTr("UEFI profile sharing")
                                     color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS
-                                    visible: controller.wireless.port.uefiProfileShareEnabled !== -1
+                                    visible: wifiPortSection.wifiPort.uefiProfileShareEnabled !== undefined
+                                          && wifiPortSection.wifiPort.uefiProfileShareEnabled !== -1
                                 }
                                 Text {
-                                    text: controller.wireless.port.uefiProfileShareEnabled === 1
+                                    text: wifiPortSection.wifiPort.uefiProfileShareEnabled === 1
                                         ? qsTr("Enabled") : qsTr("Disabled")
                                     color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true
-                                    visible: controller.wireless.port.uefiProfileShareEnabled !== -1
+                                    visible: wifiPortSection.wifiPort.uefiProfileShareEnabled !== undefined
+                                          && wifiPortSection.wifiPort.uefiProfileShareEnabled !== -1
                                 }
                             }
                         }
@@ -1277,7 +1291,7 @@ AppWindow {
                         // --- WiFi profiles ------------------------------
                         Section {
                             title: qsTr("WIFI PROFILES")
-                            visible: controller.wireless && controller.wireless.ok
+                            visible: (controller.wireless && controller.wireless.ok) === true
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
@@ -1286,14 +1300,14 @@ AppWindow {
                                 Layout.fillWidth: true
                                 spacing: 6
                                 Text {
-                                    visible: (controller.wireless.profiles || []).length === 0
+                                    visible: ((controller.wireless && controller.wireless.profiles) || []).length === 0
                                     text: qsTr("No wireless profiles configured.")
                                     color: Colors.textFaint
                                     font.family: Type.sans
                                     font.pixelSize: Type.sizeXs
                                 }
                                 Repeater {
-                                    model: controller.wireless.profiles || []
+                                    model: (controller.wireless && controller.wireless.profiles) || []
                                     delegate: ColumnLayout {
                                         required property var modelData
                                         Layout.fillWidth: true
@@ -1342,14 +1356,18 @@ AppWindow {
 
                         // --- Wired 802.1x ------------------------------
                         Section {
+                            id: wiredSection
                             title: qsTr("WIRED 802.1X")
-                            visible: controller.wireless
-                                  && controller.wireless.wired
-                                  && controller.wireless.wired.present === true
+                            visible: (controller.wireless
+                                       && controller.wireless.wired
+                                       && controller.wireless.wired.present) === true
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
                             Layout.bottomMargin: 24
+
+                            readonly property var wired: (controller.wireless
+                                                           && controller.wireless.wired) || ({})
 
                             GridLayout {
                                 columns: 2
@@ -1358,9 +1376,9 @@ AppWindow {
                                 Layout.fillWidth: true
 
                                 Text { text: qsTr("State"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.wireless.wired.enabled ? qsTr("Enabled") : qsTr("Disabled"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: wiredSection.wired.enabled ? qsTr("Enabled") : qsTr("Disabled"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                 Text { text: qsTr("Protocol"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
-                                Text { text: controller.wireless.wired.authProtocolLabel || qsTr("(none)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: wiredSection.wired.authProtocolLabel || qsTr("(none)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                             }
                         }
                     }
@@ -1652,7 +1670,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                         // --- Environment detection -------------------
                         Section {
                             title: qsTr("ENVIRONMENT DETECTION")
-                            visible: controller.remoteAccess && controller.remoteAccess.ok
+                            visible: (controller.remoteAccess && controller.remoteAccess.ok) === true
                             accent: Colors.accent
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
@@ -1691,9 +1709,9 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                         // --- Policies (User Initiated / Alert / Periodic) ---
                         Section {
                             title: qsTr("CONNECTION POLICIES")
-                            visible: controller.remoteAccess
-                                  && controller.remoteAccess.policies
-                                  && controller.remoteAccess.policies.length > 0
+                            visible: !!(controller.remoteAccess
+                                         && controller.remoteAccess.policies
+                                         && controller.remoteAccess.policies.length > 0)
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
@@ -1702,7 +1720,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 Layout.fillWidth: true
                                 spacing: 6
                                 Repeater {
-                                    model: controller.remoteAccess.policies || []
+                                    model: (controller.remoteAccess && controller.remoteAccess.policies) || []
                                     delegate: ColumnLayout {
                                         required property var modelData
                                         Layout.fillWidth: true
@@ -1753,8 +1771,8 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                         // --- MPS servers ----------------------------
                         Section {
                             title: qsTr("MANAGEMENT PRESENCE SERVERS")
-                            visible: controller.remoteAccess
-                                  && controller.remoteAccess.ok
+                            visible: (controller.remoteAccess
+                                       && controller.remoteAccess.ok) === true
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
@@ -1763,14 +1781,14 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 Layout.fillWidth: true
                                 spacing: 6
                                 Text {
-                                    visible: (controller.remoteAccess.servers || []).length === 0
+                                    visible: ((controller.remoteAccess && controller.remoteAccess.servers) || []).length === 0
                                     text: qsTr("(none configured)")
                                     color: Colors.textFaint
                                     font.family: Type.sans
                                     font.pixelSize: Type.sizeXs
                                 }
                                 Repeater {
-                                    model: controller.remoteAccess.servers || []
+                                    model: (controller.remoteAccess && controller.remoteAccess.servers) || []
                                     delegate: RowLayout {
                                         required property var modelData
                                         Layout.fillWidth: true
@@ -1968,9 +1986,9 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                         // --- TLS modes ----------------------------------
                         Section {
                             title: qsTr("TLS MODES")
-                            visible: controller.deviceCertStore
-                                  && controller.deviceCertStore.tlsSettings
-                                  && controller.deviceCertStore.tlsSettings.length > 0
+                            visible: !!(controller.deviceCertStore
+                                         && controller.deviceCertStore.tlsSettings
+                                         && controller.deviceCertStore.tlsSettings.length > 0)
                             accent: Colors.accent
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
@@ -1980,7 +1998,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 Layout.fillWidth: true
                                 spacing: 4
                                 Repeater {
-                                    model: controller.deviceCertStore.tlsSettings || []
+                                    model: (controller.deviceCertStore && controller.deviceCertStore.tlsSettings) || []
                                     delegate: RowLayout {
                                         required property var modelData
                                         Layout.fillWidth: true
@@ -2019,9 +2037,9 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                         // --- Certificates ------------------------------
                         Section {
                             title: qsTr("CERTIFICATES")
-                            visible: controller.deviceCertStore
-                                  && controller.deviceCertStore.certificates
-                                  && controller.deviceCertStore.certificates.length > 0
+                            visible: !!(controller.deviceCertStore
+                                         && controller.deviceCertStore.certificates
+                                         && controller.deviceCertStore.certificates.length > 0)
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
@@ -2030,7 +2048,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 Layout.fillWidth: true
                                 spacing: 6
                                 Repeater {
-                                    model: controller.deviceCertStore.certificates || []
+                                    model: (controller.deviceCertStore && controller.deviceCertStore.certificates) || []
                                     delegate: Rectangle {
                                         required property var modelData
                                         required property int index
@@ -2118,9 +2136,9 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                         // --- Orphan key pairs -------------------------
                         Section {
                             title: qsTr("UNASSIGNED PRIVATE KEYS")
-                            visible: controller.deviceCertStore
-                                  && controller.deviceCertStore.orphanKeys
-                                  && controller.deviceCertStore.orphanKeys.length > 0
+                            visible: !!(controller.deviceCertStore
+                                         && controller.deviceCertStore.orphanKeys
+                                         && controller.deviceCertStore.orphanKeys.length > 0)
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
@@ -2130,7 +2148,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 Layout.fillWidth: true
                                 spacing: 4
                                 Repeater {
-                                    model: controller.deviceCertStore.orphanKeys || []
+                                    model: (controller.deviceCertStore && controller.deviceCertStore.orphanKeys) || []
                                     delegate: Text {
                                         required property var modelData
                                         text: qsTr("%1 — %2 bytes")
