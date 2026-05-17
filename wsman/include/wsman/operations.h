@@ -331,6 +331,105 @@ struct BootActionParams
 ///   * type 30 — 2-byte HTTPS request timeout (0 = firmware default)
 [[nodiscard]] QByteArray buildHttpsBootUrlTlv(const QString &url, int *tlvCount);
 
+/// One processor — `CIM_Processor` zipped with `CIM_Chip` by index.
+struct HardwareCpu
+{
+    QString manufacturer;   ///< `CIM_Chip.Manufacturer`
+    QString version;        ///< `CIM_Chip.Version` (model number)
+    int family = -1;        ///< `CIM_Processor.Family` (DMTF code)
+    QString familyLabel;    ///< Decoded `Family` (or "Family 0xNN" for unknowns).
+    int maxClockSpeedMhz = 0; ///< `CIM_Processor.MaxClockSpeed`
+    int cpuStatus = -1;     ///< `CIM_Processor.CPUStatus`
+    QString cpuStatusLabel;
+};
+
+/// One DIMM — `CIM_PhysicalMemory`.
+struct HardwareDimm
+{
+    QString bankLabel;
+    QString manufacturer;
+    QString serialNumber;
+    qint64  capacityBytes = 0;
+    int     formFactor = -1;
+    QString formFactorLabel;
+    int     memoryType = -1;
+    QString memoryTypeLabel;
+    QString assetTag;       ///< `Tag`
+    QString partNumber;
+};
+
+/// One storage device — `CIM_MediaAccessDevice` zipped with the
+/// corresponding `CIM_PhysicalPackage` entry. The legacy implementation
+/// shifts the package index by +1 because the first package entry is the
+/// chassis itself.
+struct HardwareStorage
+{
+    QString model;
+    QString serialNumber;
+    /// `CIM_MediaAccessDevice.MaxMediaSize` — units of 1000 bytes per
+    /// the schema; convert to MB on render.
+    qint64  maxMediaSizeKb = 0;
+};
+
+/// Battery — optional. Composed from `CIM_Battery` + the matching
+/// `CIM_PhysicalPackage` where `PackageType == 11`.
+struct HardwareBattery
+{
+    bool    present = false;
+    QString deviceId;
+    QString manufacturer;
+    QString manufactureDate;
+    QString serialNumber;
+    int     chemistry = -1;
+    QString chemistryLabel;
+    qint64  designCapacityMwh = 0;
+    qint64  designVoltageMv = 0;
+    QString otherIdentifyingInfo;
+};
+
+/// Aggregate result of `getHardwareInventory`. Each section is filled
+/// independently; partial failures leave the unfilled bits at their
+/// defaults (empty string / -1 / empty list) and report success on the
+/// outer struct unless every enumeration failed.
+struct HardwareInventoryResult
+{
+    bool ok = false;
+    QString error;
+
+    // Platform (CIM_Chassis + CIM_SystemPackaging).
+    QString platformModel;
+    QString platformManufacturer;
+    QString platformVersion;
+    QString platformSerialNumber;
+    QString platformSystemId;   ///< guid-formatted PlatformGUID
+
+    // Baseboard (CIM_Card).
+    QString baseboardManufacturer;
+    QString baseboardModel;
+    QString baseboardVersion;
+    QString baseboardSerialNumber;
+    QString baseboardAssetTag;
+    bool    baseboardReplaceable = false;
+    bool    baseboardCanBeFRUedKnown = false;
+
+    // BIOS (CIM_BIOSElement).
+    QString biosVendor;
+    QString biosVersion;
+    QString biosReleaseDate;
+
+    QList<HardwareCpu>     processors;
+    QList<HardwareDimm>    memoryModules;
+    QList<HardwareStorage> storageDevices;
+    HardwareBattery        battery;
+};
+
+/// Enumerate the ten hardware classes the legacy Commander's
+/// `PullHardware` BatchEnums and stitch them into a single inventory
+/// result. Empty / faulted classes are tolerated (older firmware,
+/// desktops without battery).
+void getHardwareInventory(WsmanClient *client,
+                          std::function<void(HardwareInventoryResult)> callback);
+
 struct EventLogEntry
 {
     QString recordId;

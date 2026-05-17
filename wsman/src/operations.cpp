@@ -89,6 +89,27 @@ constexpr char kKvmRedirectionSapResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/"
     "CIM_KVMRedirectionSAP";
 
+constexpr char kChassisResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Chassis";
+constexpr char kCardResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Card";
+constexpr char kBiosElementResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_BIOSElement";
+constexpr char kSystemPackagingResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_SystemPackaging";
+constexpr char kProcessorResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Processor";
+constexpr char kChipResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Chip";
+constexpr char kPhysicalMemoryResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_PhysicalMemory";
+constexpr char kMediaAccessDeviceResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_MediaAccessDevice";
+constexpr char kPhysicalPackageResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_PhysicalPackage";
+constexpr char kBatteryResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Battery";
+
 QString newMessageId()
 {
     return QStringLiteral("uuid:") + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -1340,6 +1361,380 @@ void setKvmOptInPolicy(WsmanClient *client, bool policyRequired,
                     (*cb)(res);
                 });
         });
+}
+
+namespace {
+
+// --- DMTF lookup tables (subset matching legacy/source/Commander.htm) -
+
+QString dmtfCpuStatusLabel(int code)
+{
+    switch (code) {
+    case 0: return QStringLiteral("Unknown");
+    case 1: return QStringLiteral("Enabled");
+    case 2: return QStringLiteral("Disabled by User");
+    case 3: return QStringLiteral("Disabled by BIOS (POST error)");
+    case 4: return QStringLiteral("Idle");
+    case 5: return QStringLiteral("Other");
+    default: return QStringLiteral("CPU status %1").arg(code);
+    }
+}
+
+QString dmtfCpuFamilyLabel(int code)
+{
+    // The DMTF spec has hundreds of codes; the legacy app only had the
+    // small i-series subset because that's what AMT-managed boxes
+    // typically reported in 2015. Fall back to the raw code for the
+    // ones we don't know — still useful, just less pretty.
+    switch (code) {
+    case 191: return QStringLiteral("Intel® Core™ 2 Duo Processor");
+    case 192: return QStringLiteral("Intel® Core™ 2 Solo Processor");
+    case 193: return QStringLiteral("Intel® Core™ 2 Extreme Processor");
+    case 194: return QStringLiteral("Intel® Core™ 2 Quad Processor");
+    case 195: return QStringLiteral("Intel® Core™ 2 Extreme Mobile Processor");
+    case 196: return QStringLiteral("Intel® Core™ 2 Duo Mobile Processor");
+    case 197: return QStringLiteral("Intel® Core™ 2 Solo Mobile Processor");
+    case 198: return QStringLiteral("Intel® Core™ i7 Processor");
+    case 199: return QStringLiteral("Dual-Core Intel® Celeron® Processor");
+    default:
+        return QStringLiteral("Family 0x%1")
+                    .arg(QString::number(code, 16).toUpper());
+    }
+}
+
+QString dmtfMemFormFactorLabel(int code)
+{
+    static const char *kTable[] = {
+        "", "Other", "Unknown", "SIMM", "SIP", "Chip", "DIP", "ZIP",
+        "Proprietary Card", "DIMM", "TSOP", "Row of chips", "RIMM",
+        "SODIMM", "SRIMM", "FB-DIMM"
+    };
+    if (code >= 0 && code < int(sizeof(kTable) / sizeof(kTable[0])))
+        return QString::fromLatin1(kTable[code]);
+    return QStringLiteral("Form 0x%1").arg(QString::number(code, 16).toUpper());
+}
+
+QString dmtfMemTypeLabel(int code)
+{
+    static const char *kTable[] = {
+        "Unknown", "Other", "DRAM", "Synchronous DRAM", "Cache DRAM",
+        "EDO", "EDRAM", "VRAM", "SRAM", "RAM", "ROM", "Flash", "EEPROM",
+        "FEPROM", "EPROM", "CDRAM", "3DRAM", "SDRAM", "SGRAM", "RDRAM",
+        "DDR", "DDR-2", "BRAM", "FB-DIMM", "DDR3", "FBD2", "DDR4",
+        "LPDDR", "LPDDR2", "LPDDR3", "LPDDR4"
+    };
+    if (code >= 0 && code < int(sizeof(kTable) / sizeof(kTable[0])))
+        return QString::fromLatin1(kTable[code]);
+    return QStringLiteral("Type 0x%1").arg(QString::number(code, 16).toUpper());
+}
+
+QString dmtfBatteryChemistryLabel(int code)
+{
+    static const char *kTable[] = {
+        "Other", "Unknown", "Lead Acid", "Nickel Cadmium",
+        "Nickel Metal Hydride", "Lithium-ion", "Zinc air",
+        "Lithium Polymer"
+    };
+    if (code >= 0 && code < int(sizeof(kTable) / sizeof(kTable[0])))
+        return QString::fromLatin1(kTable[code]);
+    return QStringLiteral("Chemistry %1").arg(code);
+}
+
+/// Byte-swap a hex-string PlatformGUID into RFC4122 UUID form. The
+/// first three dword components are little-endian on the wire; the
+/// last two are big-endian. Mirrors `legacy/source/Commander.htm`
+/// `guidToStr` at line ~53087.
+QString platformGuidToString(const QString &raw)
+{
+    if (raw.size() < 32) return raw;
+    auto g = raw.toLower();
+    return g.mid(6, 2) + g.mid(4, 2) + g.mid(2, 2) + g.mid(0, 2) + QLatin1Char('-')
+         + g.mid(10, 2) + g.mid(8, 2) + QLatin1Char('-')
+         + g.mid(14, 2) + g.mid(12, 2) + QLatin1Char('-')
+         + g.mid(16, 4) + QLatin1Char('-')
+         + g.mid(20);
+}
+
+/// Enumerate every instance of `resourceUri` and hand the raw item
+/// XML bodies to `onItems`. Used by `getHardwareInventory` ten times
+/// over. On error / fault the items list is empty and `error` is set.
+void enumerateAll(WsmanClient *client, const char *resourceUri,
+                  std::function<void(QList<QByteArray>, QString)> onDone)
+{
+    struct Acc { QList<QByteArray> items; };
+    auto acc = std::make_shared<Acc>();
+    auto onDoneShared =
+        std::make_shared<std::function<void(QList<QByteArray>, QString)>>(
+            std::move(onDone));
+    const QString uri = QString::fromLatin1(resourceUri);
+
+    auto pullStep = std::make_shared<std::function<void(const QString &)>>();
+    *pullStep = [client, uri, acc, pullStep, onDoneShared](const QString &context) mutable {
+        const QByteArray env = buildPullEnvelope(uri, context, 64,
+                                                  client->endpoint().toString(),
+                                                  newMessageId());
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
+            [reply, acc, pullStep, onDoneShared]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->hasError();
+                const auto errString = reply->errorString();
+                reply->deleteLater();
+                if (err) { (*onDoneShared)({}, errString); return; }
+                const SoapResponse soap = parseResponse(body);
+                if (soap.isFault()) { (*onDoneShared)({}, soap.fault); return; }
+                const PullChunk chunk = parsePullResponse(soap.bodyXml);
+                for (const QByteArray &it : chunk.items) acc->items.append(it);
+                if (chunk.endOfSequence || chunk.enumerationContext.isEmpty()) {
+                    (*onDoneShared)(std::move(acc->items), {});
+                    return;
+                }
+                (*pullStep)(chunk.enumerationContext);
+            });
+    };
+
+    if (client == nullptr) {
+        (*onDoneShared)({}, QStringLiteral("client is null"));
+        return;
+    }
+    const QByteArray env = buildEnumerateEnvelope(uri,
+                                                   client->endpoint().toString(),
+                                                   newMessageId());
+    WsmanReply *reply = client->sendEnvelope(env);
+    QObject::connect(reply, &WsmanReply::finished, client,
+        [reply, pullStep, onDoneShared, acc]() mutable {
+            const QByteArray body = reply->readAll();
+            const auto err = reply->hasError();
+            const auto errString = reply->errorString();
+            reply->deleteLater();
+            if (err) { (*onDoneShared)({}, errString); return; }
+            const SoapResponse soap = parseResponse(body);
+            if (soap.isFault()) { (*onDoneShared)({}, soap.fault); return; }
+            const QString ctx = parseEnumerateContext(soap.bodyXml);
+            if (ctx.isEmpty()) {
+                (*onDoneShared)(std::move(acc->items), {});
+                return;
+            }
+            (*pullStep)(ctx);
+        });
+}
+
+} // namespace
+
+void getHardwareInventory(WsmanClient *client,
+                          std::function<void(HardwareInventoryResult)> callback)
+{
+    // Ten enumerations in parallel, then merge once they've all
+    // returned. Each section is tolerant of empty / faulted classes:
+    // we only fail the whole call if *every* enumeration failed.
+    enum class Kind {
+        Chassis, Card, Bios, SysPkg, Processor, Chip,
+        PhysMem, Media, PhysPkg, Battery, _Count
+    };
+    constexpr int kCount = int(Kind::_Count);
+
+    struct State {
+        std::array<bool, kCount> done{};
+        std::array<bool, kCount> ok{};
+        std::array<QList<QByteArray>, kCount> items;
+        std::array<QString, kCount> errors;
+        std::function<void(HardwareInventoryResult)> cb;
+        bool fired = false;
+    };
+    auto st = std::make_shared<State>();
+    st->cb = std::move(callback);
+
+    if (client == nullptr) {
+        HardwareInventoryResult r;
+        r.error = QStringLiteral("client is null");
+        st->cb(std::move(r));
+        return;
+    }
+
+    auto maybeFire = [st]() {
+        if (st->fired) return;
+        for (bool d : st->done) if (!d) return;
+        st->fired = true;
+
+        HardwareInventoryResult r;
+
+        // Whole-call ok if at least one enumeration succeeded.
+        bool anyOk = false;
+        for (bool ok : st->ok) if (ok) { anyOk = true; break; }
+        r.ok = anyOk;
+        if (!anyOk) {
+            for (const QString &e : st->errors) if (!e.isEmpty()) {
+                r.error = e; break;
+            }
+        }
+
+        // -- Platform / Chassis / SystemPackaging ------------------
+        const auto &chassis = st->items[int(Kind::Chassis)];
+        if (!chassis.isEmpty()) {
+            const QByteArray &c = chassis.first();
+            r.platformModel        = findScalar(c, QStringLiteral("Model"));
+            r.platformManufacturer = findScalar(c, QStringLiteral("Manufacturer"));
+            r.platformVersion      = findScalar(c, QStringLiteral("Version"));
+            r.platformSerialNumber = findScalar(c, QStringLiteral("SerialNumber"));
+        }
+        const auto &syspkg = st->items[int(Kind::SysPkg)];
+        if (!syspkg.isEmpty()) {
+            r.platformSystemId = platformGuidToString(
+                findScalar(syspkg.first(), QStringLiteral("PlatformGUID")));
+        }
+
+        // -- Baseboard / Card --------------------------------------
+        const auto &cards = st->items[int(Kind::Card)];
+        if (!cards.isEmpty()) {
+            const QByteArray &c = cards.first();
+            r.baseboardManufacturer = findScalar(c, QStringLiteral("Manufacturer"));
+            r.baseboardModel        = findScalar(c, QStringLiteral("Model"));
+            r.baseboardVersion      = findScalar(c, QStringLiteral("Version"));
+            r.baseboardSerialNumber = findScalar(c, QStringLiteral("SerialNumber"));
+            r.baseboardAssetTag     = findScalar(c, QStringLiteral("Tag"));
+            const QString frued     = findScalar(c, QStringLiteral("CanBeFRUed"));
+            r.baseboardCanBeFRUedKnown = !frued.isEmpty();
+            r.baseboardReplaceable  = (frued == QStringLiteral("true"));
+        }
+
+        // -- BIOS ---------------------------------------------------
+        const auto &bios = st->items[int(Kind::Bios)];
+        if (!bios.isEmpty()) {
+            const QByteArray &b = bios.first();
+            r.biosVendor      = findScalar(b, QStringLiteral("Manufacturer"));
+            r.biosVersion     = findScalar(b, QStringLiteral("SoftwareElementID"));
+            // ReleaseDate is nested CIM datetime; the legacy code reads
+            // the inner Datetime text. `findScalar` matches by local
+            // name so it returns the first inner text — which is what
+            // we want.
+            r.biosReleaseDate = findScalar(b, QStringLiteral("Datetime"));
+            if (r.biosReleaseDate.isEmpty())
+                r.biosReleaseDate = findScalar(b, QStringLiteral("ReleaseDate"));
+        }
+
+        // -- Processors (CIM_Processor zipped with CIM_Chip) -------
+        const auto &cpus  = st->items[int(Kind::Processor)];
+        const auto &chips = st->items[int(Kind::Chip)];
+        for (int i = 0; i < cpus.size(); ++i) {
+            HardwareCpu cpu;
+            const QByteArray &p = cpus[i];
+            bool conv = false;
+            const int fam = findScalar(p, QStringLiteral("Family")).toInt(&conv);
+            if (conv) {
+                cpu.family = fam;
+                cpu.familyLabel = dmtfCpuFamilyLabel(fam);
+            }
+            cpu.maxClockSpeedMhz = findScalar(p, QStringLiteral("MaxClockSpeed")).toInt();
+            conv = false;
+            const int status = findScalar(p, QStringLiteral("CPUStatus")).toInt(&conv);
+            if (conv) {
+                cpu.cpuStatus = status;
+                cpu.cpuStatusLabel = dmtfCpuStatusLabel(status);
+            }
+            if (i < chips.size()) {
+                const QByteArray &q = chips[i];
+                cpu.manufacturer = findScalar(q, QStringLiteral("Manufacturer"));
+                cpu.version      = findScalar(q, QStringLiteral("Version"));
+            }
+            r.processors.append(cpu);
+        }
+
+        // -- Memory ------------------------------------------------
+        for (const QByteArray &m : st->items[int(Kind::PhysMem)]) {
+            HardwareDimm d;
+            d.bankLabel     = findScalar(m, QStringLiteral("BankLabel"));
+            d.manufacturer  = findScalar(m, QStringLiteral("Manufacturer"));
+            d.serialNumber  = findScalar(m, QStringLiteral("SerialNumber"));
+            d.capacityBytes = findScalar(m, QStringLiteral("Capacity")).toLongLong();
+            bool conv = false;
+            const int ff = findScalar(m, QStringLiteral("FormFactor")).toInt(&conv);
+            if (conv) {
+                d.formFactor = ff;
+                d.formFactorLabel = dmtfMemFormFactorLabel(ff);
+            }
+            conv = false;
+            const int mt = findScalar(m, QStringLiteral("MemoryType")).toInt(&conv);
+            if (conv) {
+                d.memoryType = mt;
+                d.memoryTypeLabel = dmtfMemTypeLabel(mt);
+            }
+            d.assetTag    = findScalar(m, QStringLiteral("Tag"));
+            d.partNumber  = findScalar(m, QStringLiteral("PartNumber"));
+            r.memoryModules.append(d);
+        }
+
+        // -- Storage (CIM_MediaAccessDevice + CIM_PhysicalPackage) -
+        // Legacy assumes `CIM_PhysicalPackage[i+1]` matches
+        // `CIM_MediaAccessDevice[i]` because the first package is the
+        // chassis. Replicate that shortcut here.
+        const auto &media = st->items[int(Kind::Media)];
+        const auto &pkgs  = st->items[int(Kind::PhysPkg)];
+        for (int i = 0; i < media.size(); ++i) {
+            HardwareStorage s;
+            const QByteArray &m = media[i];
+            s.maxMediaSizeKb = findScalar(m, QStringLiteral("MaxMediaSize")).toLongLong();
+            if (i + 1 < pkgs.size()) {
+                const QByteArray &n = pkgs[i + 1];
+                s.model = findScalar(n, QStringLiteral("Model"));
+                s.serialNumber = findScalar(n, QStringLiteral("SerialNumber"));
+            }
+            r.storageDevices.append(s);
+        }
+
+        // -- Battery -----------------------------------------------
+        const auto &batt = st->items[int(Kind::Battery)];
+        if (!batt.isEmpty()) {
+            const QByteArray &b = batt.first();
+            HardwareBattery bb;
+            bb.present = true;
+            bb.deviceId = findScalar(b, QStringLiteral("DeviceID"));
+            bool conv = false;
+            const int chem = findScalar(b, QStringLiteral("Chemistry")).toInt(&conv);
+            if (conv) {
+                bb.chemistry = chem;
+                bb.chemistryLabel = dmtfBatteryChemistryLabel(chem);
+            }
+            bb.designCapacityMwh = findScalar(b, QStringLiteral("DesignCapacity")).toLongLong();
+            bb.designVoltageMv   = findScalar(b, QStringLiteral("DesignVoltage")).toLongLong();
+            // Find the matching physical package by PackageType==11.
+            for (const QByteArray &pkg : pkgs) {
+                if (findScalar(pkg, QStringLiteral("PackageType")) == QStringLiteral("11")) {
+                    bb.manufacturer = findScalar(pkg, QStringLiteral("Manufacturer"));
+                    bb.serialNumber = findScalar(pkg, QStringLiteral("SerialNumber"));
+                    bb.manufactureDate = findScalar(pkg, QStringLiteral("Datetime"));
+                    bb.otherIdentifyingInfo =
+                        findScalar(pkg, QStringLiteral("OtherIdentifyingInfo"));
+                    break;
+                }
+            }
+            r.battery = std::move(bb);
+        }
+
+        st->cb(std::move(r));
+    };
+
+    auto kick = [client, st, maybeFire](Kind k, const char *uri) {
+        enumerateAll(client, uri,
+            [st, k, maybeFire](QList<QByteArray> items, QString error) mutable {
+                const int idx = int(k);
+                st->done[idx]   = true;
+                st->items[idx]  = std::move(items);
+                st->errors[idx] = error;
+                st->ok[idx]     = error.isEmpty();
+                maybeFire();
+            });
+    };
+
+    kick(Kind::Chassis,   kChassisResource);
+    kick(Kind::Card,      kCardResource);
+    kick(Kind::Bios,      kBiosElementResource);
+    kick(Kind::SysPkg,    kSystemPackagingResource);
+    kick(Kind::Processor, kProcessorResource);
+    kick(Kind::Chip,      kChipResource);
+    kick(Kind::PhysMem,   kPhysicalMemoryResource);
+    kick(Kind::Media,     kMediaAccessDeviceResource);
+    kick(Kind::PhysPkg,   kPhysicalPackageResource);
+    kick(Kind::Battery,   kBatteryResource);
 }
 
 } // namespace qumesh::wsman

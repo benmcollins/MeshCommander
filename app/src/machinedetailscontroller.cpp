@@ -154,6 +154,7 @@ void MachineDetailsController::runPendingRefreshes()
     if (p & PendingTime)         refreshTime();
     if (p & PendingEventLog)     refreshEventLog();
     if (p & PendingUserAccounts) refreshUserAccounts();
+    if (p & PendingHardware)     refreshHardware();
 }
 
 void MachineDetailsController::setHost(const QString &v)
@@ -615,6 +616,102 @@ void MachineDetailsController::refreshEventLog()
             m_eventLog = std::move(list);
 
             emit eventLogChanged();
+        });
+}
+
+void MachineDetailsController::refreshHardware()
+{
+    if (deferIfSshConnecting(PendingHardware)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::getHardwareInventory(m_client,
+        [this](qumesh::wsman::HardwareInventoryResult r) {
+            decInflight();
+            if (!r.ok) {
+                if (!r.error.isEmpty())
+                    setLastError(QStringLiteral("Hardware: %1").arg(r.error));
+                return;
+            }
+            QVariantMap inv;
+            inv.insert(QStringLiteral("platformModel"),        r.platformModel);
+            inv.insert(QStringLiteral("platformManufacturer"), r.platformManufacturer);
+            inv.insert(QStringLiteral("platformVersion"),      r.platformVersion);
+            inv.insert(QStringLiteral("platformSerialNumber"), r.platformSerialNumber);
+            inv.insert(QStringLiteral("platformSystemId"),     r.platformSystemId);
+
+            inv.insert(QStringLiteral("baseboardManufacturer"), r.baseboardManufacturer);
+            inv.insert(QStringLiteral("baseboardModel"),        r.baseboardModel);
+            inv.insert(QStringLiteral("baseboardVersion"),      r.baseboardVersion);
+            inv.insert(QStringLiteral("baseboardSerialNumber"), r.baseboardSerialNumber);
+            inv.insert(QStringLiteral("baseboardAssetTag"),     r.baseboardAssetTag);
+            inv.insert(QStringLiteral("baseboardReplaceable"),  r.baseboardReplaceable);
+            inv.insert(QStringLiteral("baseboardCanBeFRUedKnown"),
+                                                      r.baseboardCanBeFRUedKnown);
+
+            inv.insert(QStringLiteral("biosVendor"),      r.biosVendor);
+            inv.insert(QStringLiteral("biosVersion"),     r.biosVersion);
+            inv.insert(QStringLiteral("biosReleaseDate"), r.biosReleaseDate);
+
+            QVariantList cpus;
+            for (const auto &c : r.processors) {
+                QVariantMap m;
+                m.insert(QStringLiteral("manufacturer"), c.manufacturer);
+                m.insert(QStringLiteral("version"),      c.version);
+                m.insert(QStringLiteral("family"),       c.family);
+                m.insert(QStringLiteral("familyLabel"),  c.familyLabel);
+                m.insert(QStringLiteral("maxClockSpeedMhz"), c.maxClockSpeedMhz);
+                m.insert(QStringLiteral("cpuStatus"),      c.cpuStatus);
+                m.insert(QStringLiteral("cpuStatusLabel"), c.cpuStatusLabel);
+                cpus.append(m);
+            }
+            inv.insert(QStringLiteral("processors"), cpus);
+
+            QVariantList dimms;
+            for (const auto &d : r.memoryModules) {
+                QVariantMap m;
+                m.insert(QStringLiteral("bankLabel"),     d.bankLabel);
+                m.insert(QStringLiteral("manufacturer"),  d.manufacturer);
+                m.insert(QStringLiteral("serialNumber"),  d.serialNumber);
+                m.insert(QStringLiteral("capacityBytes"), qlonglong(d.capacityBytes));
+                m.insert(QStringLiteral("formFactor"),    d.formFactor);
+                m.insert(QStringLiteral("formFactorLabel"), d.formFactorLabel);
+                m.insert(QStringLiteral("memoryType"),    d.memoryType);
+                m.insert(QStringLiteral("memoryTypeLabel"), d.memoryTypeLabel);
+                m.insert(QStringLiteral("assetTag"),      d.assetTag);
+                m.insert(QStringLiteral("partNumber"),    d.partNumber);
+                dimms.append(m);
+            }
+            inv.insert(QStringLiteral("memoryModules"), dimms);
+
+            QVariantList storage;
+            for (const auto &s : r.storageDevices) {
+                QVariantMap m;
+                m.insert(QStringLiteral("model"),          s.model);
+                m.insert(QStringLiteral("serialNumber"),   s.serialNumber);
+                m.insert(QStringLiteral("maxMediaSizeKb"), qlonglong(s.maxMediaSizeKb));
+                storage.append(m);
+            }
+            inv.insert(QStringLiteral("storageDevices"), storage);
+
+            QVariantMap batt;
+            batt.insert(QStringLiteral("present"),           r.battery.present);
+            batt.insert(QStringLiteral("deviceId"),          r.battery.deviceId);
+            batt.insert(QStringLiteral("manufacturer"),      r.battery.manufacturer);
+            batt.insert(QStringLiteral("manufactureDate"),   r.battery.manufactureDate);
+            batt.insert(QStringLiteral("serialNumber"),      r.battery.serialNumber);
+            batt.insert(QStringLiteral("chemistry"),         r.battery.chemistry);
+            batt.insert(QStringLiteral("chemistryLabel"),    r.battery.chemistryLabel);
+            batt.insert(QStringLiteral("designCapacityMwh"), qlonglong(r.battery.designCapacityMwh));
+            batt.insert(QStringLiteral("designVoltageMv"),   qlonglong(r.battery.designVoltageMv));
+            batt.insert(QStringLiteral("otherIdentifyingInfo"), r.battery.otherIdentifyingInfo);
+            inv.insert(QStringLiteral("battery"), batt);
+
+            m_hardwareInventory = std::move(inv);
+            emit hardwareChanged();
         });
 }
 
