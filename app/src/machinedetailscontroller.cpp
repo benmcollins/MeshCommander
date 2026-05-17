@@ -555,6 +555,45 @@ void MachineDetailsController::refreshNetwork()
                 m_defaultGateway = r.defaultGateway;
                 m_primaryDns     = r.primaryDns;
                 m_secondaryDns   = r.secondaryDns;
+
+                QVariantList ifaces;
+                ifaces.reserve(r.interfaces.size());
+                for (const auto &i : r.interfaces) {
+                    QVariantMap m;
+                    m.insert(QStringLiteral("instanceId"),     i.instanceId);
+                    m.insert(QStringLiteral("macAddress"),     i.macAddress);
+                    m.insert(QStringLiteral("dhcpEnabled"),    i.dhcpEnabled);
+                    m.insert(QStringLiteral("ipSyncEnabled"),  i.ipSyncEnabled);
+                    m.insert(QStringLiteral("ipAddress"),      i.ipAddress);
+                    m.insert(QStringLiteral("subnetMask"),     i.subnetMask);
+                    m.insert(QStringLiteral("defaultGateway"), i.defaultGateway);
+                    m.insert(QStringLiteral("primaryDns"),     i.primaryDns);
+                    m.insert(QStringLiteral("secondaryDns"),   i.secondaryDns);
+
+                    QVariantList lp;
+                    QStringList lpLabels;
+                    for (int c : i.linkPolicy) {
+                        lp.append(c);
+                        lpLabels.append(qumesh::wsman::linkPolicyLabel(c));
+                    }
+                    m.insert(QStringLiteral("linkPolicy"),      lp);
+                    m.insert(QStringLiteral("linkPolicyLabel"), lpLabels.join(", "));
+
+                    QVariantMap v6;
+                    v6.insert(QStringLiteral("present"), i.ipv6.present);
+                    QVariantList addrs;
+                    for (const QString &a : i.ipv6.addresses) addrs.append(a);
+                    v6.insert(QStringLiteral("addresses"),     addrs);
+                    v6.insert(QStringLiteral("addressesLabel"), i.ipv6.addresses.join(", "));
+                    v6.insert(QStringLiteral("defaultRouter"), i.ipv6.defaultRouter);
+                    v6.insert(QStringLiteral("primaryDns"),    i.ipv6.primaryDns);
+                    v6.insert(QStringLiteral("secondaryDns"),  i.ipv6.secondaryDns);
+                    m.insert(QStringLiteral("ipv6"), v6);
+
+                    ifaces.append(m);
+                }
+                m_networkInterfaces = std::move(ifaces);
+
                 emit ethernetChanged();
             } else if (!r.error.isEmpty()) {
                 setLastError(QStringLiteral("Ethernet: %1").arg(r.error));

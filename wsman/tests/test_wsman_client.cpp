@@ -30,6 +30,7 @@ private slots:
     void getAuditLogStateDecodesBitmask();
     void enumerateAuditLogParsesBinaryRecords();
     void enumerateUserAccountsMergesAdminAndAclEntries();
+    void getEthernetSettingsReturnsMultipleInterfacesWithIPv6();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -974,6 +975,126 @@ void TestWsmanClient::enumerateUserAccountsMergesAdminAndAclEntries()
     QCOMPARE(realmName(2),  QStringLiteral("Redirection"));
     QCOMPARE(realmName(20), QStringLiteral("Audit Log"));
     QCOMPARE(realmName(3),  QString()); // sentinel
+}
+
+void TestWsmanClient::getEthernetSettingsReturnsMultipleInterfacesWithIPv6()
+{
+    // Two AMT_EthernetPortSettings instances + matching IPS_IPv6PortSettings
+    // for interface 0 only (mirrors AMT 11 where IPv6 is wired-only by
+    // default). Mock routes by resource URI.
+    static const char *ethPull =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:e=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_EthernetPortSettings\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        "<e:AMT_EthernetPortSettings>"
+        "<e:InstanceID>Intel(r) AMT Ethernet Port Settings 0</e:InstanceID>"
+        "<e:MACAddress>aa:bb:cc:dd:ee:ff</e:MACAddress>"
+        "<e:DHCPEnabled>true</e:DHCPEnabled>"
+        "<e:IpSyncEnabled>true</e:IpSyncEnabled>"
+        "<e:IPAddress>192.168.1.5</e:IPAddress>"
+        "<e:SubnetMask>255.255.255.0</e:SubnetMask>"
+        "<e:DefaultGateway>192.168.1.1</e:DefaultGateway>"
+        "<e:PrimaryDNS>8.8.8.8</e:PrimaryDNS>"
+        "<e:LinkPolicy>1</e:LinkPolicy>"
+        "<e:LinkPolicy>14</e:LinkPolicy>"
+        "<e:LinkPolicy>16</e:LinkPolicy>"
+        "</e:AMT_EthernetPortSettings>"
+        "<e:AMT_EthernetPortSettings>"
+        "<e:InstanceID>Intel(r) AMT Ethernet Port Settings 1</e:InstanceID>"
+        "<e:MACAddress>11:22:33:44:55:66</e:MACAddress>"
+        "<e:DHCPEnabled>false</e:DHCPEnabled>"
+        "<e:IpSyncEnabled>false</e:IpSyncEnabled>"
+        "<e:IPAddress>10.0.0.5</e:IPAddress>"
+        "<e:SubnetMask>255.0.0.0</e:SubnetMask>"
+        "<e:LinkPolicy>1</e:LinkPolicy>"
+        "</e:AMT_EthernetPortSettings>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    static const char *ipv6Pull =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:v=\"http://intel.com/wbem/wscim/1/ips-schema/1/IPS_IPv6PortSettings\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        "<v:IPS_IPv6PortSettings>"
+        "<v:InstanceID>Intel(r) AMT IPv6 Port Settings 0</v:InstanceID>"
+        "<v:CurrentAddressInfo>2001:db8::1,64,static,enabled</v:CurrentAddressInfo>"
+        "<v:CurrentAddressInfo>fe80::1,64,linklocal,enabled</v:CurrentAddressInfo>"
+        "<v:CurrentDefaultRouter>2001:db8::ff</v:CurrentDefaultRouter>"
+        "<v:CurrentPrimaryDNS>2001:4860:4860::8888</v:CurrentPrimaryDNS>"
+        "</v:IPS_IPv6PortSettings>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     const bool isPull = body.contains(":Pull>")
+                                      || body.contains("<wsen:Pull");
+                     QByteArray response;
+                     if (!isPull) {
+                         response = QByteArray(kEnumerateResponse);
+                     } else if (body.contains("IPS_IPv6PortSettings")) {
+                         response = ipv6Pull;
+                     } else {
+                         response = ethPull;
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    EthernetSettingsResult result;
+    QEventLoop loop;
+    getEthernetSettings(&client, [&](EthernetSettingsResult r) {
+        result = r;
+        loop.quit();
+    });
+    QTimer::singleShot(8000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+
+    QCOMPARE(result.interfaces.size(), 2);
+
+    // Interface 0: wired DHCP, IPv6 attached.
+    const auto &if0 = result.interfaces[0];
+    QCOMPARE(if0.macAddress, QStringLiteral("aa:bb:cc:dd:ee:ff"));
+    QVERIFY(if0.dhcpEnabled);
+    QVERIFY(if0.ipSyncEnabled);
+    QCOMPARE(if0.ipAddress, QStringLiteral("192.168.1.5"));
+    QCOMPARE(if0.linkPolicy.size(), 3);
+    QVERIFY(if0.linkPolicy.contains(1));
+    QVERIFY(if0.linkPolicy.contains(14));
+    QVERIFY(if0.linkPolicy.contains(16));
+    QVERIFY(if0.ipv6.present);
+    QCOMPARE(if0.ipv6.addresses.size(), 2);
+    QCOMPARE(if0.ipv6.addresses.first(), QStringLiteral("2001:db8::1"));
+    QCOMPARE(if0.ipv6.defaultRouter, QStringLiteral("2001:db8::ff"));
+    QCOMPARE(if0.ipv6.primaryDns, QStringLiteral("2001:4860:4860::8888"));
+
+    // Interface 1: static IP, no IPv6.
+    const auto &if1 = result.interfaces[1];
+    QVERIFY(!if1.dhcpEnabled);
+    QCOMPARE(if1.ipAddress, QStringLiteral("10.0.0.5"));
+    QVERIFY(!if1.ipv6.present);
+
+    // Backward-compat single-interface scalars match if[0].
+    QCOMPARE(result.macAddress, QStringLiteral("aa:bb:cc:dd:ee:ff"));
+    QCOMPARE(result.ipAddress, QStringLiteral("192.168.1.5"));
+
+    // Label helper spot-check.
+    QCOMPARE(linkPolicyLabel(1),   QStringLiteral("S0/AC"));
+    QCOMPARE(linkPolicyLabel(224), QStringLiteral("Sx/DC"));
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

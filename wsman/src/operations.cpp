@@ -113,6 +113,9 @@ constexpr char kAuditLogResource[] =
 constexpr char kAuthorizationServiceResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuthorizationService";
 
+constexpr char kIpv6PortSettingsResource[] =
+    "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_IPv6PortSettings";
+
 QString newMessageId()
 {
     return QStringLiteral("uuid:") + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -156,6 +159,12 @@ void runRequest(WsmanClient *client, const QByteArray &envelope, ResultT &&zero,
                          cb(std::move(r));
                      });
 }
+
+/// Forward declaration so callers earlier in the file (e.g.
+/// `getEthernetSettings`) can call into the multi-Enumerate+Pull
+/// helper defined further down with the hardware-inventory code.
+void enumerateAll(WsmanClient *client, const char *resourceUri,
+                  std::function<void(QList<QByteArray>, QString)> onDone);
 
 } // namespace
 
@@ -282,33 +291,178 @@ void getComputerSystem(WsmanClient *client,
         std::move(callback));
 }
 
+QString linkPolicyLabel(int code)
+{
+    switch (code) {
+    case 1:   return QStringLiteral("S0/AC");
+    case 14:  return QStringLiteral("Sx/AC");
+    case 16:  return QStringLiteral("S0/DC");
+    case 224: return QStringLiteral("Sx/DC");
+    default:  return QStringLiteral("Code %1").arg(code);
+    }
+}
+
+namespace {
+
+/// Parse one `AMT_EthernetPortSettings` item-XML into a struct. The
+/// item is the `<g:CIM_EthernetPort>…</g:CIM_EthernetPort>`-style
+/// inner XML returned by `parsePullResponse`.
+EthernetInterface parseEthernetItem(const QByteArray &item)
+{
+    EthernetInterface e;
+    e.instanceId     = findScalar(item, QStringLiteral("InstanceID"));
+    e.macAddress     = findScalar(item, QStringLiteral("MACAddress"));
+    e.dhcpEnabled    = findScalar(item, QStringLiteral("DHCPEnabled")) == QStringLiteral("true");
+    e.ipSyncEnabled  = findScalar(item, QStringLiteral("IpSyncEnabled")) == QStringLiteral("true");
+    e.ipAddress      = findScalar(item, QStringLiteral("IPAddress"));
+    e.subnetMask     = findScalar(item, QStringLiteral("SubnetMask"));
+    e.defaultGateway = findScalar(item, QStringLiteral("DefaultGateway"));
+    e.primaryDns     = findScalar(item, QStringLiteral("PrimaryDNS"));
+    e.secondaryDns   = findScalar(item, QStringLiteral("SecondaryDNS"));
+
+    // LinkPolicy is repeated — `<g:LinkPolicy>1</g:LinkPolicy>
+    // <g:LinkPolicy>14</g:LinkPolicy>…`. Walk via QXmlStreamReader.
+    QXmlStreamReader r(item);
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement() && r.name() == QStringLiteral("LinkPolicy")) {
+            bool conv = false;
+            const int v = r.readElementText().toInt(&conv);
+            if (conv) e.linkPolicy.append(v);
+        }
+    }
+    return e;
+}
+
+IPv6PortSettings parseIpv6Item(const QByteArray &item)
+{
+    IPv6PortSettings s;
+    s.present = true;
+    s.instanceId    = findScalar(item, QStringLiteral("InstanceID"));
+    s.defaultRouter = findScalar(item, QStringLiteral("CurrentDefaultRouter"));
+    s.primaryDns    = findScalar(item, QStringLiteral("CurrentPrimaryDNS"));
+    s.secondaryDns  = findScalar(item, QStringLiteral("CurrentSecondaryDNS"));
+
+    // `CurrentAddressInfo` is a `<g:CurrentAddressInfo>addr,prefix,…
+    // </g:CurrentAddressInfo>` per address — repeated when there are
+    // several. Address-only is what the UI wants.
+    QXmlStreamReader r(item);
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement()
+            && r.name() == QStringLiteral("CurrentAddressInfo")) {
+            const QString tok = r.readElementText();
+            if (tok.isEmpty()) continue;
+            const int comma = tok.indexOf(QLatin1Char(','));
+            s.addresses.append(comma < 0 ? tok : tok.left(comma));
+        }
+    }
+    return s;
+}
+
+/// Pull the trailing integer off an InstanceID like "Intel(r) AMT
+/// Ethernet Port Settings 0" or "Intel(r) AMT IPv6 Port Settings 0".
+/// Returns -1 if none.
+int instanceIdOrdinal(const QString &id)
+{
+    int i = id.size() - 1;
+    while (i >= 0 && id[i].isDigit()) --i;
+    if (i == id.size() - 1) return -1;
+    bool conv = false;
+    const int v = id.mid(i + 1).toInt(&conv);
+    return conv ? v : -1;
+}
+
+void populateBackwardCompatFields(EthernetSettingsResult &r)
+{
+    if (r.interfaces.isEmpty()) return;
+    const auto &i0 = r.interfaces.first();
+    r.macAddress     = i0.macAddress;
+    r.dhcpEnabled    = i0.dhcpEnabled;
+    r.ipv4Enabled    = i0.ipSyncEnabled || !i0.ipAddress.isEmpty();
+    r.ipAddress      = i0.ipAddress;
+    r.subnetMask     = i0.subnetMask;
+    r.defaultGateway = i0.defaultGateway;
+    r.primaryDns     = i0.primaryDns;
+    r.secondaryDns   = i0.secondaryDns;
+}
+
+} // namespace
+
 void getEthernetSettings(WsmanClient *client,
                          std::function<void(EthernetSettingsResult)> callback)
 {
-    QHash<QString, QString> selectors;
-    selectors.insert(QStringLiteral("InstanceID"),
-                     QStringLiteral("Intel(r) AMT Ethernet Port Settings 0"));
-    const QByteArray env = buildGetEnvelope(QString::fromLatin1(kEthernetSettingsResource),
-                                             selectors,
-                                             client ? client->endpoint().toString() : QString(),
-                                             newMessageId());
-    runRequest<EthernetSettingsResult>(client, env, {},
-        [](const QByteArray &body, EthernetSettingsResult &r) {
-            r.macAddress       = findScalar(body, QStringLiteral("MACAddress"));
-            r.dhcpEnabled      = findScalar(body, QStringLiteral("DHCPEnabled")) == QStringLiteral("true");
-            r.ipv4Enabled      = findScalar(body, QStringLiteral("IpSyncEnabled")) == QStringLiteral("true")
-                                  || !findScalar(body, QStringLiteral("IPAddress")).isEmpty();
-            r.ipAddress        = findScalar(body, QStringLiteral("IPAddress"));
-            r.subnetMask       = findScalar(body, QStringLiteral("SubnetMask"));
-            r.defaultGateway   = findScalar(body, QStringLiteral("DefaultGateway"));
-            r.primaryDns       = findScalar(body, QStringLiteral("PrimaryDNS"));
-            r.secondaryDns     = findScalar(body, QStringLiteral("SecondaryDNS"));
-            r.linkPolicy       = findScalar(body, QStringLiteral("LinkPolicy"));
-            r.ok = !r.macAddress.isEmpty();
-            if (!r.ok)
-                r.error = QStringLiteral("AMT_EthernetPortSettings body had no MACAddress");
-        },
-        std::move(callback));
+    // Two parallel enumerations (Ethernet + IPv6) merged by ordinal.
+    struct Acc {
+        QList<QByteArray> ethItems;
+        QList<QByteArray> ipv6Items;
+        bool ethDone = false;
+        bool ipv6Done = false;
+        QString error;
+        std::function<void(EthernetSettingsResult)> cb;
+        bool fired = false;
+    };
+    auto acc = std::make_shared<Acc>();
+    acc->cb = std::move(callback);
+
+    if (client == nullptr) {
+        EthernetSettingsResult r;
+        r.error = QStringLiteral("client is null");
+        acc->cb(std::move(r));
+        return;
+    }
+
+    auto maybeFire = [acc]() {
+        if (acc->fired) return;
+        if (!acc->ethDone || !acc->ipv6Done) return;
+        acc->fired = true;
+        EthernetSettingsResult r;
+
+        // Parse Ethernet items in order.
+        for (const QByteArray &item : acc->ethItems)
+            r.interfaces.append(parseEthernetItem(item));
+
+        // Parse IPv6 and attach by ordinal — the InstanceID suffix
+        // ("…Port Settings 0/1/…") matches between the two classes.
+        QHash<int, IPv6PortSettings> ipv6ByOrdinal;
+        for (const QByteArray &item : acc->ipv6Items) {
+            IPv6PortSettings s = parseIpv6Item(item);
+            const int n = instanceIdOrdinal(s.instanceId);
+            if (n >= 0) ipv6ByOrdinal.insert(n, s);
+        }
+        for (auto &iface : r.interfaces) {
+            const int n = instanceIdOrdinal(iface.instanceId);
+            if (n >= 0 && ipv6ByOrdinal.contains(n))
+                iface.ipv6 = ipv6ByOrdinal.value(n);
+        }
+
+        populateBackwardCompatFields(r);
+        // ok if we got at least one interface; old single-NIC contract
+        // required MACAddress.
+        r.ok = !r.interfaces.isEmpty() && !r.interfaces.first().macAddress.isEmpty();
+        if (!r.ok && r.error.isEmpty())
+            r.error = acc->error.isEmpty()
+                ? QStringLiteral("AMT_EthernetPortSettings returned no interfaces")
+                : acc->error;
+        acc->cb(std::move(r));
+    };
+
+    enumerateAll(client, kEthernetSettingsResource,
+        [acc, maybeFire](QList<QByteArray> items, QString error) mutable {
+            acc->ethItems = std::move(items);
+            if (!error.isEmpty() && acc->error.isEmpty()) acc->error = error;
+            acc->ethDone = true;
+            maybeFire();
+        });
+
+    // IPv6 is AMT 6+ — older firmware will return a fault. Treat that
+    // as "no IPv6 available" rather than a top-level failure.
+    enumerateAll(client, kIpv6PortSettingsResource,
+        [acc, maybeFire](QList<QByteArray> items, QString /*error*/) mutable {
+            acc->ipv6Items = std::move(items);
+            acc->ipv6Done = true;
+            maybeFire();
+        });
 }
 
 namespace {
