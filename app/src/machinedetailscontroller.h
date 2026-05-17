@@ -152,6 +152,11 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(int capPlatformEraseMask READ capPlatformEraseMask NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capForceUefiHttpsBoot READ capForceUefiHttpsBoot NOTIFY bootCapabilitiesChanged)
 
+    /// Comprehensive `AMT_BootCapabilities` snapshot keyed by capability
+    /// name for the read-only Boot Capabilities pane (#172). Each value
+    /// is a `bool`. Empty until the first successful Hardware refresh.
+    Q_PROPERTY(QVariantMap bootCapabilities READ bootCapabilities NOTIFY bootCapabilitiesChanged)
+
     // User-consent (OptIn) policy + runtime state. Populated after
     // `refreshOverview` (and refreshed on demand via `refreshOptInStatus`).
     Q_PROPERTY(bool optInRequired READ optInRequired NOTIFY optInStatusChanged)
@@ -244,6 +249,7 @@ public:
         return static_cast<int>(m_capPlatformEraseMask);
     }
     [[nodiscard]] bool capForceUefiHttpsBoot() const { return m_capForceUefiHttpsBoot; }
+    [[nodiscard]] QVariantMap bootCapabilities() const { return m_bootCapabilities; }
 
     [[nodiscard]] bool optInRequired() const { return m_optInRequired; }
     [[nodiscard]] int  optInState() const { return m_optInState; }
@@ -527,6 +533,7 @@ private:
     bool m_capPlatformErase = false;
     quint32 m_capPlatformEraseMask = 0;
     bool m_capForceUefiHttpsBoot = false;
+    QVariantMap m_bootCapabilities;
 
     QVariantList m_eventLog;
     QVariantList m_userAccounts;

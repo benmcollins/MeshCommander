@@ -24,6 +24,7 @@ private slots:
     void httpErrorPropagates();
     void getGeneralSettingsExtractsPowerSource();
     void getSetupAndConfigurationDecodesProvisioning();
+    void getBootCapabilitiesDecodesAllFlags();
     void getMeVersionPicksAmtInstanceFromEnumeration();
     void getRedirectionStatusSplitsEnabledStateBitmask();
     void getHardwareInventoryStitchesAllSections();
@@ -88,6 +89,44 @@ constexpr char kSetupAndConfigCcmResponse[] =
     "<c:ProvisioningState>2</c:ProvisioningState>"
     "<c:ProvisioningMode>4</c:ProvisioningMode>"
     "</c:AMT_SetupAndConfigurationService>"
+    "</s:Body></s:Envelope>";
+
+// Synthetic AMT_BootCapabilities body. Mixes supported and
+// unsupported flags so the parser has to honor each field
+// independently, and uses a numeric PlatformErase to exercise the
+// bitmask path (bits 1, 2, 6, 25 set).
+constexpr char kBootCapabilitiesResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_BootCapabilities\">"
+    "<s:Header/><s:Body>"
+    "<c:AMT_BootCapabilities>"
+    "<c:IDER>true</c:IDER>"
+    "<c:SOL>true</c:SOL>"
+    "<c:BIOSReflash>false</c:BIOSReflash>"
+    "<c:BIOSSetup>true</c:BIOSSetup>"
+    "<c:BIOSPause>false</c:BIOSPause>"
+    "<c:ForcePXEBoot>true</c:ForcePXEBoot>"
+    "<c:ForceHDDBoot>true</c:ForceHDDBoot>"
+    "<c:ForceCDorDVDBoot>true</c:ForceCDorDVDBoot>"
+    "<c:VerbosityScreenBlank>false</c:VerbosityScreenBlank>"
+    "<c:PowerButtonLock>false</c:PowerButtonLock>"
+    "<c:ResetButtonLock>false</c:ResetButtonLock>"
+    "<c:KeyboardLock>false</c:KeyboardLock>"
+    "<c:SleepButtonLock>false</c:SleepButtonLock>"
+    "<c:UserPasswordBypass>false</c:UserPasswordBypass>"
+    "<c:ForcedProgressEvents>true</c:ForcedProgressEvents>"
+    "<c:VerbosityVerbose>true</c:VerbosityVerbose>"
+    "<c:VerbosityQuiet>false</c:VerbosityQuiet>"
+    "<c:ConfigurationDataReset>true</c:ConfigurationDataReset>"
+    "<c:BIOSSecureBoot>true</c:BIOSSecureBoot>"
+    "<c:SecureErase>true</c:SecureErase>"
+    "<c:ForceWinREBoot>true</c:ForceWinREBoot>"
+    "<c:ForceUEFILocalPBABoot>false</c:ForceUEFILocalPBABoot>"
+    "<c:ForceUEFIHTTPSBoot>true</c:ForceUEFIHTTPSBoot>"
+    "<c:AMTSecureBootControl>true</c:AMTSecureBootControl>"
+    "<c:PlatformErase>33554502</c:PlatformErase>"  // bits 1,2,6,25
+    "</c:AMT_BootCapabilities>"
     "</s:Body></s:Envelope>";
 
 constexpr char kEnumerateResponse[] =
@@ -501,6 +540,73 @@ void TestWsmanClient::getSetupAndConfigurationDecodesProvisioning()
     QVERIFY2(result.ok, qPrintable(result.error));
     QCOMPARE(result.provisioningState, 2);
     QCOMPARE(result.provisioningMode, 4);
+}
+
+void TestWsmanClient::getBootCapabilitiesDecodesAllFlags()
+{
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &) {
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                QByteArray(kBootCapabilitiesResponse));
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    BootCapabilitiesResult result;
+    QEventLoop loop;
+    getBootCapabilities(&client, [&](BootCapabilitiesResult r) {
+        result = r;
+        loop.quit();
+    });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+
+    // Spot-check every flag — the parser has 24 independent code paths
+    // and a typo in any of them would silently grey out a Boot Caps
+    // chip on every machine. Locking each one keeps that honest.
+    QVERIFY(result.ider);
+    QVERIFY(result.sol);
+    QVERIFY(!result.biosReflash);
+    QVERIFY(result.biosSetup);
+    QVERIFY(!result.biosPause);
+    QVERIFY(result.forcePxeBoot);
+    QVERIFY(result.forceHddBoot);
+    QVERIFY(result.forceCdOrDvdBoot);
+    QVERIFY(!result.verbosityScreenBlank);
+    QVERIFY(!result.powerButtonLock);
+    QVERIFY(!result.resetButtonLock);
+    QVERIFY(!result.keyboardLock);
+    QVERIFY(!result.sleepButtonLock);
+    QVERIFY(!result.userPasswordBypass);
+    QVERIFY(result.forcedProgressEvents);
+    QVERIFY(result.verbosityVerbose);
+    QVERIFY(!result.verbosityQuiet);
+    QVERIFY(result.configurationDataReset);
+    QVERIFY(result.biosSecureBoot);
+    QVERIFY(result.secureErase);
+    QVERIFY(result.forceWinReBoot);
+    QVERIFY(!result.forceUefiLocalPbaBoot);
+    QVERIFY(result.forceUefiHttpsBoot);
+    QVERIFY(result.amtSecureBootControl);
+
+    // PlatformErase came in as a numeric bitmask — bits 1, 2, 6, 25.
+    QVERIFY(result.platformErase);
+    QCOMPARE(result.platformEraseMask, quint32{33554502});
+    QVERIFY((result.platformEraseMask & (1u << 1)) != 0);
+    QVERIFY((result.platformEraseMask & (1u << 2)) != 0);
+    QVERIFY((result.platformEraseMask & (1u << 6)) != 0);
+    QVERIFY((result.platformEraseMask & (1u << 25)) != 0);
+    QVERIFY((result.platformEraseMask & (1u << 31)) == 0);
 }
 
 void TestWsmanClient::getMeVersionPicksAmtInstanceFromEnumeration()
