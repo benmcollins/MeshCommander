@@ -29,6 +29,7 @@ private slots:
     void getHardwareInventoryStitchesAllSections();
     void getAuditLogStateDecodesBitmask();
     void enumerateAuditLogParsesBinaryRecords();
+    void enumerateUserAccountsMergesAdminAndAclEntries();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -814,6 +815,165 @@ void TestWsmanClient::enumerateAuditLogParsesBinaryRecords()
     QCOMPARE(res.entries[1].auditAppId, 17);
     QCOMPARE(res.entries[1].eventLabel, QStringLiteral("Performed Power Up"));
     QCOMPARE(res.entries[1].initiator,  QStringLiteral("admin"));
+}
+
+void TestWsmanClient::enumerateUserAccountsMergesAdminAndAclEntries()
+{
+    // Three invokes hit the mock: GetAdminAclEntry, EnumerateUserAclEntries,
+    // and per-handle GetUserAclEntryEx + GetAclEnabledState. The mock
+    // routes on the method name embedded in the body.
+    static const char *adminResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:a=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuthorizationService\">"
+        "<s:Header/><s:Body>"
+        "<a:GetAdminAclEntry_OUTPUT>"
+        "<a:Username>admin</a:Username>"
+        "<a:ReturnValue>0</a:ReturnValue>"
+        "</a:GetAdminAclEntry_OUTPUT>"
+        "</s:Body></s:Envelope>";
+
+    static const char *enumResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:a=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuthorizationService\">"
+        "<s:Header/><s:Body>"
+        "<a:EnumerateUserAclEntries_OUTPUT>"
+        "<a:Handles>1</a:Handles>"
+        "<a:Handles>2</a:Handles>"
+        "<a:ReturnValue>0</a:ReturnValue>"
+        "</a:EnumerateUserAclEntries_OUTPUT>"
+        "</s:Body></s:Envelope>";
+
+    static const char *userEntryDigest =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:a=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuthorizationService\">"
+        "<s:Header/><s:Body>"
+        "<a:GetUserAclEntryEx_OUTPUT>"
+        "<a:DigestUsername>operator</a:DigestUsername>"
+        "<a:AccessPermission>2</a:AccessPermission>"
+        "<a:Realms>2</a:Realms>"   // Redirection
+        "<a:Realms>5</a:Realms>"   // Remote Control
+        "<a:Realms>13</a:Realms>"  // General Information
+        "<a:ReturnValue>0</a:ReturnValue>"
+        "</a:GetUserAclEntryEx_OUTPUT>"
+        "</s:Body></s:Envelope>";
+
+    static const char *enabledTrue =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:a=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuthorizationService\">"
+        "<s:Header/><s:Body>"
+        "<a:GetAclEnabledState_OUTPUT>"
+        "<a:Enabled>true</a:Enabled>"
+        "<a:ReturnValue>0</a:ReturnValue>"
+        "</a:GetAclEnabledState_OUTPUT>"
+        "</s:Body></s:Envelope>";
+
+    // Distinguish the two handles by tracking which Handle value appears
+    // in the request body. Handle=1 returns a digest user (enabled);
+    // Handle=2 returns a Kerberos user (disabled) for variety.
+    static const char *userEntryKerberos =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:a=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuthorizationService\">"
+        "<s:Header/><s:Body>"
+        "<a:GetUserAclEntryEx_OUTPUT>"
+        "<a:KerberosUserSid>AQUAAAAAAAUVAAAAAAAAAAAAAAA=</a:KerberosUserSid>"
+        "<a:AccessPermission>1</a:AccessPermission>"
+        "<a:Realms>3</a:Realms>"   // bit 3 = administrator
+        "<a:ReturnValue>0</a:ReturnValue>"
+        "</a:GetUserAclEntryEx_OUTPUT>"
+        "</s:Body></s:Envelope>";
+
+    static const char *enabledFalse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:a=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuthorizationService\">"
+        "<s:Header/><s:Body>"
+        "<a:GetAclEnabledState_OUTPUT>"
+        "<a:Enabled>false</a:Enabled>"
+        "<a:ReturnValue>0</a:ReturnValue>"
+        "</a:GetAclEnabledState_OUTPUT>"
+        "</s:Body></s:Envelope>";
+
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     QByteArray response;
+                     if (body.contains("GetAdminAclEntry")) {
+                         response = adminResponse;
+                     } else if (body.contains("EnumerateUserAclEntries")) {
+                         response = enumResponse;
+                     } else if (body.contains("GetUserAclEntryEx")) {
+                         response = body.contains("<g:Handle>2</g:Handle>")
+                              || body.contains("Handle>2</")
+                                       ? QByteArray(userEntryKerberos)
+                                       : QByteArray(userEntryDigest);
+                     } else if (body.contains("GetAclEnabledState")) {
+                         response = body.contains("<g:Handle>2</g:Handle>")
+                              || body.contains("Handle>2</")
+                                       ? QByteArray(enabledFalse)
+                                       : QByteArray(enabledTrue);
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    UserAccountsResult res;
+    QEventLoop loop;
+    enumerateUserAccounts(&client, [&](UserAccountsResult r) {
+        res = r;
+        loop.quit();
+    });
+    QTimer::singleShot(8000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(res.ok, qPrintable(res.error));
+
+    // Three rows expected: admin (handle=-1), handle=1, handle=2.
+    QCOMPARE(res.accounts.size(), 3);
+    QCOMPARE(res.accounts[0].handle, -1);
+    QCOMPARE(res.accounts[0].digestUsername, QStringLiteral("admin"));
+    QCOMPARE(res.accounts[0].accessPermission, 999);
+
+    // Handle=1 should have the digest user with three realms.
+    const auto &u1 = res.accounts[1];
+    QCOMPARE(u1.handle, 1);
+    QCOMPARE(u1.digestUsername, QStringLiteral("operator"));
+    QCOMPARE(u1.accessPermission, 2);
+    QCOMPARE(u1.realms.size(), 3);
+    QVERIFY(u1.realms.contains(2));
+    QVERIFY(u1.realms.contains(5));
+    QVERIFY(u1.enabled);
+
+    // Handle=2 should be Kerberos, realm 3 (administrator bit), disabled.
+    const auto &u2 = res.accounts[2];
+    QCOMPARE(u2.handle, 2);
+    QVERIFY(u2.digestUsername.isEmpty());
+    QVERIFY(!u2.kerberosUserSidB64.isEmpty());
+    QCOMPARE(u2.accessPermission, 1);
+    QVERIFY(u2.realms.contains(3));
+    QVERIFY(!u2.enabled);
+
+    // Label helpers.
+    QCOMPARE(accessPermissionLabel(0),   QStringLiteral("Local only"));
+    QCOMPARE(accessPermissionLabel(2),   QStringLiteral("All (Local & Network)"));
+    QCOMPARE(accessPermissionLabel(999), QStringLiteral("Administrator"));
+    QCOMPARE(realmName(2),  QStringLiteral("Redirection"));
+    QCOMPARE(realmName(20), QStringLiteral("Audit Log"));
+    QCOMPARE(realmName(3),  QString()); // sentinel
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

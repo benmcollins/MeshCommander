@@ -796,10 +796,37 @@ void MachineDetailsController::refreshUserAccounts()
             list.reserve(r.accounts.size());
             for (const auto &u : r.accounts) {
                 QVariantMap m;
-                m.insert(QStringLiteral("instanceID"),  u.instanceID);
-                m.insert(QStringLiteral("name"),        u.name);
-                m.insert(QStringLiteral("elementName"), u.elementName);
-                m.insert(QStringLiteral("enabled"),     u.enabled);
+                m.insert(QStringLiteral("handle"),           u.handle);
+                m.insert(QStringLiteral("name"),             u.name);
+                m.insert(QStringLiteral("digestUsername"),   u.digestUsername);
+                m.insert(QStringLiteral("kerberosUserSidB64"), u.kerberosUserSidB64);
+                m.insert(QStringLiteral("isKerberos"),
+                         !u.kerberosUserSidB64.isEmpty());
+                m.insert(QStringLiteral("accessPermission"),     u.accessPermission);
+                m.insert(QStringLiteral("accessPermissionLabel"),
+                         qumesh::wsman::accessPermissionLabel(u.accessPermission));
+                // Human-readable realm list: filter out the unnamed
+                // reserved slots, label realm 3 specially as
+                // "Administrator" since it's the all-access bit.
+                QVariantList realmList;
+                QStringList realmLabels;
+                bool isAdmin = (u.accessPermission == 999);
+                for (int rr : u.realms) {
+                    realmList.append(rr);
+                    if (rr == 3) {
+                        isAdmin = true;
+                        realmLabels.append(QStringLiteral("Administrator"));
+                    } else {
+                        const QString rn = qumesh::wsman::realmName(rr);
+                        if (!rn.isEmpty()) realmLabels.append(rn);
+                    }
+                }
+                m.insert(QStringLiteral("realms"),       realmList);
+                m.insert(QStringLiteral("realmCount"),   realmList.size());
+                m.insert(QStringLiteral("realmsLabel"),  realmLabels.join(", "));
+                m.insert(QStringLiteral("isAdmin"),      isAdmin);
+                m.insert(QStringLiteral("enabled"),      u.enabled);
+                m.insert(QStringLiteral("hidden"),       u.hidden);
                 list.append(m);
             }
 

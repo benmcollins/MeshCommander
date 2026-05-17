@@ -62,10 +62,6 @@ constexpr char kEventLogEntryResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_EventLogEntry";
 
-constexpr char kAccountResource[] =
-    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/"
-    "CIM_Account";
-
 constexpr char kOptInServiceResource[] =
     "http://intel.com/wbem/wscim/1/ips-schema/1/"
     "IPS_OptInService";
@@ -113,6 +109,9 @@ constexpr char kBatteryResource[] =
 
 constexpr char kAuditLogResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuditLog";
+
+constexpr char kAuthorizationServiceResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuthorizationService";
 
 QString newMessageId()
 {
@@ -1063,77 +1062,283 @@ void enumerateEventLog(WsmanClient *client,
         });
 }
 
+QString realmName(int index)
+{
+    // Ported verbatim from `legacy/source/Commander.htm` line ~4870
+    // `RealmNames`. The empty slots are reserved by AMT.
+    static const char *const kTable[] = {
+        "",                          // 0
+        "",                          // 1
+        "Redirection",               // 2
+        "",                          // 3 — sentinel "Administrator", handled separately
+        "Hardware Asset",            // 4
+        "Remote Control",            // 5
+        "Storage",                   // 6
+        "Event Manager",             // 7
+        "Storage Admin",             // 8
+        "Agent Presence Local",      // 9
+        "Agent Presence Remote",     // 10
+        "Circuit Breaker",           // 11
+        "Network Time",              // 12
+        "General Information",       // 13
+        "Firmware Update",           // 14
+        "EIT",                       // 15
+        "LocalUN",                   // 16
+        "Endpoint Access Control",   // 17
+        "Endpoint Access Control Admin", // 18
+        "Event Log Reader",          // 19
+        "Audit Log",                 // 20
+        "ACL Realm",                 // 21
+        "",                          // 22
+        "",                          // 23
+        "Local System",              // 24
+    };
+    if (index < 0 || index >= int(sizeof(kTable) / sizeof(kTable[0])))
+        return {};
+    return QString::fromLatin1(kTable[index]);
+}
+
+QString accessPermissionLabel(int code)
+{
+    switch (code) {
+    case 0:   return QStringLiteral("Local only");
+    case 1:   return QStringLiteral("Network only");
+    case 2:   return QStringLiteral("All (Local & Network)");
+    case 999: return QStringLiteral("Administrator");
+    default:  return QStringLiteral("Permission %1").arg(code);
+    }
+}
+
+namespace {
+
+/// Drive the rich legacy user-account read:
+///   GetAdminAclEntry → synthetic Handle=-1 row
+///   EnumerateUserAclEntries(StartIndex) → list of Handles
+///     For each: GetUserAclEntryEx + GetAclEnabledState
+QList<int> parseAclHandles(const QByteArray &bodyXml)
+{
+    QList<int> out;
+    QXmlStreamReader r(bodyXml);
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement() && r.name() == QStringLiteral("Handles")) {
+            const QString s = r.readElementText();
+            bool conv = false;
+            const int v = s.toInt(&conv);
+            if (conv) out.append(v);
+        }
+    }
+    return out;
+}
+
+QList<int> parseUserRealms(const QByteArray &bodyXml)
+{
+    QList<int> out;
+    QXmlStreamReader r(bodyXml);
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement() && r.name() == QStringLiteral("Realms")) {
+            bool conv = false;
+            const int v = r.readElementText().toInt(&conv);
+            if (conv) out.append(v);
+        }
+    }
+    return out;
+}
+
+} // namespace
+
 void enumerateUserAccounts(WsmanClient *client,
                             std::function<void(UserAccountsResult)> callback)
 {
-    struct Acc { QList<UserAccount> items; };
-    auto acc = std::make_shared<Acc>();
-    auto onDone = std::make_shared<std::function<void(QString)>>();
-    auto cb = std::make_shared<std::function<void(UserAccountsResult)>>(std::move(callback));
-
-    *onDone = [acc, cb](QString error) {
-        UserAccountsResult r;
-        r.ok = error.isEmpty();
-        r.error = std::move(error);
-        r.accounts = std::move(acc->items);
-        (*cb)(std::move(r));
+    struct Acc {
+        QHash<int, UserAccount> byHandle;   // -1 reserved for admin entry
+        std::function<void(UserAccountsResult)> cb;
+        int pendingPerHandle = 0;
+        bool adminDone = false;
+        bool enumDone  = false;
+        bool fired = false;
+        QString error;
+        void maybeFire() {
+            if (fired) return;
+            if (!adminDone || !enumDone) return;
+            if (pendingPerHandle > 0) return;
+            fired = true;
+            UserAccountsResult r;
+            r.ok = error.isEmpty();
+            r.error = error;
+            QList<int> keys = byHandle.keys();
+            std::sort(keys.begin(), keys.end()); // admin (-1) first.
+            for (int k : keys) r.accounts.append(byHandle.value(k));
+            cb(std::move(r));
+        }
     };
+    auto acc = std::make_shared<Acc>();
+    acc->cb = std::move(callback);
 
-    auto pullStep = std::make_shared<std::function<void(const QString &)>>();
-    *pullStep = [client, acc, pullStep, onDone](const QString &context) mutable {
-        const QByteArray env = buildPullEnvelope(QString::fromLatin1(kAccountResource),
-                                                  context, 64,
-                                                  client->endpoint().toString(),
-                                                  newMessageId());
+    if (client == nullptr) {
+        acc->error = QStringLiteral("client is null");
+        acc->adminDone = acc->enumDone = true;
+        acc->maybeFire();
+        return;
+    }
+
+    // --- GetAdminAclEntry ----------------------------------------
+    {
+        const QByteArray env = buildInvokeEnvelope(
+            QString::fromLatin1(kAuthorizationServiceResource),
+            QStringLiteral("GetAdminAclEntry"), {}, {},
+            client->endpoint().toString(), newMessageId());
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
-            [reply, acc, pullStep, onDone]() mutable {
+            [reply, acc]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->hasError();
+                reply->deleteLater();
+                if (!err) {
+                    const SoapResponse soap = parseResponse(body);
+                    if (!soap.isFault()) {
+                        const QString u = findScalar(soap.bodyXml,
+                                                      QStringLiteral("Username"));
+                        if (!u.isEmpty()) {
+                            UserAccount admin;
+                            admin.handle = -1;
+                            admin.digestUsername = u;
+                            admin.name = u;
+                            admin.accessPermission = 999;
+                            admin.enabled = true;
+                            admin.hidden = (u.startsWith(QStringLiteral("$$")));
+                            acc->byHandle.insert(-1, admin);
+                        }
+                    }
+                }
+                acc->adminDone = true;
+                acc->maybeFire();
+            });
+    }
+
+    // --- EnumerateUserAclEntries (paged) ------------------------
+    auto enumStep = std::make_shared<std::function<void(int)>>();
+    *enumStep = [client, acc, enumStep](int startIndex) mutable {
+        QHash<QString, QString> params;
+        params.insert(QStringLiteral("StartIndex"),
+                      QString::number(startIndex));
+        const QByteArray env = buildInvokeEnvelope(
+            QString::fromLatin1(kAuthorizationServiceResource),
+            QStringLiteral("EnumerateUserAclEntries"), {}, params,
+            client->endpoint().toString(), newMessageId());
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
+            [reply, acc, enumStep, startIndex, client]() mutable {
                 const QByteArray body = reply->readAll();
                 const auto err = reply->hasError();
                 const auto errString = reply->errorString();
                 reply->deleteLater();
-                if (err) { (*onDone)(errString); return; }
-                const SoapResponse soap = parseResponse(body);
-                if (soap.isFault()) { (*onDone)(soap.fault); return; }
-                const PullChunk chunk = parsePullResponse(soap.bodyXml);
-                for (const QByteArray &item : chunk.items) {
-                    UserAccount u;
-                    u.instanceID  = findScalar(item, QStringLiteral("InstanceID"));
-                    u.name        = findScalar(item, QStringLiteral("Name"));
-                    u.elementName = findScalar(item, QStringLiteral("ElementName"));
-                    const QString es = findScalar(item, QStringLiteral("EnabledState"));
-                    // CIM EnabledState: 2 = Enabled. Anything else (3/4
-                    // disabled, 5 not applicable, etc.) we surface as
-                    // disabled in the QML.
-                    u.enabled = (es == QStringLiteral("2"));
-                    acc->items.append(u);
-                }
-                if (chunk.endOfSequence || chunk.enumerationContext.isEmpty()) {
-                    (*onDone)({});
+                if (err) {
+                    if (acc->error.isEmpty()) acc->error = errString;
+                    acc->enumDone = true;
+                    acc->maybeFire();
                     return;
                 }
-                (*pullStep)(chunk.enumerationContext);
+                const SoapResponse soap = parseResponse(body);
+                if (soap.isFault()) {
+                    if (acc->error.isEmpty()) acc->error = soap.fault;
+                    acc->enumDone = true;
+                    acc->maybeFire();
+                    return;
+                }
+                const QList<int> handles = parseAclHandles(soap.bodyXml);
+                // Kick a GetUserAclEntryEx + GetAclEnabledState for
+                // each handle. Each pair increments pendingPerHandle
+                // by 2; both decrements unblock maybeFire().
+                for (int h : handles) {
+                    acc->pendingPerHandle += 2;
+                    UserAccount stub;
+                    stub.handle = h;
+                    acc->byHandle.insert(h, stub);
+
+                    QHash<QString, QString> p1;
+                    p1.insert(QStringLiteral("Handle"), QString::number(h));
+                    const QByteArray e1 = buildInvokeEnvelope(
+                        QString::fromLatin1(kAuthorizationServiceResource),
+                        QStringLiteral("GetUserAclEntryEx"), {}, p1,
+                        client->endpoint().toString(), newMessageId());
+                    WsmanReply *r1 = client->sendEnvelope(e1);
+                    QObject::connect(r1, &WsmanReply::finished, client,
+                        [r1, acc, h]() mutable {
+                            const QByteArray b = r1->readAll();
+                            const auto er = r1->hasError();
+                            r1->deleteLater();
+                            if (!er) {
+                                const SoapResponse s = parseResponse(b);
+                                if (!s.isFault() && acc->byHandle.contains(h)) {
+                                    UserAccount u = acc->byHandle.value(h);
+                                    u.digestUsername =
+                                        findScalar(s.bodyXml,
+                                                    QStringLiteral("DigestUsername"));
+                                    u.kerberosUserSidB64 =
+                                        findScalar(s.bodyXml,
+                                                    QStringLiteral("KerberosUserSid"));
+                                    bool conv = false;
+                                    const int ap = findScalar(s.bodyXml,
+                                        QStringLiteral("AccessPermission")).toInt(&conv);
+                                    if (conv) u.accessPermission = ap;
+                                    u.realms = parseUserRealms(s.bodyXml);
+                                    if (!u.digestUsername.isEmpty()) {
+                                        u.name = u.digestUsername;
+                                        u.hidden = u.digestUsername.startsWith(
+                                            QStringLiteral("$$"));
+                                    } else {
+                                        // Decode Kerberos SID lazily —
+                                        // keep the raw b64 for now and
+                                        // surface it to the controller,
+                                        // which formats SidString.
+                                        u.name = QStringLiteral("(Kerberos)");
+                                    }
+                                    acc->byHandle.insert(h, u);
+                                }
+                            }
+                            acc->pendingPerHandle--;
+                            acc->maybeFire();
+                        });
+
+                    const QByteArray e2 = buildInvokeEnvelope(
+                        QString::fromLatin1(kAuthorizationServiceResource),
+                        QStringLiteral("GetAclEnabledState"), {}, p1,
+                        client->endpoint().toString(), newMessageId());
+                    WsmanReply *r2 = client->sendEnvelope(e2);
+                    QObject::connect(r2, &WsmanReply::finished, client,
+                        [r2, acc, h]() mutable {
+                            const QByteArray b = r2->readAll();
+                            const auto er = r2->hasError();
+                            r2->deleteLater();
+                            if (!er) {
+                                const SoapResponse s = parseResponse(b);
+                                if (!s.isFault() && acc->byHandle.contains(h)) {
+                                    UserAccount u = acc->byHandle.value(h);
+                                    const QString en = findScalar(
+                                        s.bodyXml, QStringLiteral("Enabled"));
+                                    u.enabled = (en == QStringLiteral("true"));
+                                    acc->byHandle.insert(h, u);
+                                }
+                            }
+                            acc->pendingPerHandle--;
+                            acc->maybeFire();
+                        });
+                }
+
+                // Continuation: AMT's `EnumerateUserAclEntries` returns
+                // a maximum of 50 handles per call. If we got a full
+                // page, page forward. With <50 entries we're done.
+                if (handles.size() >= 50) {
+                    (*enumStep)(startIndex + handles.size());
+                } else {
+                    acc->enumDone = true;
+                    acc->maybeFire();
+                }
             });
     };
-
-    if (client == nullptr) { (*onDone)(QStringLiteral("client is null")); return; }
-    const QByteArray env = buildEnumerateEnvelope(QString::fromLatin1(kAccountResource),
-                                                   client->endpoint().toString(),
-                                                   newMessageId());
-    WsmanReply *reply = client->sendEnvelope(env);
-    QObject::connect(reply, &WsmanReply::finished, client,
-        [reply, pullStep, onDone]() mutable {
-            const QByteArray body = reply->readAll();
-            const auto err = reply->hasError();
-            const auto errString = reply->errorString();
-            reply->deleteLater();
-            if (err) { (*onDone)(errString); return; }
-            const SoapResponse soap = parseResponse(body);
-            if (soap.isFault()) { (*onDone)(soap.fault); return; }
-            const QString ctx = parseEnumerateContext(soap.bodyXml);
-            if (ctx.isEmpty()) { (*onDone)({}); return; }
-            (*pullStep)(ctx);
-        });
+    (*enumStep)(1);
 }
 
 namespace {

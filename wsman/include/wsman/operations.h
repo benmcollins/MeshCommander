@@ -495,12 +495,34 @@ struct EventLogResult
     QList<EventLogEntry> entries;
 };
 
+/// One AMT user ACL entry — composed of `GetUserAclEntryEx` +
+/// `GetAclEnabledState` per handle, with the admin entry rendered as
+/// a synthetic row with `handle = -1` and `accessPermission = 999`.
 struct UserAccount
 {
-    QString instanceID;
+    /// Per-AMT Handle for the user. -1 means this is the synthetic
+    /// admin entry (`AMT_AuthorizationService.GetAdminAclEntry`).
+    int handle = 0;
+    /// Either `digestUsername` or `kerberosUserSidB64` is set,
+    /// depending on whether AMT stores the entry as HTTP-digest or
+    /// as a Kerberos SID. The admin entry has only the username.
+    QString digestUsername;
+    QString kerberosUserSidB64;
+    /// Friendly name — DigestUsername if set, else SID-string for
+    /// Kerberos entries. Computed by the controller.
     QString name;
-    QString elementName;
+    /// 0 = Local only, 1 = Network only, 2 = All. 999 = the synthetic
+    /// admin entry.
+    int accessPermission = -1;
+    /// CIM realm bitmask the user is authorised on. Indexes into the
+    /// legacy `RealmNames` table; bit 3 means "Administrator" (full
+    /// access).
+    QList<int> realms;
     bool enabled = true;
+    /// `true` when the digest username starts with `$$` — these are
+    /// internal AMT system accounts that the legacy app hides
+    /// behind a "Show hidden" toggle.
+    bool hidden = false;
 };
 
 struct UserAccountsResult
@@ -509,6 +531,15 @@ struct UserAccountsResult
     QString error;
     QList<UserAccount> accounts;
 };
+
+/// Map an AMT realm bit-index to its human-readable name. Returns an
+/// empty string for the slots that are reserved / unused in the
+/// legacy `RealmNames` table.
+[[nodiscard]] QString realmName(int index);
+
+/// Map `AccessPermission` (0/1/2 — local/network/both) to a label.
+/// The synthetic admin sentinel `999` returns "Administrator".
+[[nodiscard]] QString accessPermissionLabel(int code);
 
 /// Enumerate `AMT_EventLogEntry` instances via WS-Enumeration. Walks
 /// Pull responses until `EndOfSequence`, parses each item's RecordID /
