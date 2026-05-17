@@ -165,6 +165,11 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(QVariantMap  eventSubscriptions READ eventSubscriptions
                    NOTIFY eventSubscriptionsChanged)
 
+    // Wake alarms (#161 Phase A) — read-only list of IPS_AlarmClockOccurrence
+    // rows, with friendly local-time + interval labels resolved in the
+    // controller so the QML can render in a single binding.
+    Q_PROPERTY(QVariantList wakeAlarms READ wakeAlarms NOTIFY wakeAlarmsChanged)
+
     // Boot capabilities — which power-to-X menu entries we show.
     Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
@@ -293,6 +298,7 @@ public:
     [[nodiscard]] QVariantMap  wireless() const          { return m_wireless; }
     [[nodiscard]] QVariantMap  agentPresence() const     { return m_agentPresence; }
     [[nodiscard]] QVariantMap  eventSubscriptions() const { return m_eventSubscriptions; }
+    [[nodiscard]] QVariantList wakeAlarms() const        { return m_wakeAlarms; }
 
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
@@ -320,6 +326,9 @@ public:
     /// Enumerate CIM_FilterCollection + CIM_ListenerDestination +
     /// CIM_FilterCollectionSubscription. See #163.
     Q_INVOKABLE void refreshEventSubscriptions();
+    /// Enumerate IPS_AlarmClockOccurrence for the Wake alarms pane.
+    /// See #161 phase A.
+    Q_INVOKABLE void refreshWakeAlarms();
     /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.
     /// Auto-called as part of `refreshPower` so the dialog is ready
     /// when the operator clicks the Power Policy button. See #162.
@@ -438,6 +447,7 @@ signals:
     void wirelessChanged();
     void agentPresenceChanged();
     void eventSubscriptionsChanged();
+    void wakeAlarmsChanged();
     void optInStatusChanged();
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
@@ -503,6 +513,7 @@ private:
         PendingWireless       = 1 << 10,
         PendingAgentPresence       = 1 << 11,
         PendingEventSubscriptions  = 1 << 12,
+        PendingWakeAlarms          = 1 << 13,
     };
     int m_pendingRefreshes = 0;
     /// `true` between `setSshConfig(enabled=true)` and the session
@@ -601,6 +612,7 @@ private:
     QVariantMap  m_wireless;
     QVariantMap  m_agentPresence;
     QVariantMap  m_eventSubscriptions;
+    QVariantList m_wakeAlarms;
 
     bool m_optInRequired = false;
     int m_optInState = 0;

@@ -63,6 +63,9 @@ constexpr char kListenerDestinationResource[] =
 constexpr char kFilterCollectionSubscriptionResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_FilterCollectionSubscription";
 
+constexpr char kAlarmClockOccurrenceResource[] =
+    "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_AlarmClockOccurrence";
+
 constexpr char kBootSettingDataResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_BootSettingData";
@@ -1298,6 +1301,74 @@ void getEventSubscriptions(WsmanClient *client,
                 acc->r.subscriptions.append(std::move(s));
             }
             acc->maybeFire();
+        });
+}
+
+namespace {
+
+/// Walk one `IPS_AlarmClockOccurrence` row and pull out the fields
+/// that live inside nested wrapper elements. The AMT firmware reports
+/// times as `<StartTime><Datetime>2026-01-01T08:00:00Z</Datetime></StartTime>`
+/// and recurrences as `<Interval><Interval>P1DT0H0M</Interval></Interval>`;
+/// `findScalar`'s default behaviour can't drill into those nested
+/// duplicates, so do it manually.
+void parseWakeAlarm(const QByteArray &itemXml, WakeAlarm &out)
+{
+    QXmlStreamReader r(itemXml);
+    enum Region { Top, InStartTime, InInterval } region = Top;
+    while (!r.atEnd() && !r.hasError()) {
+        r.readNext();
+        if (r.tokenType() == QXmlStreamReader::StartElement) {
+            const auto name = r.name();
+            if (region == Top) {
+                if (name == QStringLiteral("InstanceID")) {
+                    out.instanceId = r.readElementText().trimmed();
+                } else if (name == QStringLiteral("ElementName")) {
+                    out.elementName = r.readElementText().trimmed();
+                } else if (name == QStringLiteral("DeleteOnCompletion")) {
+                    const QString v = r.readElementText().trimmed();
+                    out.deleteOnCompletion =
+                        (v == QStringLiteral("true") || v == QStringLiteral("1"));
+                } else if (name == QStringLiteral("StartTime")) {
+                    region = InStartTime;
+                } else if (name == QStringLiteral("Interval")) {
+                    region = InInterval;
+                }
+            } else if (region == InStartTime
+                       && name == QStringLiteral("Datetime")) {
+                out.startTimeIso = r.readElementText().trimmed();
+            } else if (region == InInterval
+                       && name == QStringLiteral("Interval")) {
+                out.intervalIso = r.readElementText().trimmed();
+            }
+        } else if (r.tokenType() == QXmlStreamReader::EndElement) {
+            const auto name = r.name();
+            if (name == QStringLiteral("StartTime") && region == InStartTime)
+                region = Top;
+            else if (name == QStringLiteral("Interval") && region == InInterval)
+                region = Top;
+        }
+    }
+}
+
+} // namespace
+
+void getWakeAlarms(WsmanClient *client,
+                   std::function<void(WakeAlarmsResult)> callback)
+{
+    auto cb = std::make_shared<std::function<void(WakeAlarmsResult)>>(std::move(callback));
+    enumerateAll(client, kAlarmClockOccurrenceResource,
+        [cb](QList<QByteArray> items, QString err) {
+            WakeAlarmsResult r;
+            r.error = err;
+            r.ok = err.isEmpty();
+            for (const QByteArray &it : items) {
+                WakeAlarm a;
+                parseWakeAlarm(it, a);
+                if (!a.instanceId.isEmpty() || !a.startTimeIso.isEmpty())
+                    r.alarms.append(std::move(a));
+            }
+            (*cb)(std::move(r));
         });
 }
 

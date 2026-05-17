@@ -163,6 +163,7 @@ void MachineDetailsController::runPendingRefreshes()
     if (p & PendingWireless)     refreshWireless();
     if (p & PendingAgentPresence) refreshAgentPresence();
     if (p & PendingEventSubscriptions) refreshEventSubscriptions();
+    if (p & PendingWakeAlarms)   refreshWakeAlarms();
 }
 
 void MachineDetailsController::setHost(const QString &v)
@@ -1046,6 +1047,82 @@ void MachineDetailsController::refreshEventSubscriptions()
             es.insert(QStringLiteral("subscriptions"), subscriptions);
             m_eventSubscriptions = std::move(es);
             emit eventSubscriptionsChanged();
+        });
+}
+
+namespace {
+
+/// Render an ISO-8601 duration `PnDTnHnM` (the shape AMT uses for
+/// alarm recurrences) into a friendly "every N days N hours N minutes"
+/// string. Pieces that are zero are dropped. Returns empty when the
+/// input doesn't parse.
+QString humanizeIsoDuration(const QString &iso)
+{
+    if (iso.isEmpty() || !iso.startsWith(QLatin1Char('P'))) return {};
+    int days = 0, hours = 0, mins = 0;
+    bool conv = false;
+    int i = 1; // skip 'P'
+    bool inTime = false;
+    while (i < iso.size()) {
+        if (iso.at(i) == QLatin1Char('T')) { inTime = true; ++i; continue; }
+        int j = i;
+        while (j < iso.size() && iso.at(j).isDigit()) ++j;
+        if (j == i || j >= iso.size()) break;
+        const int n = iso.mid(i, j - i).toInt(&conv);
+        if (!conv) return {};
+        const QChar unit = iso.at(j);
+        if (!inTime && unit == QLatin1Char('D')) days = n;
+        else if (inTime && unit == QLatin1Char('H')) hours = n;
+        else if (inTime && unit == QLatin1Char('M')) mins = n;
+        i = j + 1;
+    }
+    QStringList parts;
+    if (days  > 0) parts << QObject::tr("%1 day%2").arg(days).arg(days == 1 ? "" : "s");
+    if (hours > 0) parts << QObject::tr("%1 hour%2").arg(hours).arg(hours == 1 ? "" : "s");
+    if (mins  > 0) parts << QObject::tr("%1 minute%2").arg(mins).arg(mins == 1 ? "" : "s");
+    if (parts.isEmpty()) return {};
+    return parts.join(QStringLiteral(", "));
+}
+
+} // namespace
+
+void MachineDetailsController::refreshWakeAlarms()
+{
+    if (deferIfSshConnecting(PendingWakeAlarms)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::getWakeAlarms(m_client,
+        [this](qumesh::wsman::WakeAlarmsResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("Wake alarms: %1").arg(r.error));
+
+            QVariantList list;
+            list.reserve(r.alarms.size());
+            for (const auto &a : r.alarms) {
+                QVariantMap m;
+                m.insert(QStringLiteral("instanceId"),         a.instanceId);
+                m.insert(QStringLiteral("elementName"),        a.elementName);
+                m.insert(QStringLiteral("startTimeIso"),       a.startTimeIso);
+                const QDateTime dt = QDateTime::fromString(a.startTimeIso,
+                                                            Qt::ISODate);
+                m.insert(QStringLiteral("startTimeLocal"),
+                         dt.isValid()
+                             ? dt.toLocalTime().toString(QStringLiteral(
+                                   "yyyy-MM-dd HH:mm"))
+                             : a.startTimeIso);
+                m.insert(QStringLiteral("intervalIso"),        a.intervalIso);
+                m.insert(QStringLiteral("intervalLabel"),
+                         humanizeIsoDuration(a.intervalIso));
+                m.insert(QStringLiteral("deleteOnCompletion"), a.deleteOnCompletion);
+                list.append(m);
+            }
+            m_wakeAlarms = std::move(list);
+            emit wakeAlarmsChanged();
         });
 }
 
