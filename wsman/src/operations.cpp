@@ -2457,6 +2457,16 @@ void getOptInStatus(WsmanClient *client,
                             partial->kvmOptInPolicy =
                                 pol.toLower() == QStringLiteral("true")
                                 || pol == QStringLiteral("1");
+                            // OptInPolicyTimeout lives on the same
+                            // IPS_KVMRedirectionSettingData class — the
+                            // firmware applies it to every consent
+                            // session, not just KVM. Drives the
+                            // countdown in the PIN-entry dialog (#171).
+                            bool conv = false;
+                            const int t = findScalar(
+                                s.bodyXml,
+                                QStringLiteral("OptInPolicyTimeout")).toInt(&conv);
+                            if (conv) partial->optInPolicyTimeoutSec = t;
                         }
                     }
                     partial->ok = true;

@@ -80,7 +80,7 @@ AppWindow {
             }
         }
         onOptInStarted: function(ok, error) {
-            if (ok) optInPrompt.openFor();
+            if (ok) optInPrompt.openFor(powerController.optInPolicyTimeoutSec);
             else ActivityHeartbeat.reportFailure(qsTr("User consent: %1").arg(error));
         }
         onOptInCodeResult: function(ok, error) {
@@ -89,8 +89,18 @@ AppWindow {
                 ActivityHeartbeat.reportSuccess();
             } else {
                 optInPrompt.errorText = qsTr("Code rejected: %1").arg(error);
-                optInPrompt.openFor();
+                optInPrompt.openFor(powerController.optInPolicyTimeoutSec);
             }
+        }
+        // Polling signals from #171.
+        onOptInGranted: {
+            optInPrompt.close();
+            ActivityHeartbeat.reportSuccess();
+        }
+        onOptInExpiredOrDenied: {
+            optInPrompt.close();
+            ActivityHeartbeat.reportFailure(
+                qsTr("User consent expired or denied at the target."));
         }
     }
 

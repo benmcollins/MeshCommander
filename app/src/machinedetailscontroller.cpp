@@ -4,6 +4,7 @@
 #include "machinedetailscontroller.h"
 
 #include <QDateTime>
+#include <QTimer>
 
 #include "wsman/operations.h"
 #include "wsman/wsman_client.h"
@@ -547,11 +548,30 @@ void MachineDetailsController::refreshOptInStatus()
     qumesh::wsman::getOptInStatus(m_client,
         [this](qumesh::wsman::OptInServiceResult r) {
             if (r.ok) {
+                const int prevState = m_optInState;
                 m_optInRequired         = r.optInRequired;
                 m_optInState            = r.optInState;
                 m_canModifyOptInPolicy  = r.canModifyOptInPolicy;
                 m_kvmOptInPolicy        = r.kvmOptInPolicy;
+                m_optInPolicyTimeoutSec = r.optInPolicyTimeoutSec;
                 emit optInStatusChanged();
+                // Drive the polling state machine. See #171: while
+                // we're between StartOptIn and SendOptInCode, watch
+                // for state transitions caused by the target-side
+                // operator (Granted → unblock, NotStarted → cancelled
+                // at target).
+                if (m_optInPolling) {
+                    if (m_optInState == 4) { // InSession — consent granted
+                        stopOptInPolling();
+                        emit optInGranted();
+                    } else if (prevState >= 2 /* Displayed */
+                               && m_optInState <= 1 /* NotStarted/Requested */) {
+                        // Target-side operator either cancelled or the
+                        // firmware timed out and dropped state back.
+                        stopOptInPolling();
+                        emit optInExpiredOrDenied();
+                    }
+                }
             }
             // Soft failure: older AMT firmware doesn't expose these
             // classes. Leave the previous values in place and let the
@@ -586,6 +606,7 @@ void MachineDetailsController::startOptIn()
         [this](qumesh::wsman::InvokeResult r) {
             decInflight();
             emit optInStarted(r.ok, r.error);
+            if (r.ok) startOptInPolling();
             refreshOptInStatus();
         });
 }
@@ -597,18 +618,40 @@ void MachineDetailsController::sendOptInCode(int code)
         [this](qumesh::wsman::InvokeResult r) {
             decInflight();
             emit optInCodeResult(r.ok, r.error);
+            if (r.ok) stopOptInPolling();
             refreshOptInStatus();
         });
 }
 
 void MachineDetailsController::cancelOptIn()
 {
+    stopOptInPolling();
     incInflight();
     qumesh::wsman::cancelOptIn(m_client,
         [this](qumesh::wsman::InvokeResult) {
             decInflight();
             refreshOptInStatus();
         });
+}
+
+void MachineDetailsController::startOptInPolling()
+{
+    if (m_optInPollTimer == nullptr) {
+        m_optInPollTimer = new QTimer(this);
+        m_optInPollTimer->setInterval(500);
+        // refreshOptInStatus drives the state-transition detection in
+        // the getOptInStatus callback above.
+        connect(m_optInPollTimer, &QTimer::timeout,
+                this, &MachineDetailsController::refreshOptInStatus);
+    }
+    m_optInPolling = true;
+    m_optInPollTimer->start();
+}
+
+void MachineDetailsController::stopOptInPolling()
+{
+    m_optInPolling = false;
+    if (m_optInPollTimer != nullptr) m_optInPollTimer->stop();
 }
 
 
