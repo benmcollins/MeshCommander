@@ -143,6 +143,7 @@ AppWindow {
     // Loader/StackLayout currentIndex below.
     readonly property var sections: [
         { key: "overview",  label: qsTr("Overview"),       icon: "■" },
+        { key: "hardware",  label: qsTr("Hardware"),       icon: "▦" },
         { key: "power",     label: qsTr("Power"),          icon: "⏻" },
         { key: "network",   label: qsTr("Network"),        icon: "≋" },
         { key: "time",      label: qsTr("Time"),           icon: "◷" },
@@ -161,13 +162,14 @@ AppWindow {
         if (machineHost.length === 0) return;
         switch (currentSection) {
         case 0: controller.refreshOverview();     break;
-        case 1: controller.refreshPower();        break;
-        case 2: controller.refreshNetwork();      break;
-        case 3: controller.refreshTime();         break;
-        // 4 = Remote access — no fetch needed.
-        // 5 = Certificates (local pins) — comes from the saved machine.
-        case 6: controller.refreshEventLog();     break;
-        case 7: controller.refreshUserAccounts(); break;
+        case 1: controller.refreshHardware();     break;
+        case 2: controller.refreshPower();        break;
+        case 3: controller.refreshNetwork();      break;
+        case 4: controller.refreshTime();         break;
+        // 5 = Remote access — no fetch needed.
+        // 6 = Certificates (local pins) — comes from the saved machine.
+        case 7: controller.refreshEventLog();     break;
+        case 8: controller.refreshUserAccounts(); break;
         }
     }
 
@@ -568,7 +570,301 @@ AppWindow {
                     }
                 }
 
-                // 1 — Power
+                // 1 — Hardware
+                Flickable {
+                    contentWidth: width
+                    contentHeight: hardwareCol.implicitHeight + 48
+                    clip: true
+
+                    ColumnLayout {
+                        id: hardwareCol
+                        spacing: 18
+                        width: parent.width
+
+                        ColumnLayout {
+                            spacing: 4
+                            Layout.fillWidth: true
+                            Layout.topMargin: 24
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            Text {
+                                text: qsTr("HARDWARE")
+                                color: Colors.textMuted
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                                font.letterSpacing: 2
+                                font.weight: Font.Medium
+                            }
+                            Text {
+                                text: {
+                                    const inv = controller.hardwareInventory;
+                                    if (!inv || Object.keys(inv).length === 0)
+                                        return qsTr("Not yet fetched");
+                                    return (inv.platformManufacturer || "") + " "
+                                        + (inv.platformModel || "");
+                                }
+                                color: Colors.text
+                                font.family: Type.sans
+                                font.pixelSize: 20
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        // Empty-state placeholder until the user hits
+                        // Refresh / lands on the section for the first time.
+                        Text {
+                            visible: Object.keys(controller.hardwareInventory).length === 0
+                                && !controller.busy
+                            text: qsTr("Click Refresh to fetch hardware inventory.")
+                            color: Colors.textFaint
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeS
+                            Layout.leftMargin: 24
+                        }
+
+                        // --- Platform ---------------------------------
+                        Section {
+                            title: qsTr("PLATFORM")
+                            visible: (controller.hardwareInventory.platformModel || "").length > 0
+                                || (controller.hardwareInventory.platformManufacturer || "").length > 0
+                            accent: Colors.accent
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            GridLayout {
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+
+                                Text { text: qsTr("Model"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.platformModel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Manufacturer"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.platformManufacturer || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Version"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.platformVersion || qsTr("(none)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Serial number"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.platformSerialNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("System ID"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.platformSystemId || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeXs; Layout.fillWidth: true; elide: Text.ElideMiddle }
+                            }
+                        }
+
+                        // --- Baseboard --------------------------------
+                        Section {
+                            title: qsTr("BASEBOARD")
+                            visible: (controller.hardwareInventory.baseboardManufacturer || "").length > 0
+                                || (controller.hardwareInventory.baseboardModel || "").length > 0
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            GridLayout {
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+
+                                Text { text: qsTr("Manufacturer"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.baseboardManufacturer || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Product"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.baseboardModel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Version"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.baseboardVersion || qsTr("(none)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Serial number"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.baseboardSerialNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Asset tag"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.baseboardAssetTag || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Replaceable"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS; visible: controller.hardwareInventory.baseboardCanBeFRUedKnown === true }
+                                Text { text: controller.hardwareInventory.baseboardReplaceable ? qsTr("Yes") : qsTr("No"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true; visible: controller.hardwareInventory.baseboardCanBeFRUedKnown === true }
+                            }
+                        }
+
+                        // --- BIOS -------------------------------------
+                        Section {
+                            title: qsTr("BIOS")
+                            visible: (controller.hardwareInventory.biosVendor || "").length > 0
+                                || (controller.hardwareInventory.biosVersion || "").length > 0
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            GridLayout {
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+
+                                Text { text: qsTr("Vendor"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.biosVendor || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Version"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.biosVersion || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Release date"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.biosReleaseDate || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                            }
+                        }
+
+                        // --- Processors -------------------------------
+                        Repeater {
+                            model: controller.hardwareInventory.processors || []
+                            delegate: Section {
+                                required property var modelData
+                                required property int index
+                                title: qsTr("PROCESSOR %1").arg(index + 1)
+                                Layout.fillWidth: true
+                                Layout.leftMargin: 24
+                                Layout.rightMargin: 24
+
+                                GridLayout {
+                                    columns: 2
+                                    columnSpacing: 16
+                                    rowSpacing: 6
+                                    Layout.fillWidth: true
+
+                                    Text { text: qsTr("Manufacturer"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.manufacturer || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Family"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.familyLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                                    Text { text: qsTr("Version"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.version || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Max socket speed"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.maxClockSpeedMhz > 0
+                                        ? qsTr("%1 MHz").arg(parent.parent.modelData.maxClockSpeedMhz)
+                                        : qsTr("(unknown)")
+                                        color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Status"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.cpuStatusLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                }
+                            }
+                        }
+
+                        // --- Memory -----------------------------------
+                        Repeater {
+                            model: controller.hardwareInventory.memoryModules || []
+                            delegate: Section {
+                                required property var modelData
+                                required property int index
+                                title: qsTr("MEMORY MODULE %1").arg(index + 1)
+                                Layout.fillWidth: true
+                                Layout.leftMargin: 24
+                                Layout.rightMargin: 24
+
+                                GridLayout {
+                                    columns: 2
+                                    columnSpacing: 16
+                                    rowSpacing: 6
+                                    Layout.fillWidth: true
+
+                                    Text { text: qsTr("Bank label"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.bankLabel || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Size"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.capacityBytes > 0
+                                        ? qsTr("%1 MB").arg(Math.round(parent.parent.modelData.capacityBytes / (1024 * 1024)))
+                                        : qsTr("(unknown)")
+                                        color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Type"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.memoryTypeLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Form factor"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.formFactorLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Manufacturer"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.manufacturer || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Part number"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.partNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Serial number"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.serialNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                }
+                            }
+                        }
+
+                        // --- Storage ----------------------------------
+                        Repeater {
+                            model: controller.hardwareInventory.storageDevices || []
+                            delegate: Section {
+                                required property var modelData
+                                required property int index
+                                title: qsTr("STORAGE %1").arg(index + 1)
+                                Layout.fillWidth: true
+                                Layout.leftMargin: 24
+                                Layout.rightMargin: 24
+
+                                GridLayout {
+                                    columns: 2
+                                    columnSpacing: 16
+                                    rowSpacing: 6
+                                    Layout.fillWidth: true
+
+                                    Text { text: qsTr("Model"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.model || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Serial number"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    Text { text: parent.parent.modelData.serialNumber || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                    Text { text: qsTr("Capacity"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                    // Schema MaxMediaSize is in units of 1000 bytes (kB);
+                                    // convert to MB.
+                                    Text { text: parent.parent.modelData.maxMediaSizeKb > 0
+                                        ? qsTr("%1 MB").arg(Math.round(parent.parent.modelData.maxMediaSizeKb * 1000 / (1024 * 1024)))
+                                        : qsTr("(unknown)")
+                                        color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                }
+                            }
+                        }
+
+                        // --- Battery ----------------------------------
+                        Section {
+                            title: qsTr("BATTERY")
+                            visible: (controller.hardwareInventory.battery
+                                       && controller.hardwareInventory.battery.present) === true
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+                            Layout.bottomMargin: 24
+
+                            GridLayout {
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+
+                                Text { text: qsTr("Device"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: (controller.hardwareInventory.battery
+                                              && controller.hardwareInventory.battery.deviceId)
+                                              || qsTr("(unknown)")
+                                       color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Chemistry"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: (controller.hardwareInventory.battery
+                                              && controller.hardwareInventory.battery.chemistryLabel)
+                                              || qsTr("(unknown)")
+                                       color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Design capacity"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.battery
+                                              && controller.hardwareInventory.battery.designCapacityMwh > 0
+                                              ? qsTr("%1 mWh").arg(controller.hardwareInventory.battery.designCapacityMwh)
+                                              : qsTr("(unknown)")
+                                       color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Design voltage"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.hardwareInventory.battery
+                                              && controller.hardwareInventory.battery.designVoltageMv > 0
+                                              ? qsTr("%1 mV").arg(controller.hardwareInventory.battery.designVoltageMv)
+                                              : qsTr("(unknown)")
+                                       color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Manufacturer"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: (controller.hardwareInventory.battery
+                                              && controller.hardwareInventory.battery.manufacturer)
+                                              || qsTr("(unknown)")
+                                       color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Serial number"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: (controller.hardwareInventory.battery
+                                              && controller.hardwareInventory.battery.serialNumber)
+                                              || qsTr("(unknown)")
+                                       color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                            }
+                        }
+                    }
+                }
+
+                // 2 — Power
                 ColumnLayout {
                     spacing: 18
 
@@ -720,7 +1016,7 @@ AppWindow {
                     Item { Layout.fillHeight: true }
                 }
 
-                // 2 — Network
+                // 3 — Network
                 Flickable {
                     contentWidth: width
                     contentHeight: networkCol.implicitHeight + 48
@@ -791,7 +1087,7 @@ AppWindow {
                     }
                 }
 
-                // 3 — Time
+                // 4 — Time
                 ColumnLayout {
                     spacing: 18
 
@@ -864,7 +1160,7 @@ AppWindow {
                     Item { Layout.fillHeight: true }
                 }
 
-                // 4 — Remote access (SOL / KVM / IDE-R launchers)
+                // 5 — Remote access (SOL / KVM / IDE-R launchers)
                 ColumnLayout {
                     spacing: 18
 
@@ -1025,7 +1321,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     Item { Layout.fillHeight: true }
                 }
 
-                // 5 — Certificates (locally pinned)
+                // 6 — Certificates (locally pinned)
                 ColumnLayout {
                     spacing: 18
 
@@ -1084,7 +1380,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     Item { Layout.fillHeight: true }
                 }
 
-                // 6 — Event log
+                // 7 — Event log
                 ColumnLayout {
                     spacing: 8
 
@@ -1180,7 +1476,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     }
                 }
 
-                // 7 — User accounts
+                // 8 — User accounts
                 ColumnLayout {
                     spacing: 8
 

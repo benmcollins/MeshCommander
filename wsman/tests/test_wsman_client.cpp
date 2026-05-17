@@ -26,6 +26,7 @@ private slots:
     void getSetupAndConfigurationDecodesProvisioning();
     void getMeVersionPicksAmtInstanceFromEnumeration();
     void getRedirectionStatusSplitsEnabledStateBitmask();
+    void getHardwareInventoryStitchesAllSections();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -129,6 +130,167 @@ constexpr char kRedirectionServiceResponse[] =
     "<r:EnabledState>32771</r:EnabledState>"
     "</r:AMT_RedirectionService>"
     "</s:Body></s:Envelope>";
+
+// --- Hardware-inventory fixtures ----------------------------------
+
+constexpr char kChassisPullResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+    " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Chassis\">"
+    "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+    "<c:CIM_Chassis>"
+    "<c:Model>ProBook 450 G7</c:Model>"
+    "<c:Manufacturer>HP</c:Manufacturer>"
+    "<c:Version>KBC Version 12.34</c:Version>"
+    "<c:SerialNumber>5CD012ABCD</c:SerialNumber>"
+    "</c:CIM_Chassis>"
+    "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+constexpr char kSysPackagingPullResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+    " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_SystemPackaging\">"
+    "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+    "<c:CIM_SystemPackaging>"
+    // Bytes (no dashes) on the wire; first three dwords are
+    // little-endian. The expected guidToStr output for this is
+    // `33221100-5544-7766-8899-aabbccddeeff`.
+    "<c:PlatformGUID>00112233445566778899AABBCCDDEEFF</c:PlatformGUID>"
+    "</c:CIM_SystemPackaging>"
+    "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+constexpr char kBiosPullResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+    " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_BIOSElement\">"
+    "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+    "<c:CIM_BIOSElement>"
+    "<c:Manufacturer>HP</c:Manufacturer>"
+    "<c:SoftwareElementID>S70 Ver. 01.07.00</c:SoftwareElementID>"
+    "<c:ReleaseDate><c:Datetime>20200115000000.000000+000</c:Datetime></c:ReleaseDate>"
+    "</c:CIM_BIOSElement>"
+    "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+constexpr char kProcessorPullResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+    " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Processor\">"
+    "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+    "<c:CIM_Processor>"
+    "<c:Family>198</c:Family>"
+    "<c:MaxClockSpeed>3600</c:MaxClockSpeed>"
+    "<c:CPUStatus>1</c:CPUStatus>"
+    "</c:CIM_Processor>"
+    "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+constexpr char kChipPullResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+    " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Chip\">"
+    "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+    "<c:CIM_Chip>"
+    "<c:Manufacturer>Intel</c:Manufacturer>"
+    "<c:Version>Intel(R) Core(TM) i7-1065G7</c:Version>"
+    "</c:CIM_Chip>"
+    "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+constexpr char kPhysMemoryPullResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+    " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_PhysicalMemory\">"
+    "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+    "<c:CIM_PhysicalMemory>"
+    "<c:BankLabel>ChannelA-DIMM0</c:BankLabel>"
+    "<c:Manufacturer>Samsung</c:Manufacturer>"
+    "<c:SerialNumber>0xCAFEF00D</c:SerialNumber>"
+    // 16 GiB
+    "<c:Capacity>17179869184</c:Capacity>"
+    "<c:FormFactor>13</c:FormFactor>"
+    "<c:MemoryType>26</c:MemoryType>"
+    "<c:Tag>9876</c:Tag>"
+    "<c:PartNumber>M471A2K43DB1-CWE</c:PartNumber>"
+    "</c:CIM_PhysicalMemory>"
+    "<c:CIM_PhysicalMemory>"
+    "<c:BankLabel>ChannelB-DIMM0</c:BankLabel>"
+    "<c:Manufacturer>Samsung</c:Manufacturer>"
+    "<c:SerialNumber>0xCAFEBABE</c:SerialNumber>"
+    "<c:Capacity>17179869184</c:Capacity>"
+    "<c:FormFactor>13</c:FormFactor>"
+    "<c:MemoryType>26</c:MemoryType>"
+    "<c:Tag>9877</c:Tag>"
+    "<c:PartNumber>M471A2K43DB1-CWE</c:PartNumber>"
+    "</c:CIM_PhysicalMemory>"
+    "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+constexpr char kMediaPullResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+    " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_MediaAccessDevice\">"
+    "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+    "<c:CIM_MediaAccessDevice>"
+    "<c:MaxMediaSize>512110190</c:MaxMediaSize>"
+    "</c:CIM_MediaAccessDevice>"
+    "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+constexpr char kPhysPackagePullResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+    " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_PhysicalPackage\">"
+    "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+    "<c:CIM_PhysicalPackage>" // 0 — chassis
+    "<c:PackageType>3</c:PackageType>"
+    "<c:Manufacturer>HP</c:Manufacturer>"
+    "</c:CIM_PhysicalPackage>"
+    "<c:CIM_PhysicalPackage>" // 1 — storage (matches Media[0] per legacy +1 shift)
+    "<c:PackageType>13</c:PackageType>"
+    "<c:Model>Samsung SSD 970 EVO Plus 500GB</c:Model>"
+    "<c:SerialNumber>S5GXNS0NA00001</c:SerialNumber>"
+    "</c:CIM_PhysicalPackage>"
+    "<c:CIM_PhysicalPackage>" // 2 — battery (PackageType=11)
+    "<c:PackageType>11</c:PackageType>"
+    "<c:Manufacturer>HP</c:Manufacturer>"
+    "<c:SerialNumber>BAT-001</c:SerialNumber>"
+    "<c:ManufactureDate><c:Datetime>20200110000000.000000+000</c:Datetime></c:ManufactureDate>"
+    "</c:CIM_PhysicalPackage>"
+    "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+constexpr char kBatteryPullResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+    " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Battery\">"
+    "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+    "<c:CIM_Battery>"
+    "<c:DeviceID>Battery 0</c:DeviceID>"
+    "<c:Chemistry>5</c:Chemistry>"
+    "<c:DesignCapacity>45000</c:DesignCapacity>"
+    "<c:DesignVoltage>11400</c:DesignVoltage>"
+    "</c:CIM_Battery>"
+    "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+constexpr char kCardPullResponse[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+    " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+    " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Card\">"
+    "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+    "<c:CIM_Card>"
+    "<c:Manufacturer>HP</c:Manufacturer>"
+    "<c:Model>867D</c:Model>"
+    "<c:Version>KBC Version 12.34</c:Version>"
+    "<c:SerialNumber>PJTQ001SDS3SU</c:SerialNumber>"
+    "<c:Tag>AssetXYZ</c:Tag>"
+    "<c:CanBeFRUed>true</c:CanBeFRUed>"
+    "</c:CIM_Card>"
+    "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
 
 constexpr char kKvmSapEnabledResponse[] =
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
@@ -396,6 +558,117 @@ void TestWsmanClient::getRedirectionStatusSplitsEnabledStateBitmask()
     QVERIFY(result.iderEnabled);
     QVERIFY(result.kvmAvailable);
     QVERIFY(result.kvmEnabled);
+}
+
+void TestWsmanClient::getHardwareInventoryStitchesAllSections()
+{
+    // Ten classes, one route. Switch on resource URI in the request
+    // body. The first POST per class is Enumerate, the second is Pull.
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     // Pull responses are returned only when the body
+                     // contains a Pull. Enumerate goes first.
+                     const bool isPull = body.contains(":Pull>")
+                                      || body.contains("<wsen:Pull");
+                     QByteArray response;
+                     auto matches = [&](const char *uri) { return body.contains(uri); };
+                     if (!isPull) {
+                         response = QByteArray(kEnumerateResponse);
+                     } else if (matches("CIM_Chassis")) {
+                         response = QByteArray(kChassisPullResponse);
+                     } else if (matches("CIM_SystemPackaging")) {
+                         response = QByteArray(kSysPackagingPullResponse);
+                     } else if (matches("CIM_BIOSElement")) {
+                         response = QByteArray(kBiosPullResponse);
+                     } else if (matches("CIM_Processor")) {
+                         response = QByteArray(kProcessorPullResponse);
+                     } else if (matches("CIM_Chip")) {
+                         response = QByteArray(kChipPullResponse);
+                     } else if (matches("CIM_PhysicalMemory")) {
+                         response = QByteArray(kPhysMemoryPullResponse);
+                     } else if (matches("CIM_MediaAccessDevice")) {
+                         response = QByteArray(kMediaPullResponse);
+                     } else if (matches("CIM_PhysicalPackage")) {
+                         response = QByteArray(kPhysPackagePullResponse);
+                     } else if (matches("CIM_Battery")) {
+                         response = QByteArray(kBatteryPullResponse);
+                     } else if (matches("CIM_Card")) {
+                         response = QByteArray(kCardPullResponse);
+                     } else {
+                         response = QByteArray(kEnumerateResponse);
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    HardwareInventoryResult result;
+    QEventLoop loop;
+    getHardwareInventory(&client, [&](HardwareInventoryResult r) {
+        result = r;
+        loop.quit();
+    });
+    QTimer::singleShot(10000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+
+    // Platform / GUID byte-swap.
+    QCOMPARE(result.platformModel, QStringLiteral("ProBook 450 G7"));
+    QCOMPARE(result.platformManufacturer, QStringLiteral("HP"));
+    QCOMPARE(result.platformSystemId,
+             QStringLiteral("33221100-5544-7766-8899-aabbccddeeff"));
+
+    // Baseboard
+    QCOMPARE(result.baseboardManufacturer, QStringLiteral("HP"));
+    QCOMPARE(result.baseboardModel, QStringLiteral("867D"));
+    QVERIFY(result.baseboardCanBeFRUedKnown);
+    QVERIFY(result.baseboardReplaceable);
+
+    // BIOS — Datetime is nested under ReleaseDate; the parser picks it up.
+    QCOMPARE(result.biosVendor, QStringLiteral("HP"));
+    QCOMPARE(result.biosVersion, QStringLiteral("S70 Ver. 01.07.00"));
+    QVERIFY(!result.biosReleaseDate.isEmpty());
+
+    // Processors zipped with chips.
+    QCOMPARE(result.processors.size(), 1);
+    QCOMPARE(result.processors.first().family, 198);
+    QCOMPARE(result.processors.first().familyLabel,
+             QStringLiteral("Intel® Core™ i7 Processor"));
+    QCOMPARE(result.processors.first().manufacturer, QStringLiteral("Intel"));
+    QCOMPARE(result.processors.first().maxClockSpeedMhz, 3600);
+    QCOMPARE(result.processors.first().cpuStatusLabel, QStringLiteral("Enabled"));
+
+    // Two DIMMs — DDR4 (26), SODIMM (13), 16 GiB each.
+    QCOMPARE(result.memoryModules.size(), 2);
+    QCOMPARE(result.memoryModules.first().memoryTypeLabel, QStringLiteral("DDR4"));
+    QCOMPARE(result.memoryModules.first().formFactorLabel, QStringLiteral("SODIMM"));
+    QCOMPARE(result.memoryModules.first().capacityBytes, 17179869184LL);
+
+    // One storage device — package index +1 zip.
+    QCOMPARE(result.storageDevices.size(), 1);
+    QCOMPARE(result.storageDevices.first().model,
+             QStringLiteral("Samsung SSD 970 EVO Plus 500GB"));
+    QCOMPARE(result.storageDevices.first().serialNumber,
+             QStringLiteral("S5GXNS0NA00001"));
+
+    // Battery — present, matched physical package by PackageType=11.
+    QVERIFY(result.battery.present);
+    QCOMPARE(result.battery.deviceId, QStringLiteral("Battery 0"));
+    QCOMPARE(result.battery.chemistryLabel, QStringLiteral("Lithium-ion"));
+    QCOMPARE(result.battery.designCapacityMwh, 45000LL);
+    QCOMPARE(result.battery.designVoltageMv,   11400LL);
+    QCOMPARE(result.battery.serialNumber,      QStringLiteral("BAT-001"));
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)
