@@ -157,6 +157,7 @@ void MachineDetailsController::runPendingRefreshes()
     if (p & PendingHardware)     refreshHardware();
     if (p & PendingAuditLog)     refreshAuditLog();
     if (p & PendingDeviceCerts)  refreshDeviceCerts();
+    if (p & PendingRemoteAccess) refreshRemoteAccess();
 }
 
 void MachineDetailsController::setHost(const QString &v)
@@ -753,6 +754,92 @@ void MachineDetailsController::refreshHardware()
 
             m_hardwareInventory = std::move(inv);
             emit hardwareChanged();
+        });
+}
+
+void MachineDetailsController::refreshRemoteAccess()
+{
+    if (deferIfSshConnecting(PendingRemoteAccess)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::getRemoteAccess(m_client,
+        [this](qumesh::wsman::RemoteAccessResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("Remote access: %1").arg(r.error));
+
+            QVariantMap envDet;
+            envDet.insert(QStringLiteral("enabled"),
+                          !r.envDetection.domains.isEmpty());
+            envDet.insert(QStringLiteral("domains"),
+                          QVariant(r.envDetection.domains));
+            envDet.insert(QStringLiteral("domainsLabel"),
+                          r.envDetection.domains.join(", "));
+
+            QVariantMap user;
+            user.insert(QStringLiteral("enabledState"),
+                        r.userInitiated.enabledState);
+            user.insert(QStringLiteral("label"),
+                        qumesh::wsman::userInitiatedCiraLabel(
+                            r.userInitiated.enabledState));
+
+            QVariantList policies;
+            for (const auto &p : r.policies) {
+                QVariantMap m;
+                m.insert(QStringLiteral("name"),           p.name);
+                m.insert(QStringLiteral("trigger"),        p.trigger);
+                m.insert(QStringLiteral("tunnelLifeTime"), p.tunnelLifeTime);
+                m.insert(QStringLiteral("mpsNames"),       p.mpsNames);
+                m.insert(QStringLiteral("mpsNamesLabel"),  p.mpsNames.join(", "));
+                if (p.periodicInterval) {
+                    m.insert(QStringLiteral("scheduleLabel"),
+                             QStringLiteral("Every %1 s").arg(p.periodicSeconds));
+                } else if (p.periodicTimeOfDay) {
+                    m.insert(QStringLiteral("scheduleLabel"),
+                             QStringLiteral("%1:%2 daily")
+                                 .arg(p.periodicHour, 2, 10, QLatin1Char('0'))
+                                 .arg(p.periodicMinute, 2, 10, QLatin1Char('0')));
+                } else {
+                    m.insert(QStringLiteral("scheduleLabel"), QString());
+                }
+                policies.append(m);
+            }
+
+            QVariantList servers;
+            for (const auto &s : r.servers) {
+                QVariantMap m;
+                m.insert(QStringLiteral("name"),       s.name);
+                m.insert(QStringLiteral("accessInfo"), s.accessInfo);
+                m.insert(QStringLiteral("port"),       s.port);
+                m.insert(QStringLiteral("cn"),         s.cn);
+                m.insert(QStringLiteral("mpsType"),    s.mpsType);
+                m.insert(QStringLiteral("cila"),       s.mpsType == 1);
+                servers.append(m);
+            }
+
+            QVariantList proxies;
+            for (const auto &p : r.httpProxies) {
+                QVariantMap m;
+                m.insert(QStringLiteral("accessInfo"), p.accessInfo);
+                m.insert(QStringLiteral("port"),       p.port);
+                m.insert(QStringLiteral("networkDnsSuffix"), p.networkDnsSuffix);
+                proxies.append(m);
+            }
+
+            QVariantMap ra;
+            ra.insert(QStringLiteral("ok"),            r.ok);
+            ra.insert(QStringLiteral("envDetection"),  envDet);
+            ra.insert(QStringLiteral("userInitiated"), user);
+            ra.insert(QStringLiteral("policies"),      policies);
+            ra.insert(QStringLiteral("servers"),       servers);
+            ra.insert(QStringLiteral("httpProxies"),   proxies);
+            ra.insert(QStringLiteral("httpProxySupported"), r.httpProxySupported);
+            m_remoteAccess = std::move(ra);
+            emit remoteAccessChanged();
         });
 }
 

@@ -148,6 +148,7 @@ AppWindow {
         { key: "network",   label: qsTr("Network"),        icon: "≋" },
         { key: "time",      label: qsTr("Time"),           icon: "◷" },
         { key: "remote",    label: qsTr("Remote access"),  icon: "▶" },
+        { key: "cira",      label: qsTr("CIRA"),           icon: "⤴" },
         { key: "certs",     label: qsTr("Pinned trust"),   icon: "🔒" },
         { key: "devcerts",  label: qsTr("Device certs"),   icon: "✦" },
         { key: "events",    label: qsTr("Event log"),      icon: "≡" },
@@ -163,17 +164,18 @@ AppWindow {
     function refreshCurrent() {
         if (machineHost.length === 0) return;
         switch (currentSection) {
-        case 0: controller.refreshOverview();     break;
-        case 1: controller.refreshHardware();     break;
-        case 2: controller.refreshPower();        break;
-        case 3: controller.refreshNetwork();      break;
-        case 4: controller.refreshTime();         break;
+        case 0:  controller.refreshOverview();     break;
+        case 1:  controller.refreshHardware();     break;
+        case 2:  controller.refreshPower();        break;
+        case 3:  controller.refreshNetwork();      break;
+        case 4:  controller.refreshTime();         break;
         // 5 = Remote access — no fetch needed.
-        // 6 = Pinned trust (local pins) — comes from the saved machine.
-        case 7: controller.refreshDeviceCerts();  break;
-        case 8: controller.refreshEventLog();     break;
-        case 9: controller.refreshAuditLog();     break;
-        case 10: controller.refreshUserAccounts(); break;
+        case 6:  controller.refreshRemoteAccess(); break;
+        // 7 = Pinned trust (local pins) — comes from the saved machine.
+        case 8:  controller.refreshDeviceCerts();  break;
+        case 9:  controller.refreshEventLog();     break;
+        case 10: controller.refreshAuditLog();     break;
+        case 11: controller.refreshUserAccounts(); break;
         }
     }
 
@@ -1404,7 +1406,266 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     Item { Layout.fillHeight: true }
                 }
 
-                // 6 — Certificates (locally pinned)
+                // 6 — Remote access (CIRA)
+                Flickable {
+                    contentWidth: width
+                    contentHeight: ciraCol.implicitHeight + 48
+                    clip: true
+
+                    ColumnLayout {
+                        id: ciraCol
+                        spacing: 18
+                        width: parent.width
+
+                        ColumnLayout {
+                            spacing: 4
+                            Layout.fillWidth: true
+                            Layout.topMargin: 24
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+                            Text {
+                                text: qsTr("REMOTE ACCESS (CIRA)")
+                                color: Colors.textMuted
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                                font.letterSpacing: 2
+                                font.weight: Font.Medium
+                            }
+                            Text {
+                                text: {
+                                    const r = controller.remoteAccess;
+                                    if (!r || !r.ok)
+                                        return qsTr("Not yet fetched");
+                                    const n = (r.servers || []).length;
+                                    return n === 0
+                                        ? qsTr("No MPS servers configured")
+                                        : qsTr("%1 management server(s)").arg(n);
+                                }
+                                color: Colors.text
+                                font.family: Type.sans
+                                font.pixelSize: 20
+                            }
+                            Text {
+                                visible: !controller.remoteAccess
+                                      || !controller.remoteAccess.ok
+                                text: qsTr("Click Refresh to fetch the CIRA configuration.")
+                                color: Colors.textFaint
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                            }
+                        }
+
+                        // --- Environment detection -------------------
+                        Section {
+                            title: qsTr("ENVIRONMENT DETECTION")
+                            visible: controller.remoteAccess && controller.remoteAccess.ok
+                            accent: Colors.accent
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            GridLayout {
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+
+                                Text { text: qsTr("State"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text {
+                                    text: (controller.remoteAccess.envDetection
+                                            && controller.remoteAccess.envDetection.enabled)
+                                            ? qsTr("Enabled") : qsTr("Disabled")
+                                    color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true
+                                }
+                                Text { text: qsTr("Domains"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text {
+                                    text: (controller.remoteAccess.envDetection
+                                            && controller.remoteAccess.envDetection.domainsLabel)
+                                            || qsTr("(none)")
+                                    color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeXs; Layout.fillWidth: true; wrapMode: Text.WordWrap
+                                }
+                                Text { text: qsTr("User initiation"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text {
+                                    text: (controller.remoteAccess.userInitiated
+                                            && controller.remoteAccess.userInitiated.label)
+                                            || qsTr("(unknown)")
+                                    color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true
+                                }
+                            }
+                        }
+
+                        // --- Policies (User Initiated / Alert / Periodic) ---
+                        Section {
+                            title: qsTr("CONNECTION POLICIES")
+                            visible: controller.remoteAccess
+                                  && controller.remoteAccess.policies
+                                  && controller.remoteAccess.policies.length > 0
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                Repeater {
+                                    model: controller.remoteAccess.policies || []
+                                    delegate: ColumnLayout {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+                                            Text {
+                                                text: modelData.name || "—"
+                                                color: Colors.text
+                                                font.family: Type.sans
+                                                font.pixelSize: Type.sizeM
+                                                Layout.preferredWidth: 140
+                                            }
+                                            Text {
+                                                text: (modelData.mpsNamesLabel || "").length > 0
+                                                    ? modelData.mpsNamesLabel
+                                                    : qsTr("(no servers)")
+                                                color: Colors.textMuted
+                                                font.family: Type.mono
+                                                font.pixelSize: Type.sizeXs
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+                                        Text {
+                                            visible: (modelData.scheduleLabel || "").length > 0
+                                                  || modelData.tunnelLifeTime > 0
+                                            text: {
+                                                let s = "";
+                                                if ((modelData.scheduleLabel || "").length > 0)
+                                                    s += modelData.scheduleLabel;
+                                                if (modelData.tunnelLifeTime > 0) {
+                                                    if (s.length > 0) s += " · ";
+                                                    s += qsTr("tunnel %1 s").arg(modelData.tunnelLifeTime);
+                                                }
+                                                return s;
+                                            }
+                                            color: Colors.textFaint
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeXs
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- MPS servers ----------------------------
+                        Section {
+                            title: qsTr("MANAGEMENT PRESENCE SERVERS")
+                            visible: controller.remoteAccess
+                                  && controller.remoteAccess.ok
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                Text {
+                                    visible: (controller.remoteAccess.servers || []).length === 0
+                                    text: qsTr("(none configured)")
+                                    color: Colors.textFaint
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                }
+                                Repeater {
+                                    model: controller.remoteAccess.servers || []
+                                    delegate: RowLayout {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
+                                        Text {
+                                            text: qsTr("%1:%2")
+                                                .arg(modelData.accessInfo || "")
+                                                .arg(modelData.port)
+                                            color: Colors.text
+                                            font.family: Type.mono
+                                            font.pixelSize: Type.sizeS
+                                            Layout.preferredWidth: 240
+                                        }
+                                        Text {
+                                            visible: modelData.cila === true
+                                            text: qsTr("CILA")
+                                            color: Colors.standby
+                                            font.family: Type.sans
+                                            font.pixelSize: 9
+                                            font.weight: Font.Medium
+                                            font.letterSpacing: 1
+                                        }
+                                        Text {
+                                            text: (modelData.cn && modelData.cn.length > 0)
+                                                ? qsTr("CN: %1").arg(modelData.cn)
+                                                : ""
+                                            color: Colors.textMuted
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeXs
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- HTTP proxies (AMT 11+) -----------------
+                        Section {
+                            title: qsTr("HTTP PROXIES")
+                            visible: controller.remoteAccess
+                                  && controller.remoteAccess.httpProxySupported === true
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+                            Layout.bottomMargin: 24
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                Text {
+                                    visible: (controller.remoteAccess.httpProxies || []).length === 0
+                                    text: qsTr("(none configured)")
+                                    color: Colors.textFaint
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                }
+                                Repeater {
+                                    model: controller.remoteAccess.httpProxies || []
+                                    delegate: RowLayout {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Text {
+                                            text: qsTr("%1:%2")
+                                                .arg(modelData.accessInfo || "")
+                                                .arg(modelData.port)
+                                            color: Colors.text
+                                            font.family: Type.mono
+                                            font.pixelSize: Type.sizeS
+                                            Layout.preferredWidth: 240
+                                        }
+                                        Text {
+                                            text: modelData.networkDnsSuffix || ""
+                                            color: Colors.textMuted
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeXs
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 7 — Certificates (locally pinned)
                 ColumnLayout {
                     spacing: 18
 
@@ -1463,7 +1724,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     Item { Layout.fillHeight: true }
                 }
 
-                // 7 — Device certificate store
+                // 8 — Device certificate store
                 Flickable {
                     contentWidth: width
                     contentHeight: devCertCol.implicitHeight + 48
@@ -1693,7 +1954,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     }
                 }
 
-                // 8 — Event log
+                // 9 — Event log
                 ColumnLayout {
                     spacing: 8
 
@@ -1789,7 +2050,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     }
                 }
 
-                // 9 — Audit log
+                // 10 — Audit log
                 ColumnLayout {
                     spacing: 8
 
@@ -1911,7 +2172,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     }
                 }
 
-                // 10 — User accounts
+                // 11 — User accounts
                 ColumnLayout {
                     spacing: 8
 
