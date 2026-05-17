@@ -162,6 +162,7 @@ void MachineDetailsController::runPendingRefreshes()
     if (p & PendingRemoteAccess) refreshRemoteAccess();
     if (p & PendingWireless)     refreshWireless();
     if (p & PendingAgentPresence) refreshAgentPresence();
+    if (p & PendingEventSubscriptions) refreshEventSubscriptions();
 }
 
 void MachineDetailsController::setHost(const QString &v)
@@ -981,6 +982,70 @@ void MachineDetailsController::refreshAgentPresence()
             ap.insert(QStringLiteral("watchdogs"),       watchdogs);
             m_agentPresence = std::move(ap);
             emit agentPresenceChanged();
+        });
+}
+
+void MachineDetailsController::refreshEventSubscriptions()
+{
+    if (deferIfSshConnecting(PendingEventSubscriptions)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::getEventSubscriptions(m_client,
+        [this](qumesh::wsman::EventSubscriptionsResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("Event subscriptions: %1").arg(r.error));
+
+            QVariantList filters;
+            filters.reserve(r.filters.size());
+            for (const auto &f : r.filters) {
+                QVariantMap m;
+                m.insert(QStringLiteral("instanceId"),     f.instanceId);
+                m.insert(QStringLiteral("collectionName"), f.collectionName);
+                filters.append(m);
+            }
+            QVariantList listeners;
+            listeners.reserve(r.listeners.size());
+            for (const auto &l : r.listeners) {
+                QVariantMap m;
+                m.insert(QStringLiteral("name"),              l.name);
+                m.insert(QStringLiteral("destination"),       l.destination);
+                m.insert(QStringLiteral("deliveryMode"),      l.deliveryMode);
+                m.insert(QStringLiteral("deliveryModeLabel"), l.deliveryModeLabel);
+                listeners.append(m);
+            }
+            QVariantList subscriptions;
+            subscriptions.reserve(r.subscriptions.size());
+            for (const auto &s : r.subscriptions) {
+                QVariantMap m;
+                m.insert(QStringLiteral("filterInstanceId"), s.filterInstanceId);
+                m.insert(QStringLiteral("listenerName"),     s.listenerName);
+                // Pre-resolve the destination URL + delivery label so
+                // the QML can render rows in a single binding without
+                // a nested lookup.
+                QString dest, deliveryLabel;
+                for (const auto &l : r.listeners) {
+                    if (l.name == s.listenerName) {
+                        dest = l.destination;
+                        deliveryLabel = l.deliveryModeLabel;
+                        break;
+                    }
+                }
+                m.insert(QStringLiteral("destination"),       dest);
+                m.insert(QStringLiteral("deliveryModeLabel"), deliveryLabel);
+                subscriptions.append(m);
+            }
+            QVariantMap es;
+            es.insert(QStringLiteral("ok"),            r.ok);
+            es.insert(QStringLiteral("filters"),       filters);
+            es.insert(QStringLiteral("listeners"),     listeners);
+            es.insert(QStringLiteral("subscriptions"), subscriptions);
+            m_eventSubscriptions = std::move(es);
+            emit eventSubscriptionsChanged();
         });
 }
 

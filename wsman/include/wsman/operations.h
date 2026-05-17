@@ -401,6 +401,53 @@ struct AgentPresenceResult
 void getAgentPresence(WsmanClient *client,
                       std::function<void(AgentPresenceResult)> callback);
 
+/// One row from `CIM_FilterCollection` — a named event-filter the
+/// firmware exposes; subscriptions reference it by `instanceId`.
+struct EventFilter
+{
+    QString instanceId;
+    QString collectionName;
+};
+
+/// One row from `CIM_ListenerDestination(WSManagement)` — a sink the
+/// firmware can push event notifications to.
+struct EventListener
+{
+    QString name;
+    QString destination;       ///< Listener URL.
+    int deliveryMode = -1;     ///< 2=Push, 3=Push+ACK, 4=Events, 5=Pull.
+    QString deliveryModeLabel; ///< Human-readable form of `deliveryMode`.
+};
+
+/// One row from `CIM_FilterCollectionSubscription` — the join between
+/// a filter and a listener. `Filter` and `Handler` are EPRs; the
+/// `InstanceID` / `Name` selectors are extracted into named fields.
+struct EventSubscription
+{
+    QString filterInstanceId;
+    QString listenerName;
+};
+
+/// Snapshot of event subscriptions and the catalogs they pull from.
+/// Read-only Phase A (#163) — write side (Subscribe / UnSubscribe)
+/// deferred to Phase B.
+struct EventSubscriptionsResult
+{
+    bool ok = false;
+    QString error;
+    QList<EventFilter> filters;
+    QList<EventListener> listeners;
+    QList<EventSubscription> subscriptions;
+};
+
+/// Enumerate `CIM_FilterCollection`, `CIM_ListenerDestination`, and
+/// `CIM_FilterCollectionSubscription` in parallel. See #163.
+void getEventSubscriptions(WsmanClient *client,
+                           std::function<void(EventSubscriptionsResult)> callback);
+
+/// Render a `CIM_ListenerDestination.DeliveryMode` enum into a label.
+[[nodiscard]] QString listenerDeliveryModeLabel(int code);
+
 /// Read `AMT_BootCapabilities` — which boot-source-override flags the
 /// firmware will accept. Drives the gating of menu entries
 /// (Secure Erase / Platform Erase / HTTPS Boot etc.).

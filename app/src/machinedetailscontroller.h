@@ -161,6 +161,10 @@ class MachineDetailsController : public QObject
     // AMT_AgentPresenceCapabilities + the AMT_AgentPresenceWatchdog list.
     Q_PROPERTY(QVariantMap  agentPresence READ agentPresence NOTIFY agentPresenceChanged)
 
+    // Event subscriptions (#163 Phase A) — filters / listeners / subs.
+    Q_PROPERTY(QVariantMap  eventSubscriptions READ eventSubscriptions
+                   NOTIFY eventSubscriptionsChanged)
+
     // Boot capabilities — which power-to-X menu entries we show.
     Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
@@ -288,6 +292,7 @@ public:
     [[nodiscard]] QVariantMap  remoteAccess() const      { return m_remoteAccess; }
     [[nodiscard]] QVariantMap  wireless() const          { return m_wireless; }
     [[nodiscard]] QVariantMap  agentPresence() const     { return m_agentPresence; }
+    [[nodiscard]] QVariantMap  eventSubscriptions() const { return m_eventSubscriptions; }
 
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
@@ -312,6 +317,9 @@ public:
     /// Enumerate AMT_AgentPresenceWatchdog + read
     /// AMT_AgentPresenceCapabilities for the Watchdogs pane. See #164.
     Q_INVOKABLE void refreshAgentPresence();
+    /// Enumerate CIM_FilterCollection + CIM_ListenerDestination +
+    /// CIM_FilterCollectionSubscription. See #163.
+    Q_INVOKABLE void refreshEventSubscriptions();
     /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.
     /// Auto-called as part of `refreshPower` so the dialog is ready
     /// when the operator clicks the Power Policy button. See #162.
@@ -429,6 +437,7 @@ signals:
     void remoteAccessChanged();
     void wirelessChanged();
     void agentPresenceChanged();
+    void eventSubscriptionsChanged();
     void optInStatusChanged();
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
@@ -492,7 +501,8 @@ private:
         PendingDeviceCerts  = 1 << 8,
         PendingRemoteAccess = 1 << 9,
         PendingWireless       = 1 << 10,
-        PendingAgentPresence  = 1 << 11,
+        PendingAgentPresence       = 1 << 11,
+        PendingEventSubscriptions  = 1 << 12,
     };
     int m_pendingRefreshes = 0;
     /// `true` between `setSshConfig(enabled=true)` and the session
@@ -590,6 +600,7 @@ private:
     QVariantMap  m_remoteAccess;
     QVariantMap  m_wireless;
     QVariantMap  m_agentPresence;
+    QVariantMap  m_eventSubscriptions;
 
     bool m_optInRequired = false;
     int m_optInState = 0;
