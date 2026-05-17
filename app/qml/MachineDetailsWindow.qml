@@ -146,6 +146,7 @@ AppWindow {
         { key: "hardware",  label: qsTr("Hardware"),       icon: "▦" },
         { key: "power",     label: qsTr("Power"),          icon: "⏻" },
         { key: "network",   label: qsTr("Network"),        icon: "≋" },
+        { key: "wireless",  label: qsTr("Wireless"),       icon: "📶" },
         { key: "time",      label: qsTr("Time"),           icon: "◷" },
         { key: "remote",    label: qsTr("Remote access"),  icon: "▶" },
         { key: "cira",      label: qsTr("CIRA"),           icon: "⤴" },
@@ -168,14 +169,15 @@ AppWindow {
         case 1:  controller.refreshHardware();     break;
         case 2:  controller.refreshPower();        break;
         case 3:  controller.refreshNetwork();      break;
-        case 4:  controller.refreshTime();         break;
-        // 5 = Remote access — no fetch needed.
-        case 6:  controller.refreshRemoteAccess(); break;
-        // 7 = Pinned trust (local pins) — comes from the saved machine.
-        case 8:  controller.refreshDeviceCerts();  break;
-        case 9:  controller.refreshEventLog();     break;
-        case 10: controller.refreshAuditLog();     break;
-        case 11: controller.refreshUserAccounts(); break;
+        case 4:  controller.refreshWireless();     break;
+        case 5:  controller.refreshTime();         break;
+        // 6 = Remote access — no fetch needed.
+        case 7:  controller.refreshRemoteAccess(); break;
+        // 8 = Pinned trust (local pins) — comes from the saved machine.
+        case 9:  controller.refreshDeviceCerts();  break;
+        case 10: controller.refreshEventLog();     break;
+        case 11: controller.refreshAuditLog();     break;
+        case 12: controller.refreshUserAccounts(); break;
         }
     }
 
@@ -1172,7 +1174,199 @@ AppWindow {
                     }
                 }
 
-                // 4 — Time
+                // 4 — Wireless (WiFi + 802.1x)
+                Flickable {
+                    contentWidth: width
+                    contentHeight: wirelessCol.implicitHeight + 48
+                    clip: true
+
+                    ColumnLayout {
+                        id: wirelessCol
+                        spacing: 18
+                        width: parent.width
+
+                        ColumnLayout {
+                            spacing: 4
+                            Layout.fillWidth: true
+                            Layout.topMargin: 24
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+                            Text {
+                                text: qsTr("WIRELESS")
+                                color: Colors.textMuted
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                                font.letterSpacing: 2
+                                font.weight: Font.Medium
+                            }
+                            Text {
+                                text: {
+                                    const w = controller.wireless;
+                                    if (!w || !w.ok)
+                                        return qsTr("Not yet fetched");
+                                    if (w.port && w.port.present)
+                                        return w.port.currentSsid
+                                            ? w.port.currentSsid
+                                            : qsTr("Wireless interface");
+                                    return qsTr("No wireless interface");
+                                }
+                                color: Colors.text
+                                font.family: Type.sans
+                                font.pixelSize: 20
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                            Text {
+                                visible: !controller.wireless
+                                      || !controller.wireless.ok
+                                text: qsTr("Click Refresh to fetch wireless state.")
+                                color: Colors.textFaint
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                            }
+                        }
+
+                        // --- WiFi port + radio --------------------------
+                        Section {
+                            title: qsTr("WIFI PORT")
+                            visible: controller.wireless
+                                  && controller.wireless.port
+                                  && controller.wireless.port.present === true
+                            accent: Colors.accent
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            GridLayout {
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+
+                                Text { text: qsTr("Port state"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.wireless.port.portStateLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Radio"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.wireless.port.radioStateLabel || qsTr("(unknown)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Current SSID"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.wireless.port.currentSsid || qsTr("(none)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text {
+                                    text: qsTr("Local profile sync")
+                                    color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS
+                                    visible: controller.wireless.port.localProfileSyncEnabled !== -1
+                                }
+                                Text {
+                                    text: controller.wireless.port.localProfileSyncEnabled === 1
+                                        ? qsTr("Enabled") : qsTr("Disabled")
+                                    color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true
+                                    visible: controller.wireless.port.localProfileSyncEnabled !== -1
+                                }
+                                Text {
+                                    text: qsTr("UEFI profile sharing")
+                                    color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS
+                                    visible: controller.wireless.port.uefiProfileShareEnabled !== -1
+                                }
+                                Text {
+                                    text: controller.wireless.port.uefiProfileShareEnabled === 1
+                                        ? qsTr("Enabled") : qsTr("Disabled")
+                                    color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true
+                                    visible: controller.wireless.port.uefiProfileShareEnabled !== -1
+                                }
+                            }
+                        }
+
+                        // --- WiFi profiles ------------------------------
+                        Section {
+                            title: qsTr("WIFI PROFILES")
+                            visible: controller.wireless && controller.wireless.ok
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                Text {
+                                    visible: (controller.wireless.profiles || []).length === 0
+                                    text: qsTr("No wireless profiles configured.")
+                                    color: Colors.textFaint
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                }
+                                Repeater {
+                                    model: controller.wireless.profiles || []
+                                    delegate: ColumnLayout {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+                                            Text {
+                                                text: modelData.elementName
+                                                   || qsTr("(unnamed)")
+                                                color: Colors.text
+                                                font.family: Type.sans
+                                                font.pixelSize: Type.sizeM
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+                                            Text {
+                                                text: qsTr("priority %1").arg(modelData.priority)
+                                                color: Colors.textFaint
+                                                font.family: Type.mono
+                                                font.pixelSize: Type.sizeXs
+                                                visible: modelData.priority >= 0
+                                            }
+                                        }
+                                        Text {
+                                            text: {
+                                                let s = "SSID " + (modelData.ssid || "(none)");
+                                                if (modelData.authMethodLabel)
+                                                    s += " · " + modelData.authMethodLabel;
+                                                if (modelData.encryptionLabel)
+                                                    s += " · " + modelData.encryptionLabel;
+                                                if ((modelData.eap8021xProtocolLabel || "").length > 0)
+                                                    s += " · " + modelData.eap8021xProtocolLabel;
+                                                return s;
+                                            }
+                                            color: Colors.textMuted
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeXs
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- Wired 802.1x ------------------------------
+                        Section {
+                            title: qsTr("WIRED 802.1X")
+                            visible: controller.wireless
+                                  && controller.wireless.wired
+                                  && controller.wireless.wired.present === true
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+                            Layout.bottomMargin: 24
+
+                            GridLayout {
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+
+                                Text { text: qsTr("State"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.wireless.wired.enabled ? qsTr("Enabled") : qsTr("Disabled"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                                Text { text: qsTr("Protocol"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.wireless.wired.authProtocolLabel || qsTr("(none)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                            }
+                        }
+                    }
+                }
+
+                // 5 — Time
                 ColumnLayout {
                     spacing: 18
 
@@ -1245,7 +1439,7 @@ AppWindow {
                     Item { Layout.fillHeight: true }
                 }
 
-                // 5 — Remote access (SOL / KVM / IDE-R launchers)
+                // 6 — Remote access (SOL / KVM / IDE-R launchers)
                 ColumnLayout {
                     spacing: 18
 
@@ -1406,7 +1600,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     Item { Layout.fillHeight: true }
                 }
 
-                // 6 — Remote access (CIRA)
+                // 7 — Remote access (CIRA)
                 Flickable {
                     contentWidth: width
                     contentHeight: ciraCol.implicitHeight + 48
@@ -1665,7 +1859,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     }
                 }
 
-                // 7 — Certificates (locally pinned)
+                // 8 — Certificates (locally pinned)
                 ColumnLayout {
                     spacing: 18
 
@@ -1724,7 +1918,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     Item { Layout.fillHeight: true }
                 }
 
-                // 8 — Device certificate store
+                // 9 — Device certificate store
                 Flickable {
                     contentWidth: width
                     contentHeight: devCertCol.implicitHeight + 48
@@ -1954,7 +2148,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     }
                 }
 
-                // 9 — Event log
+                // 10 — Event log
                 ColumnLayout {
                     spacing: 8
 
@@ -2050,7 +2244,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     }
                 }
 
-                // 10 — Audit log
+                // 11 — Audit log
                 ColumnLayout {
                     spacing: 8
 
@@ -2172,7 +2366,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                     }
                 }
 
-                // 11 — User accounts
+                // 12 — User accounts
                 ColumnLayout {
                     spacing: 8
 

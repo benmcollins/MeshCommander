@@ -158,6 +158,7 @@ void MachineDetailsController::runPendingRefreshes()
     if (p & PendingAuditLog)     refreshAuditLog();
     if (p & PendingDeviceCerts)  refreshDeviceCerts();
     if (p & PendingRemoteAccess) refreshRemoteAccess();
+    if (p & PendingWireless)     refreshWireless();
 }
 
 void MachineDetailsController::setHost(const QString &v)
@@ -754,6 +755,76 @@ void MachineDetailsController::refreshHardware()
 
             m_hardwareInventory = std::move(inv);
             emit hardwareChanged();
+        });
+}
+
+void MachineDetailsController::refreshWireless()
+{
+    if (deferIfSshConnecting(PendingWireless)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::getWireless(m_client,
+        [this](qumesh::wsman::WirelessResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("Wireless: %1").arg(r.error));
+
+            QVariantMap port;
+            port.insert(QStringLiteral("present"), r.port.present);
+            port.insert(QStringLiteral("portState"), r.port.portState);
+            port.insert(QStringLiteral("portStateLabel"),
+                        qumesh::wsman::wifiPortStateLabel(r.port.portState));
+            port.insert(QStringLiteral("radioState"), r.port.radioState);
+            port.insert(QStringLiteral("radioStateLabel"),
+                        qumesh::wsman::wifiRadioStateLabel(r.port.radioState));
+            port.insert(QStringLiteral("currentSsid"), r.port.currentSsid);
+            port.insert(QStringLiteral("localProfileSyncEnabled"),
+                        r.port.localProfileSyncEnabled);
+            port.insert(QStringLiteral("uefiProfileShareEnabled"),
+                        r.port.uefiProfileShareEnabled);
+
+            QVariantList profiles;
+            for (const auto &p : r.profiles) {
+                QVariantMap m;
+                m.insert(QStringLiteral("elementName"), p.elementName);
+                m.insert(QStringLiteral("ssid"),        p.ssid);
+                m.insert(QStringLiteral("priority"),    p.priority);
+                m.insert(QStringLiteral("authMethod"),  p.authenticationMethod);
+                m.insert(QStringLiteral("authMethodLabel"),
+                         qumesh::wsman::wifiAuthMethodLabel(p.authenticationMethod));
+                m.insert(QStringLiteral("encryption"),  p.encryptionMethod);
+                m.insert(QStringLiteral("encryptionLabel"),
+                         qumesh::wsman::wifiEncryptionLabel(p.encryptionMethod));
+                m.insert(QStringLiteral("eap8021xProtocol"), p.eap8021xProtocol);
+                m.insert(QStringLiteral("eap8021xProtocolLabel"),
+                         p.eap8021xProtocol >= 0
+                             ? qumesh::wsman::eap8021xProtocolLabel(p.eap8021xProtocol)
+                             : QString());
+                profiles.append(m);
+            }
+
+            QVariantMap wired;
+            wired.insert(QStringLiteral("present"), r.wired.present);
+            wired.insert(QStringLiteral("enabled"), r.wired.enabled);
+            wired.insert(QStringLiteral("authenticationProtocol"),
+                         r.wired.authenticationProtocol);
+            wired.insert(QStringLiteral("authProtocolLabel"),
+                         r.wired.authenticationProtocol >= 0
+                             ? qumesh::wsman::eap8021xProtocolLabel(
+                                   r.wired.authenticationProtocol)
+                             : QString());
+
+            QVariantMap wl;
+            wl.insert(QStringLiteral("ok"),       r.ok);
+            wl.insert(QStringLiteral("port"),     port);
+            wl.insert(QStringLiteral("profiles"), profiles);
+            wl.insert(QStringLiteral("wired"),    wired);
+            m_wireless = std::move(wl);
+            emit wirelessChanged();
         });
 }
 

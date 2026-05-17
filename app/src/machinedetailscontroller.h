@@ -139,6 +139,9 @@ class MachineDetailsController : public QObject
     // CIRA / Remote-access — read-only.
     Q_PROPERTY(QVariantMap  remoteAccess READ remoteAccess NOTIFY remoteAccessChanged)
 
+    // Wireless — read-only.
+    Q_PROPERTY(QVariantMap  wireless READ wireless NOTIFY wirelessChanged)
+
     // Boot capabilities — which power-to-X menu entries we show.
     Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
@@ -254,6 +257,7 @@ public:
     [[nodiscard]] QVariantList auditLogEntries() const   { return m_auditLogEntries; }
     [[nodiscard]] QVariantMap  deviceCertStore() const   { return m_deviceCertStore; }
     [[nodiscard]] QVariantMap  remoteAccess() const      { return m_remoteAccess; }
+    [[nodiscard]] QVariantMap  wireless() const          { return m_wireless; }
 
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
@@ -270,6 +274,7 @@ public:
     Q_INVOKABLE void refreshAuditLog();
     Q_INVOKABLE void refreshDeviceCerts();
     Q_INVOKABLE void refreshRemoteAccess();
+    Q_INVOKABLE void refreshWireless();
     /// Read `IPS_OptInService` + `IPS_KVMRedirectionSettingData` and
     /// update the four exposed properties. Also called by
     /// `refreshOverview`.
@@ -376,6 +381,7 @@ signals:
     void auditLogChanged();
     void deviceCertStoreChanged();
     void remoteAccessChanged();
+    void wirelessChanged();
     void optInStatusChanged();
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
@@ -438,6 +444,7 @@ private:
         PendingAuditLog     = 1 << 7,
         PendingDeviceCerts  = 1 << 8,
         PendingRemoteAccess = 1 << 9,
+        PendingWireless     = 1 << 10,
     };
     int m_pendingRefreshes = 0;
     /// `true` between `setSshConfig(enabled=true)` and the session
@@ -528,6 +535,7 @@ private:
     QVariantList m_auditLogEntries;
     QVariantMap  m_deviceCertStore;
     QVariantMap  m_remoteAccess;
+    QVariantMap  m_wireless;
 
     bool m_optInRequired = false;
     int m_optInState = 0;

@@ -142,6 +142,19 @@ constexpr char kHttpProxyServiceResource[] =
 constexpr char kHttpProxyAccessPointResource[] =
     "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HTTPProxyAccessPoint";
 
+constexpr char kWiFiPortResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_WiFiPort";
+constexpr char kWiFiEndpointResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_WiFiEndpoint";
+constexpr char kWiFiPortConfigServiceResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_WiFiPortConfigurationService";
+constexpr char kWiFiEndpointSettingsResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_WiFiEndpointSettings";
+constexpr char kIEEE8021xSettingsResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_IEEE8021xSettings";
+constexpr char kWired8021xProfileResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_8021XProfile";
+
 QString newMessageId()
 {
     return QStringLiteral("uuid:") + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -2866,6 +2879,241 @@ void getRemoteAccess(WsmanClient *client,
     kickEnum(Kind::MpsAuth,          kMpsUsernamePasswordResource);
     kickGet(Kind::ProxyService,      kHttpProxyServiceResource);
     kickEnum(Kind::ProxyAccessPoint, kHttpProxyAccessPointResource);
+}
+
+QString wifiAuthMethodLabel(int code)
+{
+    switch (code) {
+    case 1:     return QStringLiteral("Other");
+    case 2:     return QStringLiteral("Open");
+    case 3:     return QStringLiteral("Shared Key");
+    case 4:     return QStringLiteral("WPA PSK");
+    case 5:     return QStringLiteral("WPA 802.1x");
+    case 6:     return QStringLiteral("WPA2 PSK");
+    case 7:     return QStringLiteral("WPA2 802.1x");
+    case 32768: return QStringLiteral("WPA3 SAE 802.1x");
+    case 32769: return QStringLiteral("WPA3 OWE 802.1x");
+    default:    return QStringLiteral("Auth %1").arg(code);
+    }
+}
+
+QString wifiEncryptionLabel(int code)
+{
+    switch (code) {
+    case 1: return QStringLiteral("Other");
+    case 2: return QStringLiteral("WEP");
+    case 3: return QStringLiteral("TKIP-RC4");
+    case 4: return QStringLiteral("CCMP-AES");
+    case 5: return QStringLiteral("None");
+    default: return QStringLiteral("Enc %1").arg(code);
+    }
+}
+
+QString wifiPortStateLabel(int code)
+{
+    switch (code) {
+    case 3:     return QStringLiteral("Disabled");
+    case 32768: return QStringLiteral("Enabled in S0");
+    case 32769: return QStringLiteral("Enabled in S0, Sx/AC");
+    default:    return QStringLiteral("State %1").arg(code);
+    }
+}
+
+QString wifiRadioStateLabel(int code)
+{
+    switch (code) {
+    case 2: return QStringLiteral("On, Connected");
+    case 3: return QStringLiteral("Off");
+    case 6: return QStringLiteral("On, Disconnected");
+    default: return QStringLiteral("Radio %1").arg(code);
+    }
+}
+
+QString eap8021xProtocolLabel(int code)
+{
+    static const char *const kTable[] = {
+        "EAP-TLS",
+        "EAP-TTLS/MSCHAPv2",
+        "PEAPv0/EAP-MSCHAPv2",
+        "PEAPv1/EAP-GTC",
+        "EAP-FAST/MSCHAPv2",
+        "EAP-FAST/GTC",
+        "EAP-MD5",
+        "EAP-PSK",
+        "EAP-SIM",
+        "EAP-AKA",
+        "EAP-FAST/TLS",
+    };
+    if (code < 0 || code >= int(sizeof(kTable) / sizeof(kTable[0])))
+        return QStringLiteral("EAP %1").arg(code);
+    return QString::fromLatin1(kTable[code]);
+}
+
+void getWireless(WsmanClient *client,
+                 std::function<void(WirelessResult)> callback)
+{
+    enum class Kind {
+        Port, Endpoint, ConfigSvc, EndpointSettings,
+        IEEE8021xSettings, Wired8021x, _Count
+    };
+    constexpr int kCount = int(Kind::_Count);
+    struct State {
+        std::array<bool, kCount> done{};
+        std::array<QList<QByteArray>, kCount> items;
+        std::array<QString, kCount> errors;
+        std::function<void(WirelessResult)> cb;
+        bool fired = false;
+    };
+    auto st = std::make_shared<State>();
+    st->cb = std::move(callback);
+
+    if (client == nullptr) {
+        WirelessResult r;
+        r.error = QStringLiteral("client is null");
+        st->cb(std::move(r));
+        return;
+    }
+
+    auto maybeFire = [st]() {
+        if (st->fired) return;
+        for (bool d : st->done) if (!d) return;
+        st->fired = true;
+        WirelessResult r;
+
+        // Port + endpoint + config service.
+        if (!st->items[int(Kind::Port)].isEmpty()) {
+            const QByteArray &b = st->items[int(Kind::Port)].first();
+            r.port.present = true;
+            bool conv = false;
+            const int v = findScalar(b, QStringLiteral("EnabledState")).toInt(&conv);
+            if (conv) r.port.portState = v;
+        }
+        if (!st->items[int(Kind::Endpoint)].isEmpty()) {
+            const QByteArray &b = st->items[int(Kind::Endpoint)].first();
+            bool conv = false;
+            const int v = findScalar(b, QStringLiteral("EnabledState")).toInt(&conv);
+            if (conv) r.port.radioState = v;
+            r.port.currentSsid = findScalar(b, QStringLiteral("LANID"));
+        }
+        if (!st->items[int(Kind::ConfigSvc)].isEmpty()) {
+            const QByteArray &b = st->items[int(Kind::ConfigSvc)].first();
+            const QString lps = findScalar(b,
+                QStringLiteral("localProfileSynchronizationEnabled"));
+            if (!lps.isEmpty()) {
+                bool conv = false;
+                const int v = lps.toInt(&conv);
+                if (conv) r.port.localProfileSyncEnabled = v;
+            }
+            const QString ueg = findScalar(b,
+                QStringLiteral("UEFIWiFiProfileShareEnabled"));
+            if (!ueg.isEmpty()) {
+                bool conv = false;
+                const int v = ueg.toInt(&conv);
+                if (conv) r.port.uefiProfileShareEnabled = v;
+            }
+        }
+
+        // 802.1x settings keyed by ElementName so we can join into
+        // the matching WiFi profiles.
+        QHash<QString, int> eapByName;
+        for (const QByteArray &item : st->items[int(Kind::IEEE8021xSettings)]) {
+            const QString en = findScalar(item, QStringLiteral("ElementName"));
+            bool conv = false;
+            const int v = findScalar(item,
+                QStringLiteral("AuthenticationProtocol")).toInt(&conv);
+            if (conv && !en.isEmpty()) eapByName.insert(en, v);
+        }
+
+        // Endpoint settings → WiFi profiles. Skip AuthMethod==1
+        // ("Endpoint User Settings") per the legacy.
+        for (const QByteArray &item : st->items[int(Kind::EndpointSettings)]) {
+            WiFiProfile p;
+            p.elementName = findScalar(item, QStringLiteral("ElementName"));
+            p.ssid        = findScalar(item, QStringLiteral("SSID"));
+            bool conv = false;
+            const int am = findScalar(item,
+                QStringLiteral("AuthenticationMethod")).toInt(&conv);
+            if (conv) p.authenticationMethod = am;
+            if (am == 1) continue;
+            conv = false;
+            const int em = findScalar(item,
+                QStringLiteral("EncryptionMethod")).toInt(&conv);
+            if (conv) p.encryptionMethod = em;
+            conv = false;
+            const int pr = findScalar(item,
+                QStringLiteral("Priority")).toInt(&conv);
+            if (conv) p.priority = pr;
+            if (eapByName.contains(p.elementName))
+                p.eap8021xProtocol = eapByName.value(p.elementName);
+            r.profiles.append(p);
+        }
+        // Sort by priority ascending (legacy iterates 0..255).
+        std::sort(r.profiles.begin(), r.profiles.end(),
+                  [](const WiFiProfile &a, const WiFiProfile &b) {
+                      return a.priority < b.priority;
+                  });
+
+        // Wired 802.1x.
+        if (!st->items[int(Kind::Wired8021x)].isEmpty()) {
+            const QByteArray &b = st->items[int(Kind::Wired8021x)].first();
+            r.wired.present = true;
+            r.wired.enabled = findScalar(b,
+                QStringLiteral("Enabled")) == QStringLiteral("true");
+            bool conv = false;
+            const int v = findScalar(b,
+                QStringLiteral("AuthenticationProtocol")).toInt(&conv);
+            if (conv) r.wired.authenticationProtocol = v;
+        }
+
+        // ok if at least the port or the wired entry returned (i.e.
+        // there's *some* wireless story on this device). Empty
+        // everywhere → still ok=true but the QML shows the no-WiFi
+        // state.
+        r.ok = true;
+        st->cb(std::move(r));
+    };
+
+    auto kickEnum = [client, st, maybeFire](Kind k, const char *uri) {
+        enumerateAll(client, uri,
+            [st, k, maybeFire](QList<QByteArray> items, QString error) mutable {
+                const int idx = int(k);
+                st->items[idx]  = std::move(items);
+                st->errors[idx] = error;
+                st->done[idx]   = true;
+                maybeFire();
+            });
+    };
+    auto kickGet = [client, st, maybeFire](Kind k, const char *uri) {
+        const QByteArray env = buildGetEnvelope(QString::fromLatin1(uri), {},
+            client->endpoint().toString(), newMessageId());
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
+            [reply, k, st, maybeFire]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->hasError();
+                const auto errString = reply->errorString();
+                reply->deleteLater();
+                const int idx = int(k);
+                if (!err) {
+                    const SoapResponse soap = parseResponse(body);
+                    if (!soap.isFault())
+                        st->items[idx].append(soap.bodyXml);
+                    else
+                        st->errors[idx] = soap.fault;
+                } else {
+                    st->errors[idx] = errString;
+                }
+                st->done[idx] = true;
+                maybeFire();
+            });
+    };
+
+    kickGet(Kind::Port,                 kWiFiPortResource);
+    kickGet(Kind::Endpoint,             kWiFiEndpointResource);
+    kickGet(Kind::ConfigSvc,            kWiFiPortConfigServiceResource);
+    kickEnum(Kind::EndpointSettings,    kWiFiEndpointSettingsResource);
+    kickEnum(Kind::IEEE8021xSettings,   kIEEE8021xSettingsResource);
+    kickGet(Kind::Wired8021x,           kWired8021xProfileResource);
 }
 
 } // namespace qumesh::wsman
