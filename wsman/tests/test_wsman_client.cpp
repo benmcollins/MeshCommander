@@ -38,6 +38,7 @@ private slots:
     void getWirelessJoinsProfilesAnd8021xByElementName();
     void setHighAccuracyTimeSyncEncodesParamsAndDecodesReturn();
     void getPowerSchemesEnumeratesAndDetectsCurrentViaElementSettingData();
+    void getAgentPresenceDecodesBase64DeviceIdAndStateEnums();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -1955,6 +1956,107 @@ void TestWsmanClient::getPowerSchemesEnumeratesAndDetectsCurrentViaElementSettin
     // currentInstanceId. The dialog uses this to preselect the radio.
     QCOMPARE(result.currentInstanceId,
              QStringLiteral("Intel(r) AMT:Power Scheme 1"));
+}
+
+void TestWsmanClient::getAgentPresenceDecodesBase64DeviceIdAndStateEnums()
+{
+    // The watchdog's DeviceID arrives as base64 of 16 raw GUID bytes.
+    // For the test we use the GUID 00112233-4455-6677-8899-aabbccddeeff
+    // which encodes as "ABEiM0RVZneImaq7zN3u/w==" in base64.
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     const bool isCaps = body.contains("AMT_AgentPresenceCapabilities");
+                     const bool isWatchdog = body.contains("AMT_AgentPresenceWatchdog");
+                     const bool isPull = body.contains(":Pull")
+                                       || body.contains("<wsen:Pull");
+
+                     QByteArray response;
+                     if (isCaps) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AgentPresenceCapabilities\">"
+                             "<s:Header/><s:Body>"
+                             "<c:AMT_AgentPresenceCapabilities>"
+                             "<c:MaxTotalAgents>4</c:MaxTotalAgents>"
+                             "<c:MaxTotalActions>16</c:MaxTotalActions>"
+                             "</c:AMT_AgentPresenceCapabilities>"
+                             "</s:Body></s:Envelope>";
+                     } else if (isWatchdog && !isPull) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:EnumerateResponse>"
+                             "<wsen:EnumerationContext>ctx</wsen:EnumerationContext>"
+                             "</wsen:EnumerateResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AgentPresenceWatchdog\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:AMT_AgentPresenceWatchdog>"
+                             "<c:DeviceID>ABEiM0RVZneImaq7zN3u/w==</c:DeviceID>"
+                             "<c:MonitoredEntityDescription>Endpoint AV</c:MonitoredEntityDescription>"
+                             "<c:MonitoredEntity>7</c:MonitoredEntity>"
+                             "<c:CurrentState>4</c:CurrentState>"
+                             "<c:EnabledState>2</c:EnabledState>"
+                             "<c:StartupInterval>3600</c:StartupInterval>"
+                             "<c:TimeoutInterval>60</c:TimeoutInterval>"
+                             "</c:AMT_AgentPresenceWatchdog>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    AgentPresenceResult result;
+    QEventLoop loop;
+    getAgentPresence(&client, [&](AgentPresenceResult r) {
+        result = r;
+        loop.quit();
+    });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.maxTotalAgents, 4);
+    QCOMPARE(result.maxTotalActions, 16);
+    QCOMPARE(result.watchdogs.size(), 1);
+
+    const AgentPresenceWatchdog &w = result.watchdogs.first();
+    // Standard 8-4-4-4-12 GUID with the byte stream we encoded.
+    QCOMPARE(w.deviceIdGuid,
+             QStringLiteral("00112233-4455-6677-8899-aabbccddeeff"));
+    QCOMPARE(w.description, QStringLiteral("Endpoint AV"));
+    QCOMPARE(w.monitoredEntityCode, 7);
+    QCOMPARE(w.monitoredEntityLabel, QStringLiteral("Application"));
+    QCOMPARE(w.currentStateCode, 4);
+    QCOMPARE(w.currentStateLabel, QStringLiteral("Running"));
+    QCOMPARE(w.enabledStateCode, 2);
+    QCOMPARE(w.enabledStateLabel, QStringLiteral("Enabled"));
+    QCOMPARE(w.startupIntervalSec, 3600);
+    QCOMPARE(w.timeoutIntervalSec, 60);
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

@@ -157,6 +157,10 @@ class MachineDetailsController : public QObject
     // Wireless — read-only.
     Q_PROPERTY(QVariantMap  wireless READ wireless NOTIFY wirelessChanged)
 
+    // Agent presence watchdogs (#164 Phase A) — read-only snapshot of
+    // AMT_AgentPresenceCapabilities + the AMT_AgentPresenceWatchdog list.
+    Q_PROPERTY(QVariantMap  agentPresence READ agentPresence NOTIFY agentPresenceChanged)
+
     // Boot capabilities — which power-to-X menu entries we show.
     Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
@@ -283,6 +287,7 @@ public:
     [[nodiscard]] QVariantMap  deviceCertStore() const   { return m_deviceCertStore; }
     [[nodiscard]] QVariantMap  remoteAccess() const      { return m_remoteAccess; }
     [[nodiscard]] QVariantMap  wireless() const          { return m_wireless; }
+    [[nodiscard]] QVariantMap  agentPresence() const     { return m_agentPresence; }
 
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
@@ -304,6 +309,9 @@ public:
     Q_INVOKABLE void refreshDeviceCerts();
     Q_INVOKABLE void refreshRemoteAccess();
     Q_INVOKABLE void refreshWireless();
+    /// Enumerate AMT_AgentPresenceWatchdog + read
+    /// AMT_AgentPresenceCapabilities for the Watchdogs pane. See #164.
+    Q_INVOKABLE void refreshAgentPresence();
     /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.
     /// Auto-called as part of `refreshPower` so the dialog is ready
     /// when the operator clicks the Power Policy button. See #162.
@@ -420,6 +428,7 @@ signals:
     void deviceCertStoreChanged();
     void remoteAccessChanged();
     void wirelessChanged();
+    void agentPresenceChanged();
     void optInStatusChanged();
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
@@ -482,7 +491,8 @@ private:
         PendingAuditLog     = 1 << 7,
         PendingDeviceCerts  = 1 << 8,
         PendingRemoteAccess = 1 << 9,
-        PendingWireless     = 1 << 10,
+        PendingWireless       = 1 << 10,
+        PendingAgentPresence  = 1 << 11,
     };
     int m_pendingRefreshes = 0;
     /// `true` between `setSshConfig(enabled=true)` and the session
@@ -579,6 +589,7 @@ private:
     QVariantMap  m_deviceCertStore;
     QVariantMap  m_remoteAccess;
     QVariantMap  m_wireless;
+    QVariantMap  m_agentPresence;
 
     bool m_optInRequired = false;
     int m_optInState = 0;
