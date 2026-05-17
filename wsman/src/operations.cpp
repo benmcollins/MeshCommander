@@ -48,6 +48,12 @@ constexpr char kSystemPowerSchemeResource[] =
 constexpr char kElementSettingDataResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ElementSettingData";
 
+constexpr char kAgentPresenceCapabilitiesResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AgentPresenceCapabilities";
+
+constexpr char kAgentPresenceWatchdogResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AgentPresenceWatchdog";
+
 constexpr char kBootSettingDataResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_BootSettingData";
@@ -978,6 +984,176 @@ void getPowerSchemes(WsmanClient *client,
                     acc->r.currentInstanceId = cur;
                     break;
                 }
+            }
+            acc->maybeFire();
+        });
+}
+
+namespace {
+
+/// `MonitoredEntity` enum → human-readable label. Values come from
+/// the DMTF spec for `AMT_AgentPresenceWatchdog`.
+const char *monitoredEntityName(int code)
+{
+    switch (code) {
+    case 0:  return "Unknown";
+    case 1:  return "Other";
+    case 2:  return "Operating System";
+    case 3:  return "OS Boot Process";
+    case 4:  return "OS Shutdown Process";
+    case 5:  return "Firmware Boot Process";
+    case 6:  return "BIOS Boot Process";
+    case 7:  return "Application";
+    case 8:  return "Service Processor";
+    default: return "Unknown";
+    }
+}
+
+/// `EnabledState` enum → label (DMTF standard for `CIM_EnabledLogicalElement`).
+const char *enabledStateName(int code)
+{
+    switch (code) {
+    case 0:  return "Unknown";
+    case 1:  return "Other";
+    case 2:  return "Enabled";
+    case 3:  return "Disabled";
+    case 4:  return "Shutting Down";
+    case 5:  return "Not Applicable";
+    case 6:  return "Enabled but Offline";
+    case 7:  return "In Test";
+    case 8:  return "Deferred";
+    case 9:  return "Quiesce";
+    case 10: return "Starting";
+    default: return "Unknown";
+    }
+}
+
+/// Watchdog `CurrentState` bitmask → label. Values mirror legacy
+/// MeshCommander's `WatchdogCurrentStates` table.
+const char *watchdogStateName(int code)
+{
+    switch (code) {
+    case 1:  return "Not Started";
+    case 2:  return "Stopped";
+    case 4:  return "Running";
+    case 8:  return "Expired";
+    case 16: return "Suspended";
+    default: return "Unknown";
+    }
+}
+
+/// `DeviceID` in `AMT_AgentPresenceWatchdog` is reported as a base-64
+/// encoded sequence of 16 raw GUID bytes. Decode and emit the standard
+/// 8-4-4-4-12 GUID string. Returns empty on malformed input.
+QString decodeWatchdogDeviceId(const QString &b64)
+{
+    if (b64.isEmpty()) return {};
+    const QByteArray raw = QByteArray::fromBase64(b64.toLatin1());
+    if (raw.size() != 16) return {};
+    const QByteArray hex = raw.toHex().toLower();
+    // 8-4-4-4-12.
+    return QString::fromLatin1(hex.constData(),     8) + QLatin1Char('-')
+         + QString::fromLatin1(hex.constData() +  8, 4) + QLatin1Char('-')
+         + QString::fromLatin1(hex.constData() + 12, 4) + QLatin1Char('-')
+         + QString::fromLatin1(hex.constData() + 16, 4) + QLatin1Char('-')
+         + QString::fromLatin1(hex.constData() + 20, 12);
+}
+
+} // namespace
+
+void getAgentPresence(WsmanClient *client,
+                      std::function<void(AgentPresenceResult)> callback)
+{
+    struct Acc {
+        AgentPresenceResult r;
+        bool gotCaps = false;
+        bool gotWatchdogs = false;
+        QString capsErr;
+        QString watchdogsErr;
+        std::function<void(AgentPresenceResult)> cb;
+        void maybeFire() {
+            if (!gotCaps || !gotWatchdogs) return;
+            // Treat caps as advisory — older firmware may not surface
+            // it. The watchdog enumerate is the real indicator.
+            r.ok = watchdogsErr.isEmpty();
+            if (!r.ok && r.error.isEmpty())
+                r.error = watchdogsErr;
+            cb(std::move(r));
+        }
+    };
+    auto acc = std::make_shared<Acc>();
+    acc->cb = std::move(callback);
+
+    // AMT_AgentPresenceCapabilities — single-instance Get. Soft-fails
+    // on firmware that doesn't expose the class.
+    const QByteArray capsEnv = buildGetEnvelope(
+        QString::fromLatin1(kAgentPresenceCapabilitiesResource), {},
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    if (client == nullptr) {
+        acc->gotCaps = true;
+    } else {
+        WsmanReply *reply = client->sendEnvelope(capsEnv);
+        QObject::connect(reply, &WsmanReply::finished, client,
+            [reply, acc]() mutable {
+                const QByteArray body = reply->readAll();
+                const auto err = reply->hasError();
+                reply->deleteLater();
+                if (!err) {
+                    const SoapResponse soap = parseResponse(body);
+                    if (!soap.isFault()) {
+                        bool conv = false;
+                        const int agents = findScalar(soap.bodyXml,
+                            QStringLiteral("MaxTotalAgents")).toInt(&conv);
+                        if (conv) acc->r.maxTotalAgents = agents;
+                        conv = false;
+                        const int actions = findScalar(soap.bodyXml,
+                            QStringLiteral("MaxTotalActions")).toInt(&conv);
+                        if (conv) acc->r.maxTotalActions = actions;
+                    }
+                }
+                acc->gotCaps = true;
+                acc->maybeFire();
+            });
+    }
+
+    // AMT_AgentPresenceWatchdog — enumerate.
+    enumerateAll(client, kAgentPresenceWatchdogResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotWatchdogs = true;
+            acc->watchdogsErr = err;
+            for (const QByteArray &it : items) {
+                AgentPresenceWatchdog w;
+                w.deviceIdGuid = decodeWatchdogDeviceId(
+                    findScalar(it, QStringLiteral("DeviceID")));
+                w.description = findScalar(it,
+                    QStringLiteral("MonitoredEntityDescription"));
+                bool conv = false;
+                w.monitoredEntityCode = findScalar(it,
+                    QStringLiteral("MonitoredEntity")).toInt(&conv);
+                if (!conv) w.monitoredEntityCode = -1;
+                w.monitoredEntityLabel = QString::fromLatin1(
+                    monitoredEntityName(w.monitoredEntityCode));
+                conv = false;
+                w.currentStateCode = findScalar(it,
+                    QStringLiteral("CurrentState")).toInt(&conv);
+                if (!conv) w.currentStateCode = -1;
+                w.currentStateLabel = QString::fromLatin1(
+                    watchdogStateName(w.currentStateCode));
+                conv = false;
+                w.enabledStateCode = findScalar(it,
+                    QStringLiteral("EnabledState")).toInt(&conv);
+                if (!conv) w.enabledStateCode = -1;
+                w.enabledStateLabel = QString::fromLatin1(
+                    enabledStateName(w.enabledStateCode));
+                conv = false;
+                const int s = findScalar(it,
+                    QStringLiteral("StartupInterval")).toInt(&conv);
+                if (conv) w.startupIntervalSec = s;
+                conv = false;
+                const int t = findScalar(it,
+                    QStringLiteral("TimeoutInterval")).toInt(&conv);
+                if (conv) w.timeoutIntervalSec = t;
+                acc->r.watchdogs.append(std::move(w));
             }
             acc->maybeFire();
         });

@@ -161,6 +161,7 @@ void MachineDetailsController::runPendingRefreshes()
     if (p & PendingDeviceCerts)  refreshDeviceCerts();
     if (p & PendingRemoteAccess) refreshRemoteAccess();
     if (p & PendingWireless)     refreshWireless();
+    if (p & PendingAgentPresence) refreshAgentPresence();
 }
 
 void MachineDetailsController::setHost(const QString &v)
@@ -939,6 +940,47 @@ void MachineDetailsController::refreshWireless()
             wl.insert(QStringLiteral("wired"),    wired);
             m_wireless = std::move(wl);
             emit wirelessChanged();
+        });
+}
+
+void MachineDetailsController::refreshAgentPresence()
+{
+    if (deferIfSshConnecting(PendingAgentPresence)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::getAgentPresence(m_client,
+        [this](qumesh::wsman::AgentPresenceResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("Agent presence: %1").arg(r.error));
+
+            QVariantList watchdogs;
+            watchdogs.reserve(r.watchdogs.size());
+            for (const auto &w : r.watchdogs) {
+                QVariantMap m;
+                m.insert(QStringLiteral("deviceIdGuid"),       w.deviceIdGuid);
+                m.insert(QStringLiteral("description"),        w.description);
+                m.insert(QStringLiteral("monitoredEntity"),    w.monitoredEntityCode);
+                m.insert(QStringLiteral("monitoredEntityLabel"), w.monitoredEntityLabel);
+                m.insert(QStringLiteral("currentState"),       w.currentStateCode);
+                m.insert(QStringLiteral("currentStateLabel"),  w.currentStateLabel);
+                m.insert(QStringLiteral("enabledState"),       w.enabledStateCode);
+                m.insert(QStringLiteral("enabledStateLabel"),  w.enabledStateLabel);
+                m.insert(QStringLiteral("startupIntervalSec"), w.startupIntervalSec);
+                m.insert(QStringLiteral("timeoutIntervalSec"), w.timeoutIntervalSec);
+                watchdogs.append(m);
+            }
+            QVariantMap ap;
+            ap.insert(QStringLiteral("ok"),              r.ok);
+            ap.insert(QStringLiteral("maxTotalAgents"),  r.maxTotalAgents);
+            ap.insert(QStringLiteral("maxTotalActions"), r.maxTotalActions);
+            ap.insert(QStringLiteral("watchdogs"),       watchdogs);
+            m_agentPresence = std::move(ap);
+            emit agentPresenceChanged();
         });
 }
 

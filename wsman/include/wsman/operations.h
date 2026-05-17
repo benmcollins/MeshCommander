@@ -366,6 +366,41 @@ void getPowerSchemes(WsmanClient *client,
 void setPowerScheme(WsmanClient *client, const QString &instanceId,
                     std::function<void(InvokeResult)> callback);
 
+/// One `AMT_AgentPresenceWatchdog` row.
+struct AgentPresenceWatchdog
+{
+    /// `DeviceID` in the firmware arrives as a base-64-encoded 16-byte
+    /// GUID; surfaced here as the formatted GUID string.
+    QString deviceIdGuid;
+    QString description;            ///< `MonitoredEntityDescription` — empty when unset.
+    int monitoredEntityCode = -1;   ///< Raw `MonitoredEntity` enum.
+    QString monitoredEntityLabel;   ///< Localised label for `monitoredEntityCode`.
+    int currentStateCode = -1;      ///< Raw `CurrentState` enum.
+    QString currentStateLabel;
+    int enabledStateCode = -1;      ///< Raw `EnabledState` enum.
+    QString enabledStateLabel;
+    int startupIntervalSec = 0;
+    int timeoutIntervalSec = 0;
+};
+
+/// Snapshot of `AMT_AgentPresenceCapabilities` (the per-firmware
+/// max-watchdog / max-action ceiling) plus every
+/// `AMT_AgentPresenceWatchdog` row. Phase A (#164) — no
+/// transitions/actions association walking yet.
+struct AgentPresenceResult
+{
+    bool ok = false;
+    QString error;
+    int maxTotalAgents = 0;
+    int maxTotalActions = 0;
+    QList<AgentPresenceWatchdog> watchdogs;
+};
+
+/// Enumerate `AMT_AgentPresenceWatchdog` and read
+/// `AMT_AgentPresenceCapabilities`. See #164.
+void getAgentPresence(WsmanClient *client,
+                      std::function<void(AgentPresenceResult)> callback);
+
 /// Read `AMT_BootCapabilities` — which boot-source-override flags the
 /// firmware will accept. Drives the gating of menu entries
 /// (Secure Erase / Platform Erase / HTTPS Boot etc.).
