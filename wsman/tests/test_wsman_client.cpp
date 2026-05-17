@@ -34,6 +34,7 @@ private slots:
     void getDeviceCertStoreStitchesCertsKeysAndTls();
     void splitDnHelperHandlesEmptyAndMultiple();
     void getRemoteAccessStitchesEnvPoliciesServersAndProxies();
+    void getWirelessJoinsProfilesAnd8021xByElementName();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -1474,6 +1475,177 @@ void TestWsmanClient::getRemoteAccessStitchesEnvPoliciesServersAndProxies()
 
     QCOMPARE(userInitiatedCiraLabel(32771),
              QStringLiteral("BIOS + OS enabled"));
+}
+
+void TestWsmanClient::getWirelessJoinsProfilesAnd8021xByElementName()
+{
+    static const char *wifiPortResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:p=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_WiFiPort\">"
+        "<s:Header/><s:Body>"
+        "<p:CIM_WiFiPort>"
+        "<p:EnabledState>32769</p:EnabledState>"
+        "</p:CIM_WiFiPort>"
+        "</s:Body></s:Envelope>";
+
+    static const char *wifiEndpointResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:e=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_WiFiEndpoint\">"
+        "<s:Header/><s:Body>"
+        "<e:CIM_WiFiEndpoint>"
+        "<e:EnabledState>2</e:EnabledState>"
+        "<e:LANID>HomeNet</e:LANID>"
+        "</e:CIM_WiFiEndpoint>"
+        "</s:Body></s:Envelope>";
+
+    static const char *wifiConfigSvcResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_WiFiPortConfigurationService\">"
+        "<s:Header/><s:Body>"
+        "<c:AMT_WiFiPortConfigurationService>"
+        "<c:localProfileSynchronizationEnabled>1</c:localProfileSynchronizationEnabled>"
+        "</c:AMT_WiFiPortConfigurationService>"
+        "</s:Body></s:Envelope>";
+
+    static const char *wifiSettingsPull =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:p=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_WiFiEndpointSettings\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        // Should be filtered out (Endpoint User Settings).
+        "<p:CIM_WiFiEndpointSettings>"
+        "<p:ElementName>EndpointUserSettings</p:ElementName>"
+        "<p:SSID></p:SSID>"
+        "<p:AuthenticationMethod>1</p:AuthenticationMethod>"
+        "<p:EncryptionMethod>5</p:EncryptionMethod>"
+        "<p:Priority>0</p:Priority>"
+        "</p:CIM_WiFiEndpointSettings>"
+        // Priority 2 — should sort after priority 0 below.
+        "<p:CIM_WiFiEndpointSettings>"
+        "<p:ElementName>GuestNet</p:ElementName>"
+        "<p:SSID>GuestNet</p:SSID>"
+        "<p:AuthenticationMethod>6</p:AuthenticationMethod>"
+        "<p:EncryptionMethod>4</p:EncryptionMethod>"
+        "<p:Priority>2</p:Priority>"
+        "</p:CIM_WiFiEndpointSettings>"
+        // Priority 0 — sorts first; 802.1x linked.
+        "<p:CIM_WiFiEndpointSettings>"
+        "<p:ElementName>CorpNet</p:ElementName>"
+        "<p:SSID>CorpNet</p:SSID>"
+        "<p:AuthenticationMethod>7</p:AuthenticationMethod>"
+        "<p:EncryptionMethod>4</p:EncryptionMethod>"
+        "<p:Priority>0</p:Priority>"
+        "</p:CIM_WiFiEndpointSettings>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    static const char *ieee8021xPull =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:p=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_IEEE8021xSettings\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        "<p:CIM_IEEE8021xSettings>"
+        "<p:ElementName>CorpNet</p:ElementName>"
+        "<p:AuthenticationProtocol>0</p:AuthenticationProtocol>"
+        "</p:CIM_IEEE8021xSettings>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    static const char *wiredProfileResponse =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:p=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_8021XProfile\">"
+        "<s:Header/><s:Body>"
+        "<p:AMT_8021XProfile>"
+        "<p:Enabled>true</p:Enabled>"
+        "<p:AuthenticationProtocol>2</p:AuthenticationProtocol>"
+        "</p:AMT_8021XProfile>"
+        "</s:Body></s:Envelope>";
+
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     const bool isPull = body.contains(":Pull>")
+                                      || body.contains("<wsen:Pull");
+                     QByteArray response;
+                     if (!isPull && body.contains("CIM_WiFiPort\"")) {
+                         response = wifiPortResponse;
+                     } else if (!isPull && body.contains("CIM_WiFiPort/")) {
+                         response = wifiPortResponse;
+                     } else if (!isPull && body.contains("CIM_WiFiPort<")) {
+                         response = wifiPortResponse;
+                     } else if (!isPull && body.contains("CIM_WiFiEndpoint\"")
+                                       && !body.contains("CIM_WiFiEndpointSettings")) {
+                         response = wifiEndpointResponse;
+                     } else if (!isPull && body.contains("CIM_WiFiEndpoint<")
+                                       && !body.contains("CIM_WiFiEndpointSettings")) {
+                         response = wifiEndpointResponse;
+                     } else if (!isPull && body.contains("CIM_WiFiEndpoint/")
+                                       && !body.contains("CIM_WiFiEndpointSettings")) {
+                         response = wifiEndpointResponse;
+                     } else if (!isPull && body.contains("AMT_WiFiPortConfigurationService")) {
+                         response = wifiConfigSvcResponse;
+                     } else if (!isPull && body.contains("AMT_8021XProfile")) {
+                         response = wiredProfileResponse;
+                     } else if (!isPull) {
+                         response = QByteArray(kEnumerateResponse);
+                     } else if (body.contains("CIM_WiFiEndpointSettings")) {
+                         response = wifiSettingsPull;
+                     } else if (body.contains("CIM_IEEE8021xSettings")) {
+                         response = ieee8021xPull;
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    WirelessResult res;
+    QEventLoop loop;
+    getWireless(&client, [&](WirelessResult r) {
+        res = r;
+        loop.quit();
+    });
+    QTimer::singleShot(8000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(res.ok, qPrintable(res.error));
+    QVERIFY(res.port.present);
+    QCOMPARE(res.port.portState, 32769);
+    QCOMPARE(res.port.radioState, 2);
+    QCOMPARE(res.port.currentSsid, QStringLiteral("HomeNet"));
+    QCOMPARE(res.port.localProfileSyncEnabled, 1);
+
+    // Endpoint User Settings entry filtered out — 2 profiles remain.
+    QCOMPARE(res.profiles.size(), 2);
+    // Sorted by priority — CorpNet (0) first, GuestNet (2) second.
+    QCOMPARE(res.profiles[0].elementName, QStringLiteral("CorpNet"));
+    QCOMPARE(res.profiles[0].eap8021xProtocol, 0);   // EAP-TLS
+    QCOMPARE(res.profiles[1].elementName, QStringLiteral("GuestNet"));
+    QCOMPARE(res.profiles[1].eap8021xProtocol, -1);
+
+    QVERIFY(res.wired.present);
+    QVERIFY(res.wired.enabled);
+    QCOMPARE(res.wired.authenticationProtocol, 2);   // PEAPv0/EAP-MSCHAPv2
+
+    // Label helpers.
+    QCOMPARE(wifiAuthMethodLabel(7), QStringLiteral("WPA2 802.1x"));
+    QCOMPARE(wifiEncryptionLabel(4), QStringLiteral("CCMP-AES"));
+    QCOMPARE(wifiPortStateLabel(32769),
+             QStringLiteral("Enabled in S0, Sx/AC"));
+    QCOMPARE(wifiRadioStateLabel(2), QStringLiteral("On, Connected"));
+    QCOMPARE(eap8021xProtocolLabel(0), QStringLiteral("EAP-TLS"));
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

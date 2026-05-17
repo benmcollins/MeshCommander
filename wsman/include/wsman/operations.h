@@ -643,6 +643,63 @@ struct RemoteAccessResult
 void getRemoteAccess(WsmanClient *client,
                      std::function<void(RemoteAccessResult)> callback);
 
+/// WiFi port-level state from `CIM_WiFiPort` + `CIM_WiFiEndpoint` +
+/// `AMT_WiFiPortConfigurationService`. Each field is independently
+/// populated; missing ones leave defaults so the QML can render
+/// "(unknown)" on partial firmware support.
+struct WirelessPortStatus
+{
+    bool present = false;          ///< `true` when CIM_WiFiPort returned.
+    int  portState = -1;           ///< 3 Disabled / 32768 S0 / 32769 S0+Sx/AC.
+    int  radioState = -1;          ///< 2 On+Connected / 3 Off / 6 On+Disconnected.
+    QString currentSsid;
+    int  localProfileSyncEnabled = -1;   ///< 0 / 1 / -1 unknown.
+    int  uefiProfileShareEnabled = -1;
+};
+
+/// One row from `CIM_WiFiEndpointSettings`. The optional 802.1x
+/// linkage in `eap8021xProtocol` is populated when a
+/// `CIM_IEEE8021xSettings` row with a matching `ElementName` is
+/// returned.
+struct WiFiProfile
+{
+    QString elementName;
+    QString ssid;
+    int authenticationMethod = -1;
+    int encryptionMethod = -1;
+    int priority = -1;
+    /// `AuthenticationProtocol` integer from the linked
+    /// `CIM_IEEE8021xSettings`. -1 when no 802.1x profile is linked.
+    int eap8021xProtocol = -1;
+};
+
+/// Wired 802.1x — `AMT_8021XProfile` Get.
+struct Wired8021xProfile
+{
+    bool present = false;
+    bool enabled = false;
+    int  authenticationProtocol = -1;
+};
+
+struct WirelessResult
+{
+    bool ok = false;
+    QString error;
+    WirelessPortStatus port;
+    QList<WiFiProfile> profiles;     ///< Sorted by `priority` ascending.
+    Wired8021xProfile  wired;
+};
+
+[[nodiscard]] QString wifiAuthMethodLabel(int code);
+[[nodiscard]] QString wifiEncryptionLabel(int code);
+[[nodiscard]] QString wifiPortStateLabel(int code);
+[[nodiscard]] QString wifiRadioStateLabel(int code);
+[[nodiscard]] QString eap8021xProtocolLabel(int code);
+
+/// Ports the legacy `PullWireless` BatchEnum. Read-only.
+void getWireless(WsmanClient *client,
+                 std::function<void(WirelessResult)> callback);
+
 /// Walk every page of `AMT_AuditLog.ReadRecords` and return the parsed
 /// records. Pages are 16-record chunks per the AMT contract. Faulted
 /// pages short-circuit and return the entries collected so far with
