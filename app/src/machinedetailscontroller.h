@@ -125,6 +125,10 @@ class MachineDetailsController : public QObject
     // a separate Q_PROPERTY per section.
     Q_PROPERTY(QVariantMap hardwareInventory READ hardwareInventory NOTIFY hardwareChanged)
 
+    // Audit log — read-only.
+    Q_PROPERTY(QVariantMap  auditLogState   READ auditLogState   NOTIFY auditLogChanged)
+    Q_PROPERTY(QVariantList auditLogEntries READ auditLogEntries NOTIFY auditLogChanged)
+
     // Boot capabilities — which power-to-X menu entries we show.
     Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
@@ -235,6 +239,8 @@ public:
     [[nodiscard]] QVariantList eventLog() const { return m_eventLog; }
     [[nodiscard]] QVariantList userAccounts() const { return m_userAccounts; }
     [[nodiscard]] QVariantMap  hardwareInventory() const { return m_hardwareInventory; }
+    [[nodiscard]] QVariantMap  auditLogState() const     { return m_auditLogState; }
+    [[nodiscard]] QVariantList auditLogEntries() const   { return m_auditLogEntries; }
 
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
@@ -248,6 +254,7 @@ public:
     Q_INVOKABLE void refreshEventLog();
     Q_INVOKABLE void refreshUserAccounts();
     Q_INVOKABLE void refreshHardware();
+    Q_INVOKABLE void refreshAuditLog();
     /// Read `IPS_OptInService` + `IPS_KVMRedirectionSettingData` and
     /// update the four exposed properties. Also called by
     /// `refreshOverview`.
@@ -351,6 +358,7 @@ signals:
     void eventLogChanged();
     void userAccountsChanged();
     void hardwareChanged();
+    void auditLogChanged();
     void optInStatusChanged();
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
@@ -410,6 +418,7 @@ private:
         PendingEventLog     = 1 << 4,
         PendingUserAccounts = 1 << 5,
         PendingHardware     = 1 << 6,
+        PendingAuditLog     = 1 << 7,
     };
     int m_pendingRefreshes = 0;
     /// `true` between `setSshConfig(enabled=true)` and the session
@@ -495,6 +504,8 @@ private:
     QVariantList m_eventLog;
     QVariantList m_userAccounts;
     QVariantMap  m_hardwareInventory;
+    QVariantMap  m_auditLogState;
+    QVariantList m_auditLogEntries;
 
     bool m_optInRequired = false;
     int m_optInState = 0;

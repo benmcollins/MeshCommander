@@ -430,6 +430,56 @@ struct HardwareInventoryResult
 void getHardwareInventory(WsmanClient *client,
                           std::function<void(HardwareInventoryResult)> callback);
 
+/// State half of `AMT_AuditLog` — read via WS-Transfer Get.
+struct AuditLogState
+{
+    bool ok = false;
+    QString error;
+    /// `AuditState` bitmask. Bit 0 = audit enabled; bit 1 = log locked;
+    /// bit 2 = almost full; bit 3 = full; bit 4 = no signing key.
+    int auditState = 0;
+    int overwritePolicy = 0;        ///< 1 = wraps; 2 = never overwrites.
+    int currentNumberOfRecords = 0;
+    int percentageFree = 0;
+    int maxAllowedAuditors = 0;
+    int enabledState = 0;           ///< CIM EnabledState code.
+};
+
+/// One audit-log record, decoded from the base64-encoded binary blob
+/// AMT returns in `ReadRecords.EventRecords[]`.
+struct AuditLogEntry
+{
+    int auditAppId = 0;
+    int eventId = 0;
+    QString auditAppLabel;
+    QString eventLabel;
+    /// 0 = HTTP digest, 1 = Kerberos, 2 = Local, 3 = KVM Default Port.
+    int initiatorType = -1;
+    QString initiator;
+    qint64 unixSeconds = 0;
+    int mcLocationType = 0;
+    QString netAddress;
+    QByteArray ex;                  ///< Raw extended-data bytes.
+};
+
+struct AuditLogResult
+{
+    bool ok = false;
+    QString error;
+    QList<AuditLogEntry> entries;
+};
+
+/// Read `AMT_AuditLog` state (storage / enabled / lock / etc.).
+void getAuditLogState(WsmanClient *client,
+                      std::function<void(AuditLogState)> callback);
+
+/// Walk every page of `AMT_AuditLog.ReadRecords` and return the parsed
+/// records. Pages are 16-record chunks per the AMT contract. Faulted
+/// pages short-circuit and return the entries collected so far with
+/// `ok=false` and `error` set.
+void enumerateAuditLog(WsmanClient *client,
+                       std::function<void(AuditLogResult)> callback);
+
 struct EventLogEntry
 {
     QString recordId;
