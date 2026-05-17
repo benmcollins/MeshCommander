@@ -1372,6 +1372,105 @@ void getWakeAlarms(WsmanClient *client,
         });
 }
 
+namespace {
+
+/// Expand a bare class name into the full WSMAN resource URI by
+/// looking at the standard `AMT_`/`IPS_`/`CIM_` prefix. Inputs that
+/// already look like URIs (start with `http`) pass through unchanged.
+QString resolveBrowseUri(const QString &classOrUri)
+{
+    if (classOrUri.startsWith(QLatin1String("http"))) return classOrUri;
+    if (classOrUri.startsWith(QLatin1String("AMT_")))
+        return QStringLiteral("http://intel.com/wbem/wscim/1/amt-schema/1/")
+             + classOrUri;
+    if (classOrUri.startsWith(QLatin1String("IPS_")))
+        return QStringLiteral("http://intel.com/wbem/wscim/1/ips-schema/1/")
+             + classOrUri;
+    if (classOrUri.startsWith(QLatin1String("CIM_")))
+        return QStringLiteral("http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/")
+             + classOrUri;
+    // Anything else — return as-is and let the firmware error out
+    // rather than guessing.
+    return classOrUri;
+}
+
+} // namespace
+
+void executeBrowse(WsmanClient *client, const QString &classOrUri,
+                   BrowseKind kind,
+                   const QHash<QString, QString> &selectors,
+                   std::function<void(WsmanBrowseResult)> callback)
+{
+    auto cb = std::make_shared<std::function<void(WsmanBrowseResult)>>(
+        std::move(callback));
+    const QString uri = resolveBrowseUri(classOrUri.trimmed());
+
+    if (client == nullptr) {
+        WsmanBrowseResult r;
+        r.kind = kind;
+        r.error = QStringLiteral("client is null");
+        (*cb)(std::move(r));
+        return;
+    }
+
+    if (kind == BrowseKind::Get) {
+        const QByteArray env = buildGetEnvelope(uri, selectors,
+            client->endpoint().toString(), newMessageId());
+        WsmanReply *reply = client->sendEnvelope(env);
+        QObject::connect(reply, &WsmanReply::finished, client,
+            [reply, cb, kind]() mutable {
+                WsmanBrowseResult r;
+                r.kind = kind;
+                const QByteArray body = reply->readAll();
+                const auto err = reply->hasError();
+                const auto errString = reply->errorString();
+                reply->deleteLater();
+                if (err) {
+                    r.error = errString;
+                    (*cb)(std::move(r));
+                    return;
+                }
+                const SoapResponse soap = parseResponse(body);
+                if (soap.isFault()) {
+                    r.error = soap.fault;
+                    r.xml = body;     // Surface the SOAP fault for visibility.
+                    (*cb)(std::move(r));
+                    return;
+                }
+                r.xml = body;         // Raw response body, including envelope.
+                r.ok = true;
+                (*cb)(std::move(r));
+            });
+        return;
+    }
+
+    // Enumerate — walk all pulls and stitch each item under a synthetic
+    // `<Items>` wrapper so the caller can render the whole result.
+    enumerateAll(client, uri.toLatin1().constData(),
+        [cb, kind](QList<QByteArray> items, QString err) {
+            WsmanBrowseResult r;
+            r.kind = kind;
+            if (!err.isEmpty()) {
+                r.error = err;
+                (*cb)(std::move(r));
+                return;
+            }
+            QByteArray merged;
+            merged.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+            merged.append("<wsen:Items xmlns:wsen=\""
+                          "http://schemas.xmlsoap.org/ws/2004/09/enumeration\">\n");
+            for (const QByteArray &it : items) {
+                merged.append(it);
+                merged.append('\n');
+            }
+            merged.append("</wsen:Items>\n");
+            r.xml = std::move(merged);
+            r.itemCount = items.size();
+            r.ok = true;
+            (*cb)(std::move(r));
+        });
+}
+
 void setPowerScheme(WsmanClient *client, const QString &instanceId,
                     std::function<void(InvokeResult)> callback)
 {

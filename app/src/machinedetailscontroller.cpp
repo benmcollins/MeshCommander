@@ -1126,6 +1126,39 @@ void MachineDetailsController::refreshWakeAlarms()
         });
 }
 
+void MachineDetailsController::wsmanBrowse(const QString &classOrUri,
+                                           const QString &kind,
+                                           const QVariantMap &selectors)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty() || classOrUri.isEmpty()) return;
+
+    QHash<QString, QString> sels;
+    for (auto it = selectors.begin(); it != selectors.end(); ++it)
+        sels.insert(it.key(), it.value().toString());
+    const auto k = kind.compare(QStringLiteral("enumerate"), Qt::CaseInsensitive) == 0
+                       ? qumesh::wsman::BrowseKind::Enumerate
+                       : qumesh::wsman::BrowseKind::Get;
+
+    incInflight();
+    qumesh::wsman::executeBrowse(m_client, classOrUri, k, sels,
+        [this, k](qumesh::wsman::WsmanBrowseResult r) {
+            decInflight();
+            QVariantMap m;
+            m.insert(QStringLiteral("ok"),         r.ok);
+            m.insert(QStringLiteral("error"),      r.error);
+            m.insert(QStringLiteral("kind"),
+                     k == qumesh::wsman::BrowseKind::Enumerate
+                         ? QStringLiteral("enumerate")
+                         : QStringLiteral("get"));
+            m.insert(QStringLiteral("itemCount"),  r.itemCount);
+            m.insert(QStringLiteral("xml"),
+                     QString::fromUtf8(r.xml));
+            m_wsmanBrowseResult = std::move(m);
+            emit wsmanBrowseResultChanged();
+        });
+}
+
 void MachineDetailsController::refreshRemoteAccess()
 {
     if (deferIfSshConnecting(PendingRemoteAccess)) return;
