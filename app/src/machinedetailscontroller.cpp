@@ -164,6 +164,7 @@ void MachineDetailsController::runPendingRefreshes()
     if (p & PendingAgentPresence) refreshAgentPresence();
     if (p & PendingEventSubscriptions) refreshEventSubscriptions();
     if (p & PendingWakeAlarms)   refreshWakeAlarms();
+    if (p & PendingSystemDefense) refreshSystemDefense();
 }
 
 void MachineDetailsController::setHost(const QString &v)
@@ -1156,6 +1157,70 @@ void MachineDetailsController::wsmanBrowse(const QString &classOrUri,
                      QString::fromUtf8(r.xml));
             m_wsmanBrowseResult = std::move(m);
             emit wsmanBrowseResultChanged();
+        });
+}
+
+void MachineDetailsController::refreshSystemDefense()
+{
+    if (deferIfSshConnecting(PendingSystemDefense)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::getSystemDefense(m_client,
+        [this](qumesh::wsman::SystemDefenseResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("System Defense: %1").arg(r.error));
+
+            const auto mkPolicy = [](const qumesh::wsman::SystemDefensePolicy &p) {
+                QVariantMap m;
+                m.insert(QStringLiteral("instanceId"), p.instanceId);
+                m.insert(QStringLiteral("policyName"), p.policyName);
+                m.insert(QStringLiteral("priority"),   p.priority);
+                m.insert(QStringLiteral("defaultPolicy"), p.defaultPolicy);
+                m.insert(QStringLiteral("txEnabled"),  p.txEnabled);
+                m.insert(QStringLiteral("rxEnabled"),  p.rxEnabled);
+                return m;
+            };
+            const auto mkHdr = [](const qumesh::wsman::Hdr8021Filter &f) {
+                QVariantMap m;
+                m.insert(QStringLiteral("instanceId"),      f.instanceId);
+                m.insert(QStringLiteral("name"),            f.name);
+                m.insert(QStringLiteral("filterDirection"), f.filterDirection);
+                m.insert(QStringLiteral("vlanTag"),         f.vlanTag);
+                m.insert(QStringLiteral("etherType"),       f.etherType);
+                m.insert(QStringLiteral("priority"),        f.priority);
+                return m;
+            };
+            const auto mkIp = [](const qumesh::wsman::IpHeadersFilter &f) {
+                QVariantMap m;
+                m.insert(QStringLiteral("instanceId"),      f.instanceId);
+                m.insert(QStringLiteral("name"),            f.name);
+                m.insert(QStringLiteral("filterDirection"), f.filterDirection);
+                m.insert(QStringLiteral("srcAddress"),      f.srcAddress);
+                m.insert(QStringLiteral("dstAddress"),      f.dstAddress);
+                m.insert(QStringLiteral("protocol"),        f.protocol);
+                m.insert(QStringLiteral("srcPort"),         f.srcPort);
+                m.insert(QStringLiteral("dstPort"),         f.dstPort);
+                return m;
+            };
+
+            QVariantList policies, hdrFilters, ipFilters;
+            for (const auto &p : r.policies)   policies.append(mkPolicy(p));
+            for (const auto &f : r.hdrFilters) hdrFilters.append(mkHdr(f));
+            for (const auto &f : r.ipFilters)  ipFilters.append(mkIp(f));
+
+            QVariantMap sd;
+            sd.insert(QStringLiteral("ok"),         r.ok);
+            sd.insert(QStringLiteral("supported"),  r.supported);
+            sd.insert(QStringLiteral("policies"),   policies);
+            sd.insert(QStringLiteral("hdrFilters"), hdrFilters);
+            sd.insert(QStringLiteral("ipFilters"),  ipFilters);
+            m_systemDefense = std::move(sd);
+            emit systemDefenseChanged();
         });
 }
 
