@@ -31,6 +31,8 @@ private slots:
     void enumerateAuditLogParsesBinaryRecords();
     void enumerateUserAccountsMergesAdminAndAclEntries();
     void getEthernetSettingsReturnsMultipleInterfacesWithIPv6();
+    void getDeviceCertStoreStitchesCertsKeysAndTls();
+    void splitDnHelperHandlesEmptyAndMultiple();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -1095,6 +1097,175 @@ void TestWsmanClient::getEthernetSettingsReturnsMultipleInterfacesWithIPv6()
     // Label helper spot-check.
     QCOMPARE(linkPolicyLabel(1),   QStringLiteral("S0/AC"));
     QCOMPARE(linkPolicyLabel(224), QStringLiteral("Sx/DC"));
+}
+
+void TestWsmanClient::splitDnHelperHandlesEmptyAndMultiple()
+{
+    QCOMPARE(splitDn(QString()).size(), 0);
+    auto m = splitDn(QStringLiteral("CN=Intel(R) AMT, O=Intel Corporation, C=US"));
+    QCOMPARE(m.value(QStringLiteral("CN")), QStringLiteral("Intel(R) AMT"));
+    QCOMPARE(m.value(QStringLiteral("O")),  QStringLiteral("Intel Corporation"));
+    QCOMPARE(m.value(QStringLiteral("C")),  QStringLiteral("US"));
+}
+
+void TestWsmanClient::getDeviceCertStoreStitchesCertsKeysAndTls()
+{
+    // Fixture covers: trusted-root cert (with the legacy `TrustedRootCertficate`
+    // typo); a non-root cert paired with a key by suffix; an orphan
+    // key pair; both TLS endpoints; an `AMT_TLSCredentialContext`
+    // pointing at the non-root cert as active.
+    static const char *certPull =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:p=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_PublicKeyCertificate\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        "<p:AMT_PublicKeyCertificate>"
+        "<p:InstanceID>Intel(r) AMT Certificate: Handle: 0</p:InstanceID>"
+        "<p:Subject>CN=Server Cert, O=Acme, C=US</p:Subject>"
+        "<p:Issuer>CN=Acme Root CA, O=Acme</p:Issuer>"
+        "<p:TrustedRootCertficate>false</p:TrustedRootCertficate>"
+        "<p:X509Certificate>SGVsbG8gV29ybGQ=</p:X509Certificate>"  // 11 bytes
+        "</p:AMT_PublicKeyCertificate>"
+        "<p:AMT_PublicKeyCertificate>"
+        "<p:InstanceID>Intel(r) AMT Certificate: Handle: 1</p:InstanceID>"
+        "<p:Subject>CN=Acme Root CA, O=Acme</p:Subject>"
+        "<p:Issuer>CN=Acme Root CA, O=Acme</p:Issuer>"
+        "<p:TrustedRootCertficate>true</p:TrustedRootCertficate>"
+        "<p:X509Certificate>SGVsbG8=</p:X509Certificate>"          // 5 bytes
+        "</p:AMT_PublicKeyCertificate>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    static const char *keyPull =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:p=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_PublicPrivateKeyPair\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        // Matching key for cert handle 0 (suffix " 0").
+        "<p:AMT_PublicPrivateKeyPair>"
+        "<p:InstanceID>Intel(r) AMT Key: Handle: 0</p:InstanceID>"
+        "<p:DERKey>QUFBQQ==</p:DERKey>"
+        "</p:AMT_PublicPrivateKeyPair>"
+        // Orphan key with no matching cert.
+        "<p:AMT_PublicPrivateKeyPair>"
+        "<p:InstanceID>Intel(r) AMT Key: Handle: 99</p:InstanceID>"
+        "<p:DERKey>QkJCQg==</p:DERKey>"
+        "</p:AMT_PublicPrivateKeyPair>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    static const char *tlsPull =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:t=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_TLSSettingData\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        "<t:AMT_TLSSettingData>"
+        "<t:InstanceID>Intel(r) AMT LMS TLS Settings</t:InstanceID>"
+        "<t:Enabled>true</t:Enabled>"
+        "<t:MutualAuthentication>false</t:MutualAuthentication>"
+        "<t:AcceptNonSecureConnections>true</t:AcceptNonSecureConnections>"
+        "</t:AMT_TLSSettingData>"
+        "<t:AMT_TLSSettingData>"
+        "<t:InstanceID>Intel(r) AMT 802.3 TLS Settings</t:InstanceID>"
+        "<t:Enabled>true</t:Enabled>"
+        "<t:MutualAuthentication>true</t:MutualAuthentication>"
+        "<t:AcceptNonSecureConnections>false</t:AcceptNonSecureConnections>"
+        "<t:TrustedCN>amt-admin.example.com</t:TrustedCN>"
+        "<t:TrustedCN>backup-admin.example.com</t:TrustedCN>"
+        "</t:AMT_TLSSettingData>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    static const char *ctxPull =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+        " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+        " xmlns:a=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\""
+        " xmlns:w=\"http://schemas.xmlsoap.org/ws/2004/09/transfer\""
+        " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_TLSCredentialContext\">"
+        "<s:Header/><s:Body><wsen:PullResponse><wsen:Items>"
+        "<c:AMT_TLSCredentialContext>"
+        "<c:ElementInContext>"
+          "<a:Address>/wsman</a:Address>"
+          "<a:ReferenceParameters>"
+            "<w:ResourceURI>http://intel.com/wbem/wscim/1/amt-schema/1/AMT_PublicKeyCertificate</w:ResourceURI>"
+            "<w:SelectorSet>"
+              "<w:Selector Name=\"InstanceID\">Intel(r) AMT Certificate: Handle: 0</w:Selector>"
+            "</w:SelectorSet>"
+          "</a:ReferenceParameters>"
+        "</c:ElementInContext>"
+        "</c:AMT_TLSCredentialContext>"
+        "</wsen:Items><wsen:EndOfSequence/></wsen:PullResponse></s:Body></s:Envelope>";
+
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     const bool isPull = body.contains(":Pull>")
+                                      || body.contains("<wsen:Pull");
+                     QByteArray response;
+                     if (!isPull) {
+                         response = QByteArray(kEnumerateResponse);
+                     } else if (body.contains("AMT_PublicKeyCertificate")) {
+                         response = certPull;
+                     } else if (body.contains("AMT_PublicPrivateKeyPair")) {
+                         response = keyPull;
+                     } else if (body.contains("AMT_TLSCredentialContext")) {
+                         response = ctxPull;
+                     } else if (body.contains("AMT_TLSSettingData")) {
+                         response = tlsPull;
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    DeviceCertResult res;
+    QEventLoop loop;
+    getDeviceCertStore(&client, [&](DeviceCertResult r) {
+        res = r;
+        loop.quit();
+    });
+    QTimer::singleShot(8000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(res.ok, qPrintable(res.error));
+    QCOMPARE(res.certificates.size(), 2);
+
+    QCOMPARE(res.certificates[0].subjectCn, QStringLiteral("Server Cert"));
+    QCOMPARE(res.certificates[0].issuerCn,  QStringLiteral("Acme Root CA"));
+    QVERIFY(!res.certificates[0].trustedRoot);
+    QCOMPARE(res.certificates[0].derSizeBytes, 11);
+
+    QCOMPARE(res.certificates[1].subjectCn, QStringLiteral("Acme Root CA"));
+    QVERIFY(res.certificates[1].trustedRoot);  // typo-spelled field accepted
+
+    QCOMPARE(res.keyPairs.size(), 2);
+    QCOMPARE(res.tlsSettings.size(), 2);
+
+    bool foundMutual = false, foundLocal = false;
+    for (const auto &t : res.tlsSettings) {
+        if (t.mutualAuthentication) {
+            foundMutual = true;
+            QCOMPARE(t.trustedCn.size(), 2);
+            QCOMPARE(t.trustedCn.first(), QStringLiteral("amt-admin.example.com"));
+        }
+        if (t.instanceId.contains(QStringLiteral("LMS"))) foundLocal = true;
+    }
+    QVERIFY(foundMutual);
+    QVERIFY(foundLocal);
+
+    // TLS credential context points at handle 0.
+    QCOMPARE(res.activeCertInstanceIds.size(), 1);
+    QCOMPARE(res.activeCertInstanceIds.first(),
+             QStringLiteral("Intel(r) AMT Certificate: Handle: 0"));
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

@@ -116,6 +116,15 @@ constexpr char kAuthorizationServiceResource[] =
 constexpr char kIpv6PortSettingsResource[] =
     "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_IPv6PortSettings";
 
+constexpr char kPublicKeyCertificateResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_PublicKeyCertificate";
+constexpr char kPublicPrivateKeyPairResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_PublicPrivateKeyPair";
+constexpr char kTlsSettingDataResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_TLSSettingData";
+constexpr char kTlsCredentialContextResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_TLSCredentialContext";
+
 QString newMessageId()
 {
     return QStringLiteral("uuid:") + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -2417,6 +2426,169 @@ void getHardwareInventory(WsmanClient *client,
     kick(Kind::Media,     kMediaAccessDeviceResource);
     kick(Kind::PhysPkg,   kPhysicalPackageResource);
     kick(Kind::Battery,   kBatteryResource);
+}
+
+QHash<QString, QString> splitDn(const QString &dn)
+{
+    QHash<QString, QString> out;
+    const QStringList parts = dn.split(QLatin1Char(','));
+    for (const QString &raw : parts) {
+        const int eq = raw.indexOf(QLatin1Char('='));
+        if (eq < 0) continue;
+        const QString key = raw.left(eq).trimmed();
+        const QString val = raw.mid(eq + 1).trimmed();
+        if (!key.isEmpty()) out.insert(key, val);
+    }
+    return out;
+}
+
+namespace {
+
+DeviceCertificate parseCertItem(const QByteArray &item)
+{
+    DeviceCertificate c;
+    c.instanceId = findScalar(item, QStringLiteral("InstanceID"));
+    c.subjectRaw = findScalar(item, QStringLiteral("Subject"));
+    c.issuerRaw  = findScalar(item, QStringLiteral("Issuer"));
+    // AMT firmware (depending on revision) sends either "TrustedRootCertficate"
+    // (with the typo preserved by the legacy MeshCommander) or the
+    // corrected "TrustedRootCertificate". Accept both.
+    const QString trTypo = findScalar(item, QStringLiteral("TrustedRootCertficate"));
+    const QString trGood = findScalar(item, QStringLiteral("TrustedRootCertificate"));
+    c.trustedRoot = (trTypo == QStringLiteral("true"))
+                 || (trGood == QStringLiteral("true"));
+    c.x509Base64 = findScalar(item, QStringLiteral("X509Certificate"));
+    c.derSizeBytes = QByteArray::fromBase64(c.x509Base64.toLatin1()).size();
+    c.subjectCn = splitDn(c.subjectRaw).value(QStringLiteral("CN"));
+    c.issuerCn  = splitDn(c.issuerRaw).value(QStringLiteral("CN"));
+    return c;
+}
+
+DeviceKeyPair parseKeyPairItem(const QByteArray &item)
+{
+    DeviceKeyPair p;
+    p.instanceId = findScalar(item, QStringLiteral("InstanceID"));
+    const QString der = findScalar(item, QStringLiteral("DERKey"));
+    p.derSizeBytes = QByteArray::fromBase64(der.toLatin1()).size();
+    return p;
+}
+
+TlsSettingsRow parseTlsRow(const QByteArray &item)
+{
+    TlsSettingsRow t;
+    t.instanceId = findScalar(item, QStringLiteral("InstanceID"));
+    t.enabled = findScalar(item, QStringLiteral("Enabled")) == QStringLiteral("true");
+    t.mutualAuthentication = findScalar(item,
+        QStringLiteral("MutualAuthentication")) == QStringLiteral("true");
+    t.acceptNonSecureConnections = findScalar(item,
+        QStringLiteral("AcceptNonSecureConnections")) == QStringLiteral("true");
+    QXmlStreamReader r(item);
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement() && r.name() == QStringLiteral("TrustedCN")) {
+            const QString s = r.readElementText();
+            if (!s.isEmpty()) t.trustedCn.append(s);
+        }
+    }
+    return t;
+}
+
+/// Pull the certificate InstanceID referenced by a
+/// `AMT_TLSCredentialContext` row's `ElementInContext` EPR.
+QString parseContextCertInstanceId(const QByteArray &item)
+{
+    QXmlStreamReader r(item);
+    bool inElementInContext = false;
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement()) {
+            if (r.name() == QStringLiteral("ElementInContext"))
+                inElementInContext = true;
+            // The InstanceID selector inside the EPR identifies the
+            // certificate this context binds.
+            else if (inElementInContext
+                  && r.name() == QStringLiteral("Selector")) {
+                const auto attrs = r.attributes();
+                if (attrs.value(QStringLiteral("Name"))
+                        == QStringLiteral("InstanceID")) {
+                    return r.readElementText();
+                }
+            }
+        } else if (r.isEndElement()
+                && r.name() == QStringLiteral("ElementInContext")) {
+            inElementInContext = false;
+        }
+    }
+    return {};
+}
+
+} // namespace
+
+void getDeviceCertStore(WsmanClient *client,
+                        std::function<void(DeviceCertResult)> callback)
+{
+    enum class Kind { Cert, KeyPair, Tls, Ctx, _Count };
+    constexpr int kCount = int(Kind::_Count);
+    struct State {
+        std::array<bool, kCount> done{};
+        std::array<QList<QByteArray>, kCount> items;
+        std::array<QString, kCount> errors;
+        std::function<void(DeviceCertResult)> cb;
+        bool fired = false;
+    };
+    auto st = std::make_shared<State>();
+    st->cb = std::move(callback);
+
+    if (client == nullptr) {
+        DeviceCertResult r;
+        r.error = QStringLiteral("client is null");
+        st->cb(std::move(r));
+        return;
+    }
+
+    auto maybeFire = [st]() {
+        if (st->fired) return;
+        for (bool d : st->done) if (!d) return;
+        st->fired = true;
+        DeviceCertResult r;
+        for (const auto &item : st->items[int(Kind::Cert)])
+            r.certificates.append(parseCertItem(item));
+        for (const auto &item : st->items[int(Kind::KeyPair)])
+            r.keyPairs.append(parseKeyPairItem(item));
+        for (const auto &item : st->items[int(Kind::Tls)])
+            r.tlsSettings.append(parseTlsRow(item));
+        for (const auto &item : st->items[int(Kind::Ctx)]) {
+            const QString id = parseContextCertInstanceId(item);
+            if (!id.isEmpty()) r.activeCertInstanceIds.append(id);
+        }
+        // Whole-call ok if at least one class returned, or if all
+        // four are empty without errors (fresh-from-factory firmware).
+        bool anyError = false;
+        for (const QString &e : st->errors) if (!e.isEmpty()) { anyError = true; break; }
+        if (anyError && r.certificates.isEmpty() && r.tlsSettings.isEmpty()) {
+            // Surface the first error we saw.
+            for (const QString &e : st->errors) if (!e.isEmpty()) { r.error = e; break; }
+            r.ok = false;
+        } else {
+            r.ok = true;
+        }
+        st->cb(std::move(r));
+    };
+
+    auto kick = [client, st, maybeFire](Kind k, const char *uri) {
+        enumerateAll(client, uri,
+            [st, k, maybeFire](QList<QByteArray> items, QString error) mutable {
+                const int idx = int(k);
+                st->items[idx]  = std::move(items);
+                st->errors[idx] = error;
+                st->done[idx]   = true;
+                maybeFire();
+            });
+    };
+    kick(Kind::Cert,    kPublicKeyCertificateResource);
+    kick(Kind::KeyPair, kPublicPrivateKeyPairResource);
+    kick(Kind::Tls,     kTlsSettingDataResource);
+    kick(Kind::Ctx,     kTlsCredentialContextResource);
 }
 
 } // namespace qumesh::wsman

@@ -133,6 +133,9 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(QVariantMap  auditLogState   READ auditLogState   NOTIFY auditLogChanged)
     Q_PROPERTY(QVariantList auditLogEntries READ auditLogEntries NOTIFY auditLogChanged)
 
+    // Device certificate store — read-only.
+    Q_PROPERTY(QVariantMap  deviceCertStore READ deviceCertStore NOTIFY deviceCertStoreChanged)
+
     // Boot capabilities — which power-to-X menu entries we show.
     Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
@@ -246,6 +249,7 @@ public:
     [[nodiscard]] QVariantMap  hardwareInventory() const { return m_hardwareInventory; }
     [[nodiscard]] QVariantMap  auditLogState() const     { return m_auditLogState; }
     [[nodiscard]] QVariantList auditLogEntries() const   { return m_auditLogEntries; }
+    [[nodiscard]] QVariantMap  deviceCertStore() const   { return m_deviceCertStore; }
 
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
@@ -260,6 +264,7 @@ public:
     Q_INVOKABLE void refreshUserAccounts();
     Q_INVOKABLE void refreshHardware();
     Q_INVOKABLE void refreshAuditLog();
+    Q_INVOKABLE void refreshDeviceCerts();
     /// Read `IPS_OptInService` + `IPS_KVMRedirectionSettingData` and
     /// update the four exposed properties. Also called by
     /// `refreshOverview`.
@@ -364,6 +369,7 @@ signals:
     void userAccountsChanged();
     void hardwareChanged();
     void auditLogChanged();
+    void deviceCertStoreChanged();
     void optInStatusChanged();
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
@@ -424,6 +430,7 @@ private:
         PendingUserAccounts = 1 << 5,
         PendingHardware     = 1 << 6,
         PendingAuditLog     = 1 << 7,
+        PendingDeviceCerts  = 1 << 8,
     };
     int m_pendingRefreshes = 0;
     /// `true` between `setSshConfig(enabled=true)` and the session
@@ -512,6 +519,7 @@ private:
     QVariantMap  m_hardwareInventory;
     QVariantMap  m_auditLogState;
     QVariantList m_auditLogEntries;
+    QVariantMap  m_deviceCertStore;
 
     bool m_optInRequired = false;
     int m_optInState = 0;

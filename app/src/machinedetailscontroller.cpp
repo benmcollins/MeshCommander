@@ -156,6 +156,7 @@ void MachineDetailsController::runPendingRefreshes()
     if (p & PendingUserAccounts) refreshUserAccounts();
     if (p & PendingHardware)     refreshHardware();
     if (p & PendingAuditLog)     refreshAuditLog();
+    if (p & PendingDeviceCerts)  refreshDeviceCerts();
 }
 
 void MachineDetailsController::setHost(const QString &v)
@@ -752,6 +753,111 @@ void MachineDetailsController::refreshHardware()
 
             m_hardwareInventory = std::move(inv);
             emit hardwareChanged();
+        });
+}
+
+void MachineDetailsController::refreshDeviceCerts()
+{
+    if (deferIfSshConnecting(PendingDeviceCerts)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::getDeviceCertStore(m_client,
+        [this](qumesh::wsman::DeviceCertResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("Device certs: %1").arg(r.error));
+
+            QVariantList certs;
+            QHash<QString, bool> hasKey;
+            for (const auto &k : r.keyPairs)
+                hasKey.insert(k.instanceId, true);
+            const QSet<QString> activeIds(r.activeCertInstanceIds.begin(),
+                                          r.activeCertInstanceIds.end());
+
+            QSet<QString> keysClaimedByCerts;
+            for (const auto &c : r.certificates) {
+                QVariantMap m;
+                m.insert(QStringLiteral("instanceId"),    c.instanceId);
+                m.insert(QStringLiteral("subjectCn"),     c.subjectCn);
+                m.insert(QStringLiteral("issuerCn"),      c.issuerCn);
+                m.insert(QStringLiteral("subjectRaw"),    c.subjectRaw);
+                m.insert(QStringLiteral("issuerRaw"),     c.issuerRaw);
+                m.insert(QStringLiteral("trustedRoot"),   c.trustedRoot);
+                m.insert(QStringLiteral("derSizeBytes"),  c.derSizeBytes);
+                // A cert "has a private key" when a key pair shares
+                // an InstanceID-suffix with the cert. AMT's pairing
+                // convention is "Intel(r) AMT Certificate: <n>" vs
+                // "Intel(r) AMT Key: <n>" — match by the trailing
+                // suffix.
+                bool hasPrivateKey = false;
+                QString matchedKey;
+                const int colon = c.instanceId.lastIndexOf(QLatin1Char(':'));
+                const QString suffix = colon < 0 ? QString()
+                                                 : c.instanceId.mid(colon + 1).trimmed();
+                if (!suffix.isEmpty()) {
+                    for (const auto &k : r.keyPairs) {
+                        if (k.instanceId.endsWith(suffix)) {
+                            hasPrivateKey = true;
+                            matchedKey = k.instanceId;
+                            break;
+                        }
+                    }
+                }
+                if (!matchedKey.isEmpty())
+                    keysClaimedByCerts.insert(matchedKey);
+                m.insert(QStringLiteral("hasPrivateKey"), hasPrivateKey);
+                m.insert(QStringLiteral("active"),
+                         activeIds.contains(c.instanceId));
+                certs.append(m);
+            }
+
+            QVariantList orphans;
+            for (const auto &k : r.keyPairs) {
+                if (keysClaimedByCerts.contains(k.instanceId)) continue;
+                QVariantMap m;
+                m.insert(QStringLiteral("instanceId"),   k.instanceId);
+                m.insert(QStringLiteral("derSizeBytes"), k.derSizeBytes);
+                orphans.append(m);
+            }
+
+            QVariantList tls;
+            for (const auto &t : r.tlsSettings) {
+                QVariantMap m;
+                m.insert(QStringLiteral("instanceId"), t.instanceId);
+                m.insert(QStringLiteral("isLocal"),
+                         t.instanceId.contains(QStringLiteral("LMS")));
+                m.insert(QStringLiteral("enabled"),      t.enabled);
+                m.insert(QStringLiteral("mutualAuthentication"),
+                         t.mutualAuthentication);
+                m.insert(QStringLiteral("acceptNonSecureConnections"),
+                         t.acceptNonSecureConnections);
+                m.insert(QStringLiteral("trustedCn"),    t.trustedCn);
+                m.insert(QStringLiteral("trustedCnLabel"), t.trustedCn.join(", "));
+                QString label;
+                if (!t.enabled) {
+                    label = QStringLiteral("Disabled");
+                } else {
+                    label = t.mutualAuthentication
+                        ? QStringLiteral("Mutual-auth TLS")
+                        : QStringLiteral("Server-auth TLS");
+                    if (t.acceptNonSecureConnections)
+                        label += QStringLiteral(" + non-TLS");
+                }
+                m.insert(QStringLiteral("label"), label);
+                tls.append(m);
+            }
+
+            QVariantMap store;
+            store.insert(QStringLiteral("certificates"), certs);
+            store.insert(QStringLiteral("orphanKeys"),   orphans);
+            store.insert(QStringLiteral("tlsSettings"),  tls);
+            store.insert(QStringLiteral("ok"),           r.ok);
+            m_deviceCertStore = std::move(store);
+            emit deviceCertStoreChanged();
         });
 }
 
