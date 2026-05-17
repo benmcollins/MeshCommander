@@ -124,6 +124,15 @@ class MachineDetailsController : public QObject
     // Time.
     Q_PROPERTY(qint64 amtEpoch READ amtEpoch NOTIFY timeChanged)
 
+    // Power schemes (#162) — read-only list + the currently-active
+    // InstanceID. Empty until first refresh; `currentPowerSchemeId`
+    // may stay empty if the firmware doesn't surface the
+    // CIM_ElementSettingData association.
+    Q_PROPERTY(QVariantList powerSchemes READ powerSchemes
+                   NOTIFY powerSchemesChanged)
+    Q_PROPERTY(QString currentPowerSchemeId READ currentPowerSchemeId
+                   NOTIFY powerSchemesChanged)
+
     // Event log — list of QVariantMaps for the QML ListView.
     Q_PROPERTY(QVariantList eventLog READ eventLog NOTIFY eventLogChanged)
 
@@ -248,6 +257,9 @@ public:
 
     [[nodiscard]] qint64 amtEpoch() const { return m_amtEpoch; }
 
+    [[nodiscard]] QVariantList powerSchemes() const { return m_powerSchemes; }
+    [[nodiscard]] QString currentPowerSchemeId() const { return m_currentPowerSchemeId; }
+
     [[nodiscard]] bool capBiosSetup() const { return m_capBiosSetup; }
     [[nodiscard]] bool capBiosPause() const { return m_capBiosPause; }
     [[nodiscard]] bool capSecureErase() const { return m_capSecureErase; }
@@ -292,6 +304,14 @@ public:
     Q_INVOKABLE void refreshDeviceCerts();
     Q_INVOKABLE void refreshRemoteAccess();
     Q_INVOKABLE void refreshWireless();
+    /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.
+    /// Auto-called as part of `refreshPower` so the dialog is ready
+    /// when the operator clicks the Power Policy button. See #162.
+    Q_INVOKABLE void refreshPowerSchemes();
+    /// Push `instanceId` as the active power scheme via
+    /// `AMT_SystemPowerScheme.SetPowerScheme`, then re-read so the
+    /// currentPowerSchemeId binding follows.
+    Q_INVOKABLE void setPowerScheme(const QString &instanceId);
     /// Read `IPS_OptInService` + `IPS_KVMRedirectionSettingData` and
     /// update the four exposed properties. Also called by
     /// `refreshOverview`.
@@ -386,6 +406,7 @@ signals:
     void computerSystemChanged();
     void ethernetChanged();
     void timeChanged();
+    void powerSchemesChanged();
     void meVersionChanged();
     void setupConfigChanged();
     void redirectionStatusChanged();
@@ -538,6 +559,9 @@ private:
     QVariantList m_networkInterfaces;
 
     qint64 m_amtEpoch = 0;
+
+    QVariantList m_powerSchemes;
+    QString m_currentPowerSchemeId;
 
     bool m_capBiosSetup = false;
     bool m_capBiosPause = false;

@@ -130,6 +130,14 @@ AppWindow {
         }
     }
 
+    PowerPolicyDialog {
+        id: powerPolicyDialog
+        controller: controller
+        onConfirmed: function(instanceId) {
+            controller.setPowerScheme(instanceId);
+        }
+    }
+
     // Surfaces a Put-rejected message when the AMT login can't modify
     // the consent policy. Cleared on the next successful refresh.
     Connections {
@@ -1255,6 +1263,13 @@ AppWindow {
                                         onTriggered: httpsBootPrompt.openFor(true)
                                     }
                                 }
+                            }
+
+                            FlatButton {
+                                text: qsTr("Power Policy…")
+                                enabled: !controller.busy
+                                    && controller.powerSchemes.length > 0
+                                onClicked: powerPolicyDialog.open()
                             }
 
                             FlatButton {

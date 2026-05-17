@@ -37,6 +37,7 @@ private slots:
     void getRemoteAccessStitchesEnvPoliciesServersAndProxies();
     void getWirelessJoinsProfilesAnd8021xByElementName();
     void setHighAccuracyTimeSyncEncodesParamsAndDecodesReturn();
+    void getPowerSchemesEnumeratesAndDetectsCurrentViaElementSettingData();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -1839,6 +1840,121 @@ void TestWsmanClient::setHighAccuracyTimeSyncEncodesParamsAndDecodesReturn()
     QVERIFY2(captured.contains("1700000001"), captured.constData());
     QVERIFY2(captured.contains("Tm2"), captured.constData());
     QVERIFY2(captured.contains("1700000002"), captured.constData());
+}
+
+void TestWsmanClient::getPowerSchemesEnumeratesAndDetectsCurrentViaElementSettingData()
+{
+    // Two enumerates: AMT_SystemPowerScheme (the list of schemes) and
+    // CIM_ElementSettingData (the association that flags one of them
+    // IsCurrent). Switch on the resource URI in the SOAP body.
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     const bool isElementSettingData =
+                         body.contains("CIM_ElementSettingData");
+                     const bool isPull = body.contains(":Pull")
+                                       || body.contains("<wsen:Pull");
+
+                     QByteArray response;
+                     if (!isPull) {
+                         // Enumerate → return a context.
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:EnumerateResponse>"
+                             "<wsen:EnumerationContext>ctx</wsen:EnumerationContext>"
+                             "</wsen:EnumerateResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else if (isElementSettingData) {
+                         // Pull on CIM_ElementSettingData. One row with
+                         // IsCurrent=1 pointing at the "Balanced" scheme.
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:wsa=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\""
+                             " xmlns:wsman=\"http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd\""
+                             " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ElementSettingData\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:CIM_ElementSettingData>"
+                             "<c:IsCurrent>1</c:IsCurrent>"
+                             "<c:SettingData>"
+                             "<wsa:Address>http://example.com/wsman</wsa:Address>"
+                             "<wsa:ReferenceParameters>"
+                             "<wsman:ResourceURI>http://intel.com/wbem/wscim/1/amt-schema/1/AMT_SystemPowerScheme</wsman:ResourceURI>"
+                             "<wsman:SelectorSet>"
+                             "<wsman:Selector Name=\"CreationClassName\">AMT_SystemPowerScheme</wsman:Selector>"
+                             "<wsman:Selector Name=\"InstanceID\">Intel(r) AMT:Power Scheme 1</wsman:Selector>"
+                             "</wsman:SelectorSet>"
+                             "</wsa:ReferenceParameters>"
+                             "</c:SettingData>"
+                             "</c:CIM_ElementSettingData>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else {
+                         // Pull on AMT_SystemPowerScheme. Two rows.
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_SystemPowerScheme\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:AMT_SystemPowerScheme>"
+                             "<c:InstanceID>Intel(r) AMT:Power Scheme 0</c:InstanceID>"
+                             "<c:SchemeGUID>{aaaaaaaa-bbbb-cccc-dddd-000000000000}</c:SchemeGUID>"
+                             "<c:Description>0:Power Saver</c:Description>"
+                             "</c:AMT_SystemPowerScheme>"
+                             "<c:AMT_SystemPowerScheme>"
+                             "<c:InstanceID>Intel(r) AMT:Power Scheme 1</c:InstanceID>"
+                             "<c:SchemeGUID>{aaaaaaaa-bbbb-cccc-dddd-111111111111}</c:SchemeGUID>"
+                             "<c:Description>1:Balanced</c:Description>"
+                             "</c:AMT_SystemPowerScheme>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    PowerSchemesResult result;
+    QEventLoop loop;
+    getPowerSchemes(&client, [&](PowerSchemesResult r) {
+        result = r;
+        loop.quit();
+    });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.schemes.size(), 2);
+    QCOMPARE(result.schemes.at(0).description, QStringLiteral("0:Power Saver"));
+    QCOMPARE(result.schemes.at(1).description, QStringLiteral("1:Balanced"));
+
+    // The EPR walk on CIM_ElementSettingData should have pulled the
+    // matching InstanceID out of the second Selector and parked it as
+    // currentInstanceId. The dialog uses this to preselect the radio.
+    QCOMPARE(result.currentInstanceId,
+             QStringLiteral("Intel(r) AMT:Power Scheme 1"));
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

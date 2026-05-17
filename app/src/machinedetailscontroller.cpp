@@ -1273,6 +1273,58 @@ void MachineDetailsController::refreshPower()
         }
         decInflight();
     });
+
+    // Power schemes share the Power section, so let them ride along on
+    // the same refresh. Soft-failure on older firmware that doesn't
+    // surface AMT_SystemPowerScheme — leaves the list empty.
+    refreshPowerSchemes();
+}
+
+void MachineDetailsController::refreshPowerSchemes()
+{
+    if (deferIfSshConnecting(PendingPower)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) return;
+    incInflight();
+    qumesh::wsman::getPowerSchemes(m_client,
+        [this](qumesh::wsman::PowerSchemesResult r) {
+            if (r.ok) {
+                QVariantList list;
+                list.reserve(r.schemes.size());
+                for (const auto &p : r.schemes) {
+                    QVariantMap m;
+                    m.insert(QStringLiteral("instanceId"),  p.instanceId);
+                    m.insert(QStringLiteral("schemeGuid"),  p.schemeGuid);
+                    m.insert(QStringLiteral("description"), p.description);
+                    list.append(m);
+                }
+                m_powerSchemes = std::move(list);
+                m_currentPowerSchemeId = r.currentInstanceId;
+                emit powerSchemesChanged();
+            } else if (!r.error.isEmpty()) {
+                // Soft failure — older firmware may not expose the
+                // class. Leave the previous list in place.
+            }
+            decInflight();
+        });
+}
+
+void MachineDetailsController::setPowerScheme(const QString &instanceId)
+{
+    if (deferIfSshConnecting(PendingPower)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty() || instanceId.isEmpty()) return;
+    incInflight();
+    qumesh::wsman::setPowerScheme(m_client, instanceId,
+        [this](qumesh::wsman::InvokeResult r) {
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("Set power scheme: %1").arg(r.error));
+            decInflight();
+            // Re-read so the radio dot follows the firmware's reality
+            // (in case the Set succeeded but firmware moved the dot
+            // elsewhere, or failed and stayed put).
+            refreshPowerSchemes();
+        });
 }
 
 void MachineDetailsController::bootToBios(bool reset)
