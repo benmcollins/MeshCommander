@@ -273,6 +273,10 @@ public:
     /// Refresh individual categories.
     Q_INVOKABLE void refreshNetwork();
     Q_INVOKABLE void refreshTime();
+    /// Push the host's current time at the AMT clock via the 3-point
+    /// SetHighAccuracyTimeSynch handshake. Fires `lastError` / emits
+    /// `timeChanged` after the post-sync re-read completes. See #173.
+    Q_INVOKABLE void syncDeviceTime();
     Q_INVOKABLE void refreshPower();
     Q_INVOKABLE void refreshEventLog();
     Q_INVOKABLE void refreshUserAccounts();

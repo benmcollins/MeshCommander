@@ -36,6 +36,7 @@ private slots:
     void splitDnHelperHandlesEmptyAndMultiple();
     void getRemoteAccessStitchesEnvPoliciesServersAndProxies();
     void getWirelessJoinsProfilesAnd8021xByElementName();
+    void setHighAccuracyTimeSyncEncodesParamsAndDecodesReturn();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -1752,6 +1753,58 @@ void TestWsmanClient::getWirelessJoinsProfilesAnd8021xByElementName()
              QStringLiteral("Enabled in S0, Sx/AC"));
     QCOMPARE(wifiRadioStateLabel(2), QStringLiteral("On, Connected"));
     QCOMPARE(eap8021xProtocolLabel(0), QStringLiteral("EAP-TLS"));
+}
+
+void TestWsmanClient::setHighAccuracyTimeSyncEncodesParamsAndDecodesReturn()
+{
+    // The Set call sends an Invoke envelope with Ta0/Tm1/Tm2 as POSTed
+    // body params. Capture the body to verify each param round-trips
+    // and assert ReturnValue==0 maps to ok=true.
+    QByteArray captured;
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     captured = req.body();
+                     constexpr const char *resp =
+                         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                         "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                         " xmlns:t=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_TimeSynchronizationService\">"
+                         "<s:Header/><s:Body>"
+                         "<t:SetHighAccuracyTimeSynch_OUTPUT>"
+                         "<t:ReturnValue>0</t:ReturnValue>"
+                         "</t:SetHighAccuracyTimeSynch_OUTPUT>"
+                         "</s:Body></s:Envelope>";
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                QByteArray(resp));
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    InvokeResult result;
+    QEventLoop loop;
+    setHighAccuracyTimeSync(&client, 1700000000LL, 1700000001LL, 1700000002LL,
+        [&](InvokeResult r) { result = r; loop.quit(); });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.returnValue, 0);
+
+    // The three params have to land on the wire — a typo in any of
+    // them would silently push a wrong clock to the firmware.
+    QVERIFY2(captured.contains("Ta0"), captured.constData());
+    QVERIFY2(captured.contains("1700000000"), captured.constData());
+    QVERIFY2(captured.contains("Tm1"), captured.constData());
+    QVERIFY2(captured.contains("1700000001"), captured.constData());
+    QVERIFY2(captured.contains("Tm2"), captured.constData());
+    QVERIFY2(captured.contains("1700000002"), captured.constData());
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)
