@@ -462,6 +462,15 @@ AppWindow {
                                 Text { text: qsTr("AMT version"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
                                 Text { text: controller.amtVersion || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
+                                Text { text: qsTr("Intel ME version"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.meVersionString.length > 0 ? ("v" + controller.meVersionString) : qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+
+                                Text { text: qsTr("Activation"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.provisioningModeLabel; color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+
+                                Text { text: qsTr("Power source"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
+                                Text { text: controller.powerSourceLabel; color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+
                                 Text { text: qsTr("WSMAN protocol"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
                                 Text { text: controller.amtProtocolVersion || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
 
@@ -470,6 +479,61 @@ AppWindow {
 
                                 Text { text: qsTr("UUID"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
                                 Text { text: controller.systemUuid || qsTr("(unknown)"); color: Colors.text; font.family: Type.mono; font.pixelSize: Type.sizeXs; Layout.fillWidth: true; elide: Text.ElideMiddle }
+                            }
+                        }
+
+                        Section {
+                            title: qsTr("ACTIVE FEATURES")
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+
+                            // Repeater + chip delegate keeps the four
+                            // chips declarative — each binds straight to
+                            // the controller, no Loader/Connections juggle.
+                            Flow {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                Repeater {
+                                    model: [
+                                        { label: qsTr("Redirection port"),
+                                          active: controller.redirectionListenerEnabled,
+                                          available: true },
+                                        { label: qsTr("SOL"),
+                                          active: controller.solEnabled,
+                                          available: true },
+                                        { label: qsTr("IDE-R"),
+                                          active: controller.iderEnabled,
+                                          available: true },
+                                        { label: qsTr("KVM"),
+                                          active: controller.kvmEnabled,
+                                          available: controller.kvmAvailable },
+                                    ]
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        radius: 4
+                                        implicitHeight: chipText.implicitHeight + 6
+                                        implicitWidth: chipText.implicitWidth + 14
+                                        color: modelData.active
+                                            ? Colors.accentSoft
+                                            : (modelData.available ? Colors.borderMuted
+                                                                    : "transparent")
+                                        border.width: modelData.available ? 0 : 1
+                                        border.color: Colors.borderMuted
+                                        opacity: modelData.available ? 1.0 : 0.55
+                                        Text {
+                                            id: chipText
+                                            anchors.centerIn: parent
+                                            text: modelData.label
+                                            color: modelData.active
+                                                ? Colors.text : Colors.textMuted
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeXs
+                                            font.weight: Font.Medium
+                                        }
+                                    }
+                                }
                             }
                         }
 

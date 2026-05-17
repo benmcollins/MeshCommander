@@ -38,6 +38,10 @@ struct GeneralSettingsResult
     QString digestRealm;        ///< Optional, included for cert / auth display.
     bool networkInterfaceEnabled = false;
     bool rmcpPingResponseEnabled = false;
+    /// `AMT_GeneralSettings.PowerSource` — 0 = plugged-in / AC, 1 = on
+    /// battery. -1 means the firmware didn't report it (older releases,
+    /// desktop SKUs).
+    int powerSource = -1;
 };
 
 struct ComputerSystemResult
@@ -70,6 +74,50 @@ struct TimeSettingsResult
     bool ok = false;
     QString error;
     qint64 secondsSinceEpoch = 0; ///< 0 if not parsed.
+};
+
+/// Snapshot of `AMT_SetupAndConfigurationService` — the provisioning
+/// state machine. `ProvisioningState == 2` means the device has finished
+/// activation; `ProvisioningMode == 4` means it was activated in Client
+/// Control Mode (otherwise Admin Control Mode).
+struct SetupAndConfigResult
+{
+    bool ok = false;
+    QString error;
+    int provisioningState = -1;
+    int provisioningMode  = -1;
+};
+
+/// `CIM_SoftwareIdentity[InstanceID='AMT']` — the Intel ME firmware
+/// version. Distinct from the AMT software version returned by
+/// `Identify` (which is the wire-protocol version).
+struct MeVersionResult
+{
+    bool ok = false;
+    QString error;
+    QString versionString;
+};
+
+/// Per-redirection-channel enabled state. Decoded from
+/// `AMT_RedirectionService` (Redir port + SOL + IDE-R) and
+/// `CIM_KVMRedirectionSAP` (KVM, AMT > 5 only).
+struct RedirectionStatusResult
+{
+    bool ok = false;
+    QString error;
+    /// `AMT_RedirectionService.ListenerEnabled` — the umbrella
+    /// redirection listener on port 16994/16995.
+    bool redirectionListenerEnabled = false;
+    /// `AMT_RedirectionService.EnabledState & 2`.
+    bool solEnabled = false;
+    /// `AMT_RedirectionService.EnabledState & 1`.
+    bool iderEnabled = false;
+    /// `CIM_KVMRedirectionSAP.EnabledState == 2 || == 6`. False when
+    /// the firmware doesn't expose the SAP (AMT 5 and earlier).
+    bool kvmEnabled = false;
+    /// `true` when we managed to read `CIM_KVMRedirectionSAP`. Lets the
+    /// UI distinguish "KVM disabled" from "no KVM capability".
+    bool kvmAvailable = false;
 };
 
 /// Subset of `AMT_BootCapabilities` flags the UI gates power actions on.
@@ -189,6 +237,23 @@ void getTimeSettings(WsmanClient *client,
 /// (Secure Erase / Platform Erase / HTTPS Boot etc.).
 void getBootCapabilities(WsmanClient *client,
                          std::function<void(BootCapabilitiesResult)> callback);
+
+/// Read `AMT_SetupAndConfigurationService` — provisioning state +
+/// mode. Used to render the "Activated in ACM/CCM" label on the
+/// Overview pane.
+void getSetupAndConfiguration(WsmanClient *client,
+                              std::function<void(SetupAndConfigResult)> callback);
+
+/// Enumerate `CIM_SoftwareIdentity` and pick out the instance whose
+/// `InstanceID` is `"AMT"` — that's the Intel ME firmware version.
+void getMeVersion(WsmanClient *client,
+                  std::function<void(MeVersionResult)> callback);
+
+/// Read `AMT_RedirectionService` and `CIM_KVMRedirectionSAP` and merge
+/// into a single result. Mirrors `getOptInStatus` — two Gets, soft
+/// failure on the KVM SAP (older firmware doesn't expose it).
+void getRedirectionStatus(WsmanClient *client,
+                          std::function<void(RedirectionStatusResult)> callback);
 
 /// Invoke `CIM_PowerManagementService.RequestPowerStateChange`. `powerState`
 /// is the CIM target enum: 2=On, 8=Off (Hard), 5=Reset, 4=Sleep,
