@@ -54,6 +54,15 @@ constexpr char kAgentPresenceCapabilitiesResource[] =
 constexpr char kAgentPresenceWatchdogResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AgentPresenceWatchdog";
 
+constexpr char kFilterCollectionResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_FilterCollection";
+
+constexpr char kListenerDestinationResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ListenerDestination";
+
+constexpr char kFilterCollectionSubscriptionResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_FilterCollectionSubscription";
+
 constexpr char kBootSettingDataResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_BootSettingData";
@@ -1154,6 +1163,139 @@ void getAgentPresence(WsmanClient *client,
                     QStringLiteral("TimeoutInterval")).toInt(&conv);
                 if (conv) w.timeoutIntervalSec = t;
                 acc->r.watchdogs.append(std::move(w));
+            }
+            acc->maybeFire();
+        });
+}
+
+QString listenerDeliveryModeLabel(int code)
+{
+    switch (code) {
+    case 2: return QStringLiteral("Push");
+    case 3: return QStringLiteral("Push with ACK");
+    case 4: return QStringLiteral("Events");
+    case 5: return QStringLiteral("Pull");
+    default: return QStringLiteral("Unknown");
+    }
+}
+
+namespace {
+
+/// Walk a single `CIM_FilterCollectionSubscription` item and pull the
+/// selector value with `Name="<key>"` out of the named EPR. Used to
+/// extract Filter.InstanceID and Handler.Name. Returns empty when the
+/// EPR or selector is absent.
+QString extractEprSelector(const QByteArray &itemXml,
+                            const QString &eprElement,
+                            const QString &selectorName)
+{
+    QXmlStreamReader r(itemXml);
+    bool inEpr = false;
+    QString pendingSelectorName;
+    while (!r.atEnd() && !r.hasError()) {
+        r.readNext();
+        if (r.tokenType() == QXmlStreamReader::StartElement) {
+            const auto name = r.name();
+            if (name == eprElement) {
+                inEpr = true;
+            } else if (inEpr && name == QStringLiteral("Selector")) {
+                pendingSelectorName.clear();
+                const auto attrs = r.attributes();
+                if (attrs.hasAttribute(QStringLiteral("Name")))
+                    pendingSelectorName = attrs.value(QStringLiteral("Name")).toString();
+                const QString v = r.readElementText().trimmed();
+                if (pendingSelectorName == selectorName)
+                    return v;
+            }
+        } else if (r.tokenType() == QXmlStreamReader::EndElement
+                   && r.name() == eprElement) {
+            inEpr = false;
+        }
+    }
+    return {};
+}
+
+} // namespace
+
+void getEventSubscriptions(WsmanClient *client,
+                           std::function<void(EventSubscriptionsResult)> callback)
+{
+    // Three parallel enumerates. All three are optional — older firmware
+    // SKUs (ISM) don't expose subscription support and return SOAP faults
+    // on the listener / subscription enumerates while still returning the
+    // filter catalog. Treat any one returning rows as success.
+    struct Acc {
+        EventSubscriptionsResult r;
+        bool gotFilters = false;
+        bool gotListeners = false;
+        bool gotSubscriptions = false;
+        QString filterErr;
+        QString listenerErr;
+        QString subscriptionErr;
+        std::function<void(EventSubscriptionsResult)> cb;
+        void maybeFire() {
+            if (!gotFilters || !gotListeners || !gotSubscriptions) return;
+            const bool allFailed = !filterErr.isEmpty()
+                                && !listenerErr.isEmpty()
+                                && !subscriptionErr.isEmpty();
+            r.ok = !allFailed;
+            if (!r.ok && r.error.isEmpty()) {
+                r.error = !subscriptionErr.isEmpty()
+                              ? subscriptionErr
+                              : (!listenerErr.isEmpty() ? listenerErr : filterErr);
+            }
+            cb(std::move(r));
+        }
+    };
+    auto acc = std::make_shared<Acc>();
+    acc->cb = std::move(callback);
+
+    enumerateAll(client, kFilterCollectionResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotFilters = true;
+            acc->filterErr = err;
+            for (const QByteArray &it : items) {
+                EventFilter f;
+                f.instanceId     = findScalar(it, QStringLiteral("InstanceID"));
+                f.collectionName = findScalar(it, QStringLiteral("CollectionName"));
+                if (!f.instanceId.isEmpty())
+                    acc->r.filters.append(std::move(f));
+            }
+            acc->maybeFire();
+        });
+
+    enumerateAll(client, kListenerDestinationResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotListeners = true;
+            acc->listenerErr = err;
+            for (const QByteArray &it : items) {
+                EventListener l;
+                l.name        = findScalar(it, QStringLiteral("Name"));
+                l.destination = findScalar(it, QStringLiteral("Destination"));
+                bool conv = false;
+                l.deliveryMode = findScalar(it,
+                    QStringLiteral("DeliveryMode")).toInt(&conv);
+                if (!conv) l.deliveryMode = -1;
+                l.deliveryModeLabel = listenerDeliveryModeLabel(l.deliveryMode);
+                if (!l.destination.isEmpty())
+                    acc->r.listeners.append(std::move(l));
+            }
+            acc->maybeFire();
+        });
+
+    enumerateAll(client, kFilterCollectionSubscriptionResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotSubscriptions = true;
+            acc->subscriptionErr = err;
+            for (const QByteArray &it : items) {
+                EventSubscription s;
+                s.filterInstanceId = extractEprSelector(it,
+                    QStringLiteral("Filter"),
+                    QStringLiteral("InstanceID"));
+                s.listenerName = extractEprSelector(it,
+                    QStringLiteral("Handler"),
+                    QStringLiteral("Name"));
+                acc->r.subscriptions.append(std::move(s));
             }
             acc->maybeFire();
         });

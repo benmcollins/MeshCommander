@@ -39,6 +39,7 @@ private slots:
     void setHighAccuracyTimeSyncEncodesParamsAndDecodesReturn();
     void getPowerSchemesEnumeratesAndDetectsCurrentViaElementSettingData();
     void getAgentPresenceDecodesBase64DeviceIdAndStateEnums();
+    void getEventSubscriptionsJoinsFiltersListenersAndSubscriptions();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -2057,6 +2058,148 @@ void TestWsmanClient::getAgentPresenceDecodesBase64DeviceIdAndStateEnums()
     QCOMPARE(w.enabledStateLabel, QStringLiteral("Enabled"));
     QCOMPARE(w.startupIntervalSec, 3600);
     QCOMPARE(w.timeoutIntervalSec, 60);
+}
+
+void TestWsmanClient::getEventSubscriptionsJoinsFiltersListenersAndSubscriptions()
+{
+    // Three enumerates: filters, listeners, subscriptions. Route by
+    // ResourceURI inside the POSTed envelope.
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     const bool isFilter = body.contains("CIM_FilterCollectionSubscription") == false
+                                          && body.contains("CIM_FilterCollection");
+                     const bool isListener = body.contains("CIM_ListenerDestination");
+                     const bool isSubscription = body.contains("CIM_FilterCollectionSubscription");
+                     const bool isPull = body.contains(":Pull")
+                                       || body.contains("<wsen:Pull");
+
+                     QByteArray response;
+                     if (!isPull) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:EnumerateResponse>"
+                             "<wsen:EnumerationContext>ctx</wsen:EnumerationContext>"
+                             "</wsen:EnumerateResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else if (isSubscription) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:wsa=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\""
+                             " xmlns:wsman=\"http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd\""
+                             " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_FilterCollectionSubscription\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:CIM_FilterCollectionSubscription>"
+                             "<c:Filter>"
+                             "<wsa:Address>http://example/wsman</wsa:Address>"
+                             "<wsa:ReferenceParameters>"
+                             "<wsman:ResourceURI>http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_FilterCollection</wsman:ResourceURI>"
+                             "<wsman:SelectorSet>"
+                             "<wsman:Selector Name=\"InstanceID\">Intel(r) AMT:All Events</wsman:Selector>"
+                             "</wsman:SelectorSet>"
+                             "</wsa:ReferenceParameters>"
+                             "</c:Filter>"
+                             "<c:Handler>"
+                             "<wsa:Address>http://example/wsman</wsa:Address>"
+                             "<wsa:ReferenceParameters>"
+                             "<wsman:ResourceURI>http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ListenerDestinationWSManagement</wsman:ResourceURI>"
+                             "<wsman:SelectorSet>"
+                             "<wsman:Selector Name=\"CreationClassName\">CIM_ListenerDestinationWSMAN</wsman:Selector>"
+                             "<wsman:Selector Name=\"Name\">Subscription 1</wsman:Selector>"
+                             "</wsman:SelectorSet>"
+                             "</wsa:ReferenceParameters>"
+                             "</c:Handler>"
+                             "</c:CIM_FilterCollectionSubscription>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else if (isListener) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ListenerDestination\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:CIM_ListenerDestination>"
+                             "<c:Name>Subscription 1</c:Name>"
+                             "<c:Destination>https://siem.example.com/events</c:Destination>"
+                             "<c:DeliveryMode>3</c:DeliveryMode>"
+                             "</c:CIM_ListenerDestination>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     } else if (isFilter) {
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
+                             " xmlns:c=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_FilterCollection\">"
+                             "<s:Header/><s:Body>"
+                             "<wsen:PullResponse>"
+                             "<wsen:Items>"
+                             "<c:CIM_FilterCollection>"
+                             "<c:InstanceID>Intel(r) AMT:All Events</c:InstanceID>"
+                             "<c:CollectionName>Intel(r) AMT:All Events</c:CollectionName>"
+                             "</c:CIM_FilterCollection>"
+                             "</wsen:Items>"
+                             "<wsen:EndOfSequence/>"
+                             "</wsen:PullResponse>"
+                             "</s:Body></s:Envelope>";
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    EventSubscriptionsResult result;
+    QEventLoop loop;
+    getEventSubscriptions(&client, [&](EventSubscriptionsResult r) {
+        result = r;
+        loop.quit();
+    });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.filters.size(),       1);
+    QCOMPARE(result.listeners.size(),     1);
+    QCOMPARE(result.subscriptions.size(), 1);
+
+    QCOMPARE(result.filters.first().instanceId,
+             QStringLiteral("Intel(r) AMT:All Events"));
+    QCOMPARE(result.listeners.first().destination,
+             QStringLiteral("https://siem.example.com/events"));
+    QCOMPARE(result.listeners.first().deliveryMode, 3);
+    QCOMPARE(result.listeners.first().deliveryModeLabel,
+             QStringLiteral("Push with ACK"));
+
+    // The subscription's Filter / Handler EPRs land in named fields
+    // so the QML can join filter → destination by name without doing
+    // any EPR walking itself.
+    QCOMPARE(result.subscriptions.first().filterInstanceId,
+             QStringLiteral("Intel(r) AMT:All Events"));
+    QCOMPARE(result.subscriptions.first().listenerName,
+             QStringLiteral("Subscription 1"));
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)
