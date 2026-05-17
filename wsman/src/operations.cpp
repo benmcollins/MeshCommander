@@ -42,6 +42,12 @@ constexpr char kTimeSyncResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_TimeSynchronizationService";
 
+constexpr char kSystemPowerSchemeResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_SystemPowerScheme";
+
+constexpr char kElementSettingDataResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ElementSettingData";
+
 constexpr char kBootSettingDataResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_BootSettingData";
@@ -865,6 +871,141 @@ void getRedirectionStatus(WsmanClient *client,
                 acc->maybeFire();
             });
     }
+}
+
+namespace {
+
+/// Walk a single `CIM_ElementSettingData` item body and, if it points
+/// at an `AMT_SystemPowerScheme` with `IsCurrent` set, return the
+/// `InstanceID` selector value. Empty string otherwise.
+QString extractCurrentPowerSchemeInstanceId(const QByteArray &itemXml)
+{
+    QXmlStreamReader r(itemXml);
+    bool sawPowerSchemeResourceUri = false;
+    bool isCurrent = false;
+    QString settingDataInstanceId;
+    QString pendingSelectorName;
+    bool inSettingDataEpr = false;
+
+    while (!r.atEnd() && !r.hasError()) {
+        r.readNext();
+        if (r.tokenType() == QXmlStreamReader::StartElement) {
+            const auto name = r.name();
+            if (name == QStringLiteral("IsCurrent")) {
+                const QString v = r.readElementText().trimmed();
+                isCurrent = (v == QStringLiteral("1") || v == QStringLiteral("true"));
+            } else if (name == QStringLiteral("SettingData")) {
+                inSettingDataEpr = true;
+            } else if (inSettingDataEpr && name == QStringLiteral("ResourceURI")) {
+                const QString v = r.readElementText().trimmed();
+                if (v.endsWith(QStringLiteral("AMT_SystemPowerScheme")))
+                    sawPowerSchemeResourceUri = true;
+            } else if (inSettingDataEpr && name == QStringLiteral("Selector")) {
+                pendingSelectorName.clear();
+                const auto attrs = r.attributes();
+                if (attrs.hasAttribute(QStringLiteral("Name")))
+                    pendingSelectorName = attrs.value(QStringLiteral("Name")).toString();
+                const QString v = r.readElementText().trimmed();
+                if (pendingSelectorName == QStringLiteral("InstanceID"))
+                    settingDataInstanceId = v;
+            }
+        } else if (r.tokenType() == QXmlStreamReader::EndElement
+                   && r.name() == QStringLiteral("SettingData")) {
+            inSettingDataEpr = false;
+        }
+    }
+
+    if (isCurrent && sawPowerSchemeResourceUri)
+        return settingDataInstanceId;
+    return {};
+}
+
+} // namespace
+
+void getPowerSchemes(WsmanClient *client,
+                     std::function<void(PowerSchemesResult)> callback)
+{
+    // Two independent enumerates: the SystemPowerScheme list and the
+    // ElementSettingData associations that link them to the active one.
+    // Fire them in parallel and merge in the join callback — the WSMAN
+    // client serialises HTTP for us when an SSH tunnel is active.
+    struct Acc {
+        PowerSchemesResult r;
+        bool gotSchemes = false;
+        bool gotAssoc = false;
+        QString schemesErr;
+        QString assocErr;
+        std::function<void(PowerSchemesResult)> cb;
+        void maybeFire() {
+            if (!gotSchemes || !gotAssoc) return;
+            r.ok = !r.schemes.isEmpty()
+                && schemesErr.isEmpty();
+            // Association is best-effort — older firmware may not
+            // surface the IsCurrent link at all. Leave currentInstanceId
+            // empty in that case rather than failing the whole call.
+            if (!r.ok && r.error.isEmpty())
+                r.error = !schemesErr.isEmpty()
+                          ? schemesErr
+                          : QStringLiteral("AMT_SystemPowerScheme enumeration returned no rows");
+            cb(std::move(r));
+        }
+    };
+    auto acc = std::make_shared<Acc>();
+    acc->cb = std::move(callback);
+
+    enumerateAll(client, kSystemPowerSchemeResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotSchemes = true;
+            acc->schemesErr = err;
+            for (const QByteArray &it : items) {
+                PowerScheme p;
+                p.instanceId  = findScalar(it, QStringLiteral("InstanceID"));
+                p.schemeGuid  = findScalar(it, QStringLiteral("SchemeGUID"));
+                p.description = findScalar(it, QStringLiteral("Description"));
+                if (!p.instanceId.isEmpty())
+                    acc->r.schemes.append(std::move(p));
+            }
+            acc->maybeFire();
+        });
+
+    enumerateAll(client, kElementSettingDataResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotAssoc = true;
+            acc->assocErr = err;
+            for (const QByteArray &it : items) {
+                const QString cur = extractCurrentPowerSchemeInstanceId(it);
+                if (!cur.isEmpty()) {
+                    acc->r.currentInstanceId = cur;
+                    break;
+                }
+            }
+            acc->maybeFire();
+        });
+}
+
+void setPowerScheme(WsmanClient *client, const QString &instanceId,
+                    std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("InstanceID"), instanceId);
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kSystemPowerSchemeResource),
+        QStringLiteral("SetPowerScheme"), selectors, {},
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            if (rv.isEmpty()) {
+                r.error = QStringLiteral("response had no ReturnValue");
+                return;
+            }
+            bool conv = false;
+            r.returnValue = rv.toInt(&conv);
+            r.ok = conv && r.returnValue == 0;
+            if (!r.ok && r.error.isEmpty())
+                r.error = QStringLiteral("SetPowerScheme returned %1").arg(rv);
+        },
+        std::move(callback));
 }
 
 void getTimeSettings(WsmanClient *client,

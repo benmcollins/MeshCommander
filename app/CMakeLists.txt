@@ -84,6 +84,7 @@ qt_add_qml_module(qumesh
         qml/OptInPrompt.qml
         qml/Paths.qml
         qml/PlatformErasePrompt.qml
+        qml/PowerPolicyDialog.qml
         qml/SecureErasePrompt.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml

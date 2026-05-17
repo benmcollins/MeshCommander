@@ -333,6 +333,39 @@ void setHighAccuracyTimeSync(WsmanClient *client,
                              qint64 ta0, qint64 tm1, qint64 tm2,
                              std::function<void(InvokeResult)> callback);
 
+/// One `AMT_SystemPowerScheme` row.
+struct PowerScheme
+{
+    QString instanceId;     ///< Selector value for `SetPowerScheme`.
+    QString schemeGuid;     ///< Matches Windows power-scheme GUIDs.
+    QString description;    ///< Localised; typically `"<num>:<label>"`.
+};
+
+/// Enumerated `AMT_SystemPowerScheme` rows plus the InstanceID of the
+/// currently-active scheme (determined by walking
+/// `CIM_ElementSettingData[IsCurrent=1]` for entries whose `SettingData`
+/// EPR points back at `AMT_SystemPowerScheme`). `currentInstanceId` is
+/// empty when the firmware didn't expose the association — the UI
+/// should treat that as "unknown" rather than "none active."
+struct PowerSchemesResult
+{
+    bool ok = false;
+    QString error;
+    QList<PowerScheme> schemes;
+    QString currentInstanceId;
+};
+
+/// Enumerate `AMT_SystemPowerScheme` and resolve which one is current
+/// via `CIM_ElementSettingData`. See #162.
+void getPowerSchemes(WsmanClient *client,
+                     std::function<void(PowerSchemesResult)> callback);
+
+/// Invoke `AMT_SystemPowerScheme.SetPowerScheme` to activate
+/// `instanceId`. The InstanceID lands in the selector set with no
+/// method-input fields.
+void setPowerScheme(WsmanClient *client, const QString &instanceId,
+                    std::function<void(InvokeResult)> callback);
+
 /// Read `AMT_BootCapabilities` — which boot-source-override flags the
 /// firmware will accept. Drives the gating of menu entries
 /// (Secure Erase / Platform Erase / HTTPS Boot etc.).
