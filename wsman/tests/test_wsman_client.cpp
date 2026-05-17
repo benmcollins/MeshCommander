@@ -41,6 +41,7 @@ private slots:
     void getAgentPresenceDecodesBase64DeviceIdAndStateEnums();
     void getEventSubscriptionsJoinsFiltersListenersAndSubscriptions();
     void getWakeAlarmsExtractsNestedStartTimeAndInterval();
+    void executeBrowsePrefixesClassNamesAndCarriesRawXml();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -2287,6 +2288,65 @@ void TestWsmanClient::getWakeAlarmsExtractsNestedStartTimeAndInterval()
     QCOMPARE(b.startTimeIso, QStringLiteral("2026-05-20T22:30:00Z"));
     QVERIFY(b.intervalIso.isEmpty());
     QCOMPARE(b.deleteOnCompletion, true);
+}
+
+void TestWsmanClient::executeBrowsePrefixesClassNamesAndCarriesRawXml()
+{
+    // The browser's contract: (a) a bare class name gets the right base
+    // URI prefix per the AMT_/IPS_/CIM_ convention, and (b) the raw
+    // response body lands in the result so the operator can read it.
+    QByteArray getRequestUri;
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     // Capture the ResourceURI off the first Get so we
+                     // can assert the prefix logic.
+                     const int s = body.indexOf("<w:ResourceURI>");
+                     if (s >= 0 && getRequestUri.isEmpty()) {
+                         const int e = body.indexOf("</w:ResourceURI>", s);
+                         if (e > s)
+                             getRequestUri = body.mid(s + 15, e - (s + 15));
+                     }
+                     constexpr const char *resp =
+                         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                         "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                         " xmlns:g=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_GeneralSettings\">"
+                         "<s:Header/><s:Body>"
+                         "<g:AMT_GeneralSettings>"
+                         "<g:HostName>test-host</g:HostName>"
+                         "</g:AMT_GeneralSettings>"
+                         "</s:Body></s:Envelope>";
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                QByteArray(resp));
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    WsmanBrowseResult result;
+    QEventLoop loop;
+    executeBrowse(&client, QStringLiteral("AMT_GeneralSettings"),
+                  BrowseKind::Get, {},
+                  [&](WsmanBrowseResult r) { result = r; loop.quit(); });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.kind, BrowseKind::Get);
+    // Prefix expansion: bare `AMT_*` → Intel AMT schema URI.
+    QCOMPARE(getRequestUri,
+             QByteArrayLiteral(
+                 "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_GeneralSettings"));
+    // The raw response body lands in `xml` for the operator to read.
+    QVERIFY2(result.xml.contains("<g:HostName>test-host</g:HostName>"),
+             result.xml.constData());
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

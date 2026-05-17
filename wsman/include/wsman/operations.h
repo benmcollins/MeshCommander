@@ -474,6 +474,32 @@ struct WakeAlarmsResult
 void getWakeAlarms(WsmanClient *client,
                    std::function<void(WakeAlarmsResult)> callback);
 
+/// Which WSMAN operation the browser tool (#167) should fire.
+enum class BrowseKind { Get, Enumerate };
+
+/// Output of `executeBrowse` — the raw response body. For `Enumerate`
+/// the per-item XML from each `Pull` is concatenated under a synthetic
+/// `<Items>` wrapper so the caller can show the whole walk at once.
+struct WsmanBrowseResult
+{
+    bool ok = false;
+    QString error;
+    BrowseKind kind = BrowseKind::Get;
+    QByteArray xml;          ///< Raw response body (or merged pull items).
+    int itemCount = 0;       ///< For `Enumerate`; 0 otherwise.
+};
+
+/// Free-form WSMAN browser (#167). Auto-prefixes bare class names:
+///   - `AMT_*` → `http://intel.com/wbem/wscim/1/amt-schema/1/<name>`
+///   - `IPS_*` → `http://intel.com/wbem/wscim/1/ips-schema/1/<name>`
+///   - `CIM_*` → `http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/<name>`
+/// otherwise `classOrUri` is used as-is. `selectors` apply only when
+/// `kind == Get` (Enumerate ignores them).
+void executeBrowse(WsmanClient *client, const QString &classOrUri,
+                   BrowseKind kind,
+                   const QHash<QString, QString> &selectors,
+                   std::function<void(WsmanBrowseResult)> callback);
+
 /// Read `AMT_BootCapabilities` — which boot-source-override flags the
 /// firmware will accept. Drives the gating of menu entries
 /// (Secure Erase / Platform Erase / HTTPS Boot etc.).

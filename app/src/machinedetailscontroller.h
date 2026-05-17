@@ -170,6 +170,11 @@ class MachineDetailsController : public QObject
     // controller so the QML can render in a single binding.
     Q_PROPERTY(QVariantList wakeAlarms READ wakeAlarms NOTIFY wakeAlarmsChanged)
 
+    // WSMAN browser (#167) — dev tool. Set by the most recent
+    // `wsmanBrowse()` call.
+    Q_PROPERTY(QVariantMap wsmanBrowseResult READ wsmanBrowseResult
+                   NOTIFY wsmanBrowseResultChanged)
+
     // Boot capabilities — which power-to-X menu entries we show.
     Q_PROPERTY(bool capBiosSetup READ capBiosSetup NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capBiosPause READ capBiosPause NOTIFY bootCapabilitiesChanged)
@@ -299,6 +304,7 @@ public:
     [[nodiscard]] QVariantMap  agentPresence() const     { return m_agentPresence; }
     [[nodiscard]] QVariantMap  eventSubscriptions() const { return m_eventSubscriptions; }
     [[nodiscard]] QVariantList wakeAlarms() const        { return m_wakeAlarms; }
+    [[nodiscard]] QVariantMap  wsmanBrowseResult() const { return m_wsmanBrowseResult; }
 
     /// Fetch the overview bundle (identify + general settings + system +
     /// power state). Each completes independently; the QML side just
@@ -329,6 +335,12 @@ public:
     /// Enumerate IPS_AlarmClockOccurrence for the Wake alarms pane.
     /// See #161 phase A.
     Q_INVOKABLE void refreshWakeAlarms();
+    /// Fire one WSMAN Get or Enumerate against `classOrUri`. `kind` is
+    /// the string `"get"` or `"enumerate"`. `selectors` is a key→value
+    /// map applied to Get only. Result lands in `wsmanBrowseResult`.
+    Q_INVOKABLE void wsmanBrowse(const QString &classOrUri,
+                                 const QString &kind,
+                                 const QVariantMap &selectors);
     /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.
     /// Auto-called as part of `refreshPower` so the dialog is ready
     /// when the operator clicks the Power Policy button. See #162.
@@ -448,6 +460,7 @@ signals:
     void agentPresenceChanged();
     void eventSubscriptionsChanged();
     void wakeAlarmsChanged();
+    void wsmanBrowseResultChanged();
     void optInStatusChanged();
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
@@ -613,6 +626,7 @@ private:
     QVariantMap  m_agentPresence;
     QVariantMap  m_eventSubscriptions;
     QVariantList m_wakeAlarms;
+    QVariantMap  m_wsmanBrowseResult;
 
     bool m_optInRequired = false;
     int m_optInState = 0;
