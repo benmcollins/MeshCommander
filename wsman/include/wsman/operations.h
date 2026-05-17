@@ -321,6 +321,18 @@ void getEthernetSettings(WsmanClient *client,
 void getTimeSettings(WsmanClient *client,
                      std::function<void(TimeSettingsResult)> callback);
 
+/// Invoke `AMT_TimeSynchronizationService.SetHighAccuracyTimeSynch` to
+/// correct the AMT clock. The protocol is a 3-point exchange: the
+/// caller first reads `Ta0` from `GetLowAccuracyTimeSynch`, records
+/// `Tm1` (the host's clock at the moment the response arrived) and
+/// `Tm2` (the host's clock at the moment of sending this Set), and
+/// passes all three back. The firmware uses the difference to compute
+/// its drift and adjusts. `ReturnValue == 0` means accepted. All three
+/// timestamps are seconds-since-1970-UTC.
+void setHighAccuracyTimeSync(WsmanClient *client,
+                             qint64 ta0, qint64 tm1, qint64 tm2,
+                             std::function<void(InvokeResult)> callback);
+
 /// Read `AMT_BootCapabilities` — which boot-source-override flags the
 /// firmware will accept. Drives the gating of menu entries
 /// (Secure Erase / Platform Erase / HTTPS Boot etc.).

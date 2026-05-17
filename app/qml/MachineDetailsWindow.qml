@@ -1684,11 +1684,24 @@ AppWindow {
                         }
                     }
 
-                    FlatButton {
-                        text: qsTr("Refresh")
+                    RowLayout {
                         Layout.leftMargin: 24
-                        enabled: !controller.busy
-                        onClicked: controller.refreshTime()
+                        spacing: 8
+
+                        FlatButton {
+                            text: qsTr("Refresh")
+                            enabled: !controller.busy
+                            onClicked: controller.refreshTime()
+                        }
+                        AccentButton {
+                            text: qsTr("Sync now")
+                            // No live skew until the first read — disable
+                            // the action so the operator doesn't push
+                            // garbage (host_now ≈ 0 device epoch) at the
+                            // firmware.
+                            enabled: !controller.busy && controller.amtEpoch !== 0
+                            onClicked: controller.syncDeviceTime()
+                        }
                     }
 
                     Item { Layout.fillHeight: true }

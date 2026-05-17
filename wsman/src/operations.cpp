@@ -891,6 +891,34 @@ void getTimeSettings(WsmanClient *client,
         std::move(callback));
 }
 
+void setHighAccuracyTimeSync(WsmanClient *client,
+                             qint64 ta0, qint64 tm1, qint64 tm2,
+                             std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("Ta0"), QString::number(ta0));
+    params.insert(QStringLiteral("Tm1"), QString::number(tm1));
+    params.insert(QStringLiteral("Tm2"), QString::number(tm2));
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kTimeSyncResource),
+        QStringLiteral("SetHighAccuracyTimeSynch"), {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            if (rv.isEmpty()) {
+                r.error = QStringLiteral("response had no ReturnValue");
+                return;
+            }
+            bool conv = false;
+            r.returnValue = rv.toInt(&conv);
+            r.ok = conv && r.returnValue == 0;
+            if (!r.ok && r.error.isEmpty())
+                r.error = QStringLiteral("SetHighAccuracyTimeSynch returned %1").arg(rv);
+        },
+        std::move(callback));
+}
+
 namespace {
 
 QString endpointStr(WsmanClient *client)

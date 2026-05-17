@@ -3,6 +3,8 @@
 
 #include "machinedetailscontroller.h"
 
+#include <QDateTime>
+
 #include "wsman/operations.h"
 #include "wsman/wsman_client.h"
 
@@ -694,6 +696,50 @@ void MachineDetailsController::refreshTime()
             }
             decInflight();
 
+        });
+}
+
+void MachineDetailsController::syncDeviceTime()
+{
+    if (deferIfSshConnecting(PendingTime)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot sync."));
+        return;
+    }
+    incInflight();
+    // The 3-point exchange: read Ta0 from the device, record the host
+    // clock at receive (Tm1) and send (Tm2 — same instant in this
+    // simple flow), then push them back. The firmware uses the gap to
+    // compute drift and corrects. After success, re-read to update the
+    // skew display.
+    qumesh::wsman::getTimeSettings(m_client,
+        [this](qumesh::wsman::TimeSettingsResult r) {
+            if (!r.ok) {
+                if (!r.error.isEmpty())
+                    setLastError(QStringLiteral("Time sync (read): %1").arg(r.error));
+                decInflight();
+                return;
+            }
+            const qint64 ta0 = r.secondsSinceEpoch;
+            const qint64 tmHost = QDateTime::currentSecsSinceEpoch();
+            qumesh::wsman::setHighAccuracyTimeSync(m_client, ta0, tmHost, tmHost,
+                [this](qumesh::wsman::InvokeResult inv) {
+                    if (!inv.ok && !inv.error.isEmpty()) {
+                        setLastError(QStringLiteral("Time sync (set): %1").arg(inv.error));
+                        decInflight();
+                        return;
+                    }
+                    // Re-read after sync so the QML skew row falls to ~0.
+                    qumesh::wsman::getTimeSettings(m_client,
+                        [this](qumesh::wsman::TimeSettingsResult rr) {
+                            if (rr.ok) {
+                                m_amtEpoch = rr.secondsSinceEpoch;
+                                emit timeChanged();
+                            }
+                            decInflight();
+                        });
+                });
         });
 }
 
