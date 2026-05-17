@@ -1604,6 +1604,16 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                 ColumnLayout {
                     spacing: 8
 
+                    // Hidden-account toggle drives the model filter
+                    // below. AMT marks internal accounts with names
+                    // starting in `$$` (e.g. `$$OsAdmin`); operators
+                    // rarely want to see them.
+                    property bool showHidden: false
+                    function filteredAccounts() {
+                        if (showHidden) return controller.userAccounts;
+                        return (controller.userAccounts || []).filter(a => !a.hidden);
+                    }
+
                     ColumnLayout {
                         spacing: 4
                         Layout.fillWidth: true
@@ -1619,16 +1629,27 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             font.letterSpacing: 2
                             font.weight: Font.Medium
                         }
-                        Text {
-                            text: controller.userAccounts.length === 0
-                                ? qsTr("No accounts.")
-                                : qsTr("%1 accounts").arg(controller.userAccounts.length)
-                            color: Colors.text
-                            font.family: Type.sans
-                            font.pixelSize: 20
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 12
+                            Text {
+                                text: controller.userAccounts.length === 0
+                                    ? qsTr("No accounts.")
+                                    : qsTr("%1 accounts")
+                                        .arg(parent.parent.parent.filteredAccounts().length)
+                                color: Colors.text
+                                font.family: Type.sans
+                                font.pixelSize: 20
+                                Layout.fillWidth: true
+                            }
+                            CheckBox {
+                                text: qsTr("Show hidden ($$)")
+                                checked: parent.parent.parent.showHidden
+                                onToggled: parent.parent.parent.showHidden = checked
+                            }
                         }
                         Text {
-                            text: qsTr("Read-only — adding / editing accounts comes in a follow-up.")
+                            text: qsTr("Read-only — adding / editing accounts comes in a follow-up PR.")
                             color: Colors.textFaint
                             font.family: Type.sans
                             font.pixelSize: Type.sizeXs
@@ -1642,14 +1663,14 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                         Layout.rightMargin: 24
                         Layout.bottomMargin: 24
                         clip: true
-                        model: controller.userAccounts
+                        model: parent.filteredAccounts()
                         ScrollBar.vertical: ScrollBar {}
 
                         delegate: Rectangle {
                             required property var modelData
                             required property int index
                             width: ListView.view.width
-                            implicitHeight: 48
+                            implicitHeight: 56
                             color: index % 2 === 0 ? "transparent" : Colors.elevated
                             ColumnLayout {
                                 anchors.fill: parent
@@ -1664,14 +1685,30 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                     Layout.fillWidth: true
 
                                     Text {
-                                        text: modelData.elementName.length > 0
-                                              ? modelData.elementName
-                                              : (modelData.name || qsTr("(unnamed)"))
+                                        text: modelData.name || qsTr("(unnamed)")
                                         color: Colors.text
                                         font.family: Type.sans
                                         font.pixelSize: Type.sizeM
                                         elide: Text.ElideRight
                                         Layout.fillWidth: true
+                                    }
+                                    Text {
+                                        visible: modelData.handle === -1
+                                        text: qsTr("ADMIN")
+                                        color: Colors.accent
+                                        font.family: Type.sans
+                                        font.pixelSize: 9
+                                        font.weight: Font.Medium
+                                        font.letterSpacing: 1
+                                    }
+                                    Text {
+                                        visible: modelData.isKerberos === true
+                                        text: qsTr("KERBEROS")
+                                        color: Colors.textMuted
+                                        font.family: Type.sans
+                                        font.pixelSize: 9
+                                        font.weight: Font.Medium
+                                        font.letterSpacing: 1
                                     }
                                     Text {
                                         visible: !modelData.enabled
@@ -1685,9 +1722,19 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 }
 
                                 Text {
-                                    text: modelData.instanceID || ""
-                                    color: Colors.textFaint
-                                    font.family: Type.mono
+                                    text: {
+                                        if (modelData.handle === -1)
+                                            return qsTr("Administrator (full access)");
+                                        if (modelData.isAdmin)
+                                            return modelData.accessPermissionLabel
+                                                + " · " + qsTr("Administrator");
+                                        const r = modelData.realmsLabel || "";
+                                        return r.length > 0
+                                            ? modelData.accessPermissionLabel + " · " + r
+                                            : modelData.accessPermissionLabel;
+                                    }
+                                    color: Colors.textMuted
+                                    font.family: Type.sans
                                     font.pixelSize: Type.sizeXs
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
