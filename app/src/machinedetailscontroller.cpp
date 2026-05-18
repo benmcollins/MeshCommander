@@ -1702,6 +1702,222 @@ void MachineDetailsController::refreshUserAccounts()
         });
 }
 
+void MachineDetailsController::addUserAccount(const QVariantMap &fields)
+{
+    setLastError({});
+    const QString username = fields.value(QStringLiteral("digestUsername"))
+                                  .toString().trimmed();
+    const QString plaintext = fields.value(QStringLiteral("password")).toString();
+    if (username.isEmpty()) {
+        setLastError(QStringLiteral("Add user: username is empty."));
+        return;
+    }
+    if (plaintext.isEmpty()) {
+        setLastError(QStringLiteral("Add user: password is empty."));
+        return;
+    }
+    if (m_digestRealm.isEmpty()) {
+        setLastError(QStringLiteral(
+            "Add user: digest realm unknown — refresh General Settings first."));
+        return;
+    }
+    const int access = fields.value(QStringLiteral("accessPermission"), 2).toInt();
+    const QVariantList rin = fields.value(QStringLiteral("realms")).toList();
+    QList<int> realms;
+    realms.reserve(rin.size());
+    for (const QVariant &v : rin)
+        realms.append(v.toInt());
+
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Add user: host is empty."));
+        return;
+    }
+    const QString digestPw = qumesh::wsman::computeDigestPassword(
+        username, m_digestRealm, plaintext);
+    incInflight();
+    qumesh::wsman::addUserAclEntryEx(m_client, username, digestPw, access, realms,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Add user: failed.")
+                    : QStringLiteral("Add user: %1").arg(r.error));
+                return;
+            }
+            refreshUserAccounts();
+        });
+}
+
+void MachineDetailsController::updateUserAccount(int handle,
+                                                 const QVariantMap &patch)
+{
+    setLastError({});
+    if (handle < 0) {
+        setLastError(QStringLiteral(
+            "Update user: admin entry must be rotated via setAdminPassword."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Update user: host is empty."));
+        return;
+    }
+
+    qumesh::wsman::UserAclEntryPatch p;
+    if (patch.contains(QStringLiteral("digestUsername"))) {
+        p.setDigestUsername = true;
+        p.digestUsername =
+            patch.value(QStringLiteral("digestUsername")).toString();
+    }
+    if (patch.contains(QStringLiteral("password"))) {
+        if (m_digestRealm.isEmpty()) {
+            setLastError(QStringLiteral(
+                "Update user: digest realm unknown — refresh first."));
+            return;
+        }
+        // Username for digest derivation: prefer the patched username if
+        // present (rename + repassword in one go), otherwise look up
+        // the existing one from the cached account list.
+        QString u = p.setDigestUsername ? p.digestUsername : QString();
+        if (u.isEmpty()) {
+            for (const QVariant &v : std::as_const(m_userAccounts)) {
+                const auto m = v.toMap();
+                if (m.value(QStringLiteral("handle")).toInt() == handle) {
+                    u = m.value(QStringLiteral("digestUsername")).toString();
+                    break;
+                }
+            }
+        }
+        if (u.isEmpty()) {
+            setLastError(QStringLiteral(
+                "Update user: cannot resolve current username for digest."));
+            return;
+        }
+        p.setDigestPassword = true;
+        p.digestPassword = qumesh::wsman::computeDigestPassword(
+            u, m_digestRealm,
+            patch.value(QStringLiteral("password")).toString());
+    }
+    if (patch.contains(QStringLiteral("accessPermission"))) {
+        p.setAccessPermission = true;
+        p.accessPermission =
+            patch.value(QStringLiteral("accessPermission")).toInt();
+    }
+    if (patch.contains(QStringLiteral("realms"))) {
+        p.setRealms = true;
+        const QVariantList rin = patch.value(QStringLiteral("realms")).toList();
+        p.realms.reserve(rin.size());
+        for (const QVariant &v : rin)
+            p.realms.append(v.toInt());
+    }
+
+    incInflight();
+    qumesh::wsman::updateUserAclEntryEx(m_client, handle, p,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Update user: failed.")
+                    : QStringLiteral("Update user: %1").arg(r.error));
+                return;
+            }
+            refreshUserAccounts();
+        });
+}
+
+void MachineDetailsController::removeUserAccount(int handle)
+{
+    setLastError({});
+    if (handle < 0) {
+        setLastError(QStringLiteral("Remove user: cannot delete the admin entry."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Remove user: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::removeUserAclEntry(m_client, handle,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Remove user: failed.")
+                    : QStringLiteral("Remove user: %1").arg(r.error));
+                return;
+            }
+            refreshUserAccounts();
+        });
+}
+
+void MachineDetailsController::setAccountEnabled(int handle, bool enabled)
+{
+    setLastError({});
+    if (handle < 0) {
+        setLastError(QStringLiteral(
+            "Set enabled: cannot disable the admin entry."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Set enabled: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::setAclEnabledState(m_client, handle, enabled,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Set enabled: failed.")
+                    : QStringLiteral("Set enabled: %1").arg(r.error));
+                return;
+            }
+            refreshUserAccounts();
+        });
+}
+
+void MachineDetailsController::setAdminPassword(const QString &username,
+                                                const QString &newPassword)
+{
+    setLastError({});
+    const QString u = username.trimmed();
+    if (u.isEmpty()) {
+        setLastError(QStringLiteral("Admin: username is empty."));
+        return;
+    }
+    if (newPassword.isEmpty()) {
+        setLastError(QStringLiteral("Admin: password is empty."));
+        return;
+    }
+    if (m_digestRealm.isEmpty()) {
+        setLastError(QStringLiteral(
+            "Admin: digest realm unknown — refresh General Settings first."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Admin: host is empty."));
+        return;
+    }
+    const QString digestPw =
+        qumesh::wsman::computeDigestPassword(u, m_digestRealm, newPassword);
+    incInflight();
+    qumesh::wsman::setAdminAclEntryEx(m_client, u, digestPw,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Admin: failed.")
+                    : QStringLiteral("Admin: %1").arg(r.error));
+                return;
+            }
+            refreshUserAccounts();
+        });
+}
+
 void MachineDetailsController::refreshPower()
 {
     if (deferIfSshConnecting(PendingPower)) return;

@@ -7,6 +7,7 @@
 #include "wsman/wsman_client.h"
 
 
+#include <QCryptographicHash>
 #include <QHostAddress>
 #include <QObject>
 #include <QUuid>
@@ -2372,6 +2373,152 @@ void enumerateUserAccounts(WsmanClient *client,
             });
     };
     (*enumStep)(1);
+}
+
+QString computeDigestPassword(const QString &username, const QString &realm,
+                              const QString &plaintext)
+{
+    QCryptographicHash md5(QCryptographicHash::Md5);
+    md5.addData(username.toUtf8());
+    md5.addData(QByteArrayLiteral(":"));
+    md5.addData(realm.toUtf8());
+    md5.addData(QByteArrayLiteral(":"));
+    md5.addData(plaintext.toUtf8());
+    return QString::fromLatin1(md5.result().toBase64());
+}
+
+namespace {
+
+/// Common reply parser for the five `AMT_AuthorizationService` write
+/// invokes. They all return a `ReturnValue` scalar where 0 = success
+/// and any other code is an error AMT enumerates by name; surface the
+/// raw number so the operator sees something actionable in
+/// `lastError`.
+auto aclReturnValueExtractor(const QString &what)
+{
+    return [what](const QByteArray &body, InvokeResult &r) {
+        const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+        r.returnValue = rv.toInt();
+        r.ok = (r.returnValue == 0);
+        if (!r.ok) {
+            r.error = QStringLiteral("%1 returned %2").arg(what,
+                rv.isEmpty() ? QStringLiteral("(no ReturnValue)") : rv);
+        }
+    };
+}
+
+QList<QPair<QString, QString>> realmsAsRepeatedParams(const QList<int> &realms)
+{
+    QList<QPair<QString, QString>> out;
+    out.reserve(realms.size());
+    for (int r : realms) {
+        out.append({ QStringLiteral("Realms"), QString::number(r) });
+    }
+    return out;
+}
+
+} // namespace
+
+void addUserAclEntryEx(WsmanClient *client, const QString &digestUsername,
+                       const QString &digestPassword, int accessPermission,
+                       const QList<int> &realms,
+                       std::function<void(InvokeResult)> callback)
+{
+    // DigestUsername / DigestPassword / AccessPermission / Realms…
+    // The XML order matches the legacy MeshCommander invocation; AMT
+    // is order-tolerant but matching the legacy shape avoids surprises
+    // with older firmware.
+    QList<QPair<QString, QString>> params;
+    params.append({ QStringLiteral("DigestUsername"), digestUsername });
+    params.append({ QStringLiteral("DigestPassword"), digestPassword });
+    params.append({ QStringLiteral("AccessPermission"),
+                    QString::number(accessPermission) });
+    params.append(realmsAsRepeatedParams(realms));
+
+    const QByteArray env = buildInvokeEnvelopeOrdered(
+        QString::fromLatin1(kAuthorizationServiceResource),
+        QStringLiteral("AddUserAclEntryEx"),
+        /*selectors*/ {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        aclReturnValueExtractor(QStringLiteral("AddUserAclEntryEx")),
+        std::move(callback));
+}
+
+void updateUserAclEntryEx(WsmanClient *client, int handle,
+                          const UserAclEntryPatch &patch,
+                          std::function<void(InvokeResult)> callback)
+{
+    QList<QPair<QString, QString>> params;
+    params.append({ QStringLiteral("Handle"), QString::number(handle) });
+    if (patch.setDigestUsername)
+        params.append({ QStringLiteral("DigestUsername"), patch.digestUsername });
+    if (patch.setDigestPassword)
+        params.append({ QStringLiteral("DigestPassword"), patch.digestPassword });
+    if (patch.setAccessPermission) {
+        params.append({ QStringLiteral("AccessPermission"),
+                        QString::number(patch.accessPermission) });
+    }
+    if (patch.setRealms)
+        params.append(realmsAsRepeatedParams(patch.realms));
+
+    const QByteArray env = buildInvokeEnvelopeOrdered(
+        QString::fromLatin1(kAuthorizationServiceResource),
+        QStringLiteral("UpdateUserAclEntryEx"),
+        /*selectors*/ {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        aclReturnValueExtractor(QStringLiteral("UpdateUserAclEntryEx")),
+        std::move(callback));
+}
+
+void removeUserAclEntry(WsmanClient *client, int handle,
+                        std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("Handle"), QString::number(handle));
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kAuthorizationServiceResource),
+        QStringLiteral("RemoveUserAclEntry"),
+        /*selectors*/ {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        aclReturnValueExtractor(QStringLiteral("RemoveUserAclEntry")),
+        std::move(callback));
+}
+
+void setAclEnabledState(WsmanClient *client, int handle, bool enabled,
+                        std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("Handle"), QString::number(handle));
+    params.insert(QStringLiteral("Enabled"),
+                  enabled ? QStringLiteral("true") : QStringLiteral("false"));
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kAuthorizationServiceResource),
+        QStringLiteral("SetAclEnabledState"),
+        /*selectors*/ {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        aclReturnValueExtractor(QStringLiteral("SetAclEnabledState")),
+        std::move(callback));
+}
+
+void setAdminAclEntryEx(WsmanClient *client, const QString &username,
+                        const QString &digestPassword,
+                        std::function<void(InvokeResult)> callback)
+{
+    QList<QPair<QString, QString>> params;
+    params.append({ QStringLiteral("Username"), username });
+    params.append({ QStringLiteral("DigestPassword"), digestPassword });
+    const QByteArray env = buildInvokeEnvelopeOrdered(
+        QString::fromLatin1(kAuthorizationServiceResource),
+        QStringLiteral("SetAdminAclEntryEx"),
+        /*selectors*/ {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        aclReturnValueExtractor(QStringLiteral("SetAdminAclEntryEx")),
+        std::move(callback));
 }
 
 namespace {

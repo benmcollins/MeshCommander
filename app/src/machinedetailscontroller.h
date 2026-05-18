@@ -350,6 +350,34 @@ public:
     Q_INVOKABLE void refreshPower();
     Q_INVOKABLE void refreshEventLog();
     Q_INVOKABLE void refreshUserAccounts();
+
+    /// Invoke `AMT_AuthorizationService.AddUserAclEntryEx`. `fields`
+    /// keys: `digestUsername` (string), `password` (cleartext string —
+    /// hashed against the device's digest realm before transmission),
+    /// `accessPermission` (int, 0/1/2), `realms` (QVariantList of int
+    /// bit-indices). Errors land on `lastError`; on success the user
+    /// list re-fetches. See #156.
+    Q_INVOKABLE void addUserAccount(const QVariantMap &fields);
+
+    /// Partial update for an existing user. `patch` keys are any of
+    /// `digestUsername`, `password`, `accessPermission`, `realms`.
+    /// Only present fields are sent. See #156.
+    Q_INVOKABLE void updateUserAccount(int handle, const QVariantMap &patch);
+
+    /// Invoke `RemoveUserAclEntry`. The QML side guards against
+    /// deleting the operator's own row before calling. See #156.
+    Q_INVOKABLE void removeUserAccount(int handle);
+
+    /// Invoke `SetAclEnabledState`. The QML side guards against
+    /// disabling the operator's own row before calling. See #156.
+    Q_INVOKABLE void setAccountEnabled(int handle, bool enabled);
+
+    /// Invoke `SetAdminAclEntryEx` — rotates the AMT admin entry's
+    /// username and/or password. AMT preserves the admin's realm
+    /// allocation across the rotation. See #156.
+    Q_INVOKABLE void setAdminPassword(const QString &username,
+                                      const QString &newPassword);
+
     Q_INVOKABLE void refreshHardware();
     Q_INVOKABLE void refreshAuditLog();
     Q_INVOKABLE void refreshDeviceCerts();

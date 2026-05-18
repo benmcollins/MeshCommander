@@ -1156,6 +1156,69 @@ void enumerateEventLog(WsmanClient *client,
 void enumerateUserAccounts(WsmanClient *client,
                             std::function<void(UserAccountsResult)> callback);
 
+/// Compute the digest-password representation `AMT_AuthorizationService`
+/// wants: `base64(MD5(username + ":" + realm + ":" + plaintext))`. Pure
+/// function — tested in isolation. The realm comes from
+/// `AMT_GeneralSettings.DigestRealm`. AMT verifies the resulting digest
+/// against the same HTTP-digest hash it would compute internally for
+/// the next session.
+[[nodiscard]] QString computeDigestPassword(const QString &username,
+                                            const QString &realm,
+                                            const QString &plaintext);
+
+/// Patch payload for `updateUserAclEntryEx`. Each `set*` flag gates
+/// whether the corresponding field is included in the invoke; unset
+/// fields preserve their existing value. `realms` is the new full
+/// realm set when `setRealms` is true (AMT does not merge).
+struct UserAclEntryPatch
+{
+    bool setDigestUsername = false;   QString digestUsername;
+    /// Pre-hashed digest password — caller computes via
+    /// `computeDigestPassword`. Set only on actual rotation.
+    bool setDigestPassword = false;   QString digestPassword;
+    bool setAccessPermission = false; int accessPermission = 2;
+    bool setRealms = false;           QList<int> realms;
+};
+
+/// Invoke `AMT_AuthorizationService.AddUserAclEntryEx`. AMT assigns a
+/// fresh `Handle` to the new entry which the read-side re-enumeration
+/// surfaces; this call doesn't report the handle itself, just the
+/// `ReturnValue`. `digestPassword` is the output of
+/// `computeDigestPassword`. See #156.
+void addUserAclEntryEx(WsmanClient *client, const QString &digestUsername,
+                       const QString &digestPassword, int accessPermission,
+                       const QList<int> &realms,
+                       std::function<void(InvokeResult)> callback);
+
+/// Invoke `AMT_AuthorizationService.UpdateUserAclEntryEx`. `handle` is
+/// the existing per-AMT handle from the read side. Only patch-set
+/// fields are sent in the body. See #156.
+void updateUserAclEntryEx(WsmanClient *client, int handle,
+                          const UserAclEntryPatch &patch,
+                          std::function<void(InvokeResult)> callback);
+
+/// Invoke `AMT_AuthorizationService.RemoveUserAclEntry(Handle)`.
+/// Deleting the AMT admin is firmware-protected; deleting the
+/// operator's own row is allowed by AMT but locks the session out —
+/// the controller / QML side adds a guard. See #156.
+void removeUserAclEntry(WsmanClient *client, int handle,
+                        std::function<void(InvokeResult)> callback);
+
+/// Invoke `AMT_AuthorizationService.SetAclEnabledState(Handle, Enabled)`.
+/// Disabling an account preserves the entry but rejects auth attempts
+/// against it. See #156.
+void setAclEnabledState(WsmanClient *client, int handle, bool enabled,
+                        std::function<void(InvokeResult)> callback);
+
+/// Invoke `AMT_AuthorizationService.SetAdminAclEntryEx(Username,
+/// DigestPassword)`. Rotates the AMT admin credentials. `digestPassword`
+/// is `computeDigestPassword(username, realm, plaintext)`. Admin realms
+/// are firmware-fixed — only the username + password change here.
+/// See #156.
+void setAdminAclEntryEx(WsmanClient *client, const QString &username,
+                        const QString &digestPassword,
+                        std::function<void(InvokeResult)> callback);
+
 /// Run the full boot-source-override chain:
 ///   1. ChangeBootOrder(null)   — clear the boot order
 ///   2. Put AMT_BootSettingData — write the action's flags

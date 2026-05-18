@@ -66,6 +66,9 @@ qt_add_qml_module(qumesh
         qml/EditComputerDialog.qml
         qml/ScanDialog.qml
         qml/HttpProxyDialog.qml
+        qml/UserAccountDialog.qml
+        qml/AdminPasswordDialog.qml
+        qml/ConfirmDialog.qml
         qml/MigrationBanner.qml
         qml/TitleBar.qml
         qml/StatusBar.qml

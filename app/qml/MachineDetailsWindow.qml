@@ -150,6 +150,34 @@ AppWindow {
         }
     }
 
+    UserAccountDialog {
+        id: userAccountDialog
+        controller: controller
+    }
+
+    AdminPasswordDialog {
+        id: adminPasswordDialog
+        controller: controller
+    }
+
+    ConfirmDialog {
+        id: confirmDialog
+        // The user-accounts pane stashes the row + action here before
+        // opening; the proceed handler reads them back. Two-property
+        // pattern lets one ConfirmDialog instance serve every delete
+        // / disable callsite without per-action component instances.
+        property int pendingHandle: -1
+        property string pendingAction: ""
+        onProceed: {
+            if (pendingAction === "delete")
+                controller.removeUserAccount(pendingHandle);
+            else if (pendingAction === "disable")
+                controller.setAccountEnabled(pendingHandle, false);
+            pendingHandle = -1;
+            pendingAction = "";
+        }
+    }
+
     // Surfaces a Put-rejected message when the AMT login can't modify
     // the consent policy. Cleared on the next successful refresh.
     Connections {
@@ -2769,11 +2797,35 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 onToggled: parent.parent.parent.showHidden = checked
                             }
                         }
-                        Text {
-                            text: qsTr("Read-only — adding / editing accounts comes in a follow-up PR.")
-                            color: Colors.textFaint
-                            font.family: Type.sans
-                            font.pixelSize: Type.sizeXs
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Item { Layout.fillWidth: true }
+                            FlatButton {
+                                text: qsTr("Rotate admin…")
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                                onClicked: {
+                                    // Default the dialog's username to the
+                                    // admin row we already enumerated, if
+                                    // any — otherwise it stays blank.
+                                    let adminUser = "";
+                                    for (let i = 0; i < (controller.userAccounts || []).length; ++i) {
+                                        const a = controller.userAccounts[i];
+                                        if (a.handle === -1) {
+                                            adminUser = a.digestUsername || "";
+                                            break;
+                                        }
+                                    }
+                                    adminPasswordDialog.openForRotate(adminUser);
+                                }
+                            }
+                            AccentButton {
+                                text: qsTr("Add account…")
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                                onClicked: userAccountDialog.openForAdd()
+                            }
                         }
                     }
 
@@ -2842,23 +2894,85 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                     }
                                 }
 
-                                Text {
-                                    text: {
-                                        if (modelData.handle === -1)
-                                            return qsTr("Administrator (full access)");
-                                        if (modelData.isAdmin)
-                                            return modelData.accessPermissionLabel
-                                                + " · " + qsTr("Administrator");
-                                        const r = modelData.realmsLabel || "";
-                                        return r.length > 0
-                                            ? modelData.accessPermissionLabel + " · " + r
-                                            : modelData.accessPermissionLabel;
-                                    }
-                                    color: Colors.textMuted
-                                    font.family: Type.sans
-                                    font.pixelSize: Type.sizeXs
-                                    elide: Text.ElideRight
+                                RowLayout {
                                     Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Text {
+                                        text: {
+                                            if (modelData.handle === -1)
+                                                return qsTr("Administrator (full access)");
+                                            if (modelData.isAdmin)
+                                                return modelData.accessPermissionLabel
+                                                    + " · " + qsTr("Administrator");
+                                            const r = modelData.realmsLabel || "";
+                                            return r.length > 0
+                                                ? modelData.accessPermissionLabel + " · " + r
+                                                : modelData.accessPermissionLabel;
+                                        }
+                                        color: Colors.textMuted
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+
+                                    // Per-row actions. Admin entry only
+                                    // supports rotation via the top-bar
+                                    // button so the row actions are hidden.
+                                    FlatButton {
+                                        visible: modelData.handle !== -1
+                                                 && !modelData.isKerberos
+                                        text: qsTr("Edit")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        onClicked: userAccountDialog.openForEdit(modelData)
+                                    }
+                                    FlatButton {
+                                        visible: modelData.handle !== -1
+                                        text: modelData.enabled
+                                            ? qsTr("Disable")
+                                            : qsTr("Enable")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        onClicked: {
+                                            const isOwnRow = modelData.digestUsername
+                                                === controller.user;
+                                            if (modelData.enabled && isOwnRow) {
+                                                confirmDialog.ask(
+                                                    qsTr("Disable your own account?"),
+                                                    qsTr("This will lock your current AMT session out. You'll need another account to reconnect."),
+                                                    qsTr("Disable anyway"),
+                                                    true);
+                                                confirmDialog.pendingHandle = modelData.handle;
+                                                confirmDialog.pendingAction = "disable";
+                                            } else {
+                                                controller.setAccountEnabled(
+                                                    modelData.handle, !modelData.enabled);
+                                            }
+                                        }
+                                    }
+                                    FlatButton {
+                                        visible: modelData.handle !== -1
+                                        text: qsTr("Delete")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        onClicked: {
+                                            const isOwnRow = modelData.digestUsername
+                                                === controller.user;
+                                            confirmDialog.ask(
+                                                isOwnRow
+                                                    ? qsTr("Delete your own account?")
+                                                    : qsTr("Delete user account?"),
+                                                isOwnRow
+                                                    ? qsTr("Removing %1 will lock this AMT session out immediately. You'll need another account to reconnect.").arg(modelData.name)
+                                                    : qsTr("Removing %1 cannot be undone — the AMT handle is freed and any clients using it will fail to authenticate.").arg(modelData.name),
+                                                qsTr("Delete"),
+                                                true);
+                                            confirmDialog.pendingHandle = modelData.handle;
+                                            confirmDialog.pendingAction = "delete";
+                                        }
+                                    }
                                 }
                             }
                         }
