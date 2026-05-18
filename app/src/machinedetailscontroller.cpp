@@ -1407,6 +1407,77 @@ void MachineDetailsController::refreshRemoteAccess()
         });
 }
 
+void MachineDetailsController::addHttpProxy(const QString &accessInfo, int port,
+                                            const QString &networkDnsSuffix)
+{
+    setLastError({});
+    const QString info = accessInfo.trimmed();
+    if (info.isEmpty()) {
+        setLastError(QStringLiteral("HTTP proxy: address is empty."));
+        return;
+    }
+    if (port < 1 || port > 65535) {
+        setLastError(QStringLiteral(
+            "HTTP proxy: port %1 is out of range (1–65535).").arg(port));
+        return;
+    }
+    // AMT firmware refuses more than 15 IPS_HTTPProxyAccessPoint
+    // instances. Refusing here rather than letting AMT fault keeps
+    // the failure path next to the user input.
+    const QVariantList existing =
+        m_remoteAccess.value(QStringLiteral("httpProxies")).toList();
+    if (existing.size() >= 15) {
+        setLastError(QStringLiteral(
+            "HTTP proxy: AMT already has the maximum of 15 entries."));
+        return;
+    }
+    const int infoFormat = qumesh::wsman::classifyAccessInfo(info);
+
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("HTTP proxy: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::addHttpProxy(m_client, info, infoFormat, port, networkDnsSuffix,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("HTTP proxy: AddProxyAccessPoint failed.")
+                    : QStringLiteral("HTTP proxy: %1").arg(r.error));
+                return;
+            }
+            refreshRemoteAccess();
+        });
+}
+
+void MachineDetailsController::deleteHttpProxy(const QString &name)
+{
+    setLastError({});
+    if (name.isEmpty()) {
+        setLastError(QStringLiteral("HTTP proxy: missing identity."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("HTTP proxy: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteHttpProxy(m_client, name,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("HTTP proxy: delete failed.")
+                    : QStringLiteral("HTTP proxy: %1").arg(r.error));
+                return;
+            }
+            refreshRemoteAccess();
+        });
+}
+
 void MachineDetailsController::refreshDeviceCerts()
 {
     if (deferIfSshConnecting(PendingDeviceCerts)) return;

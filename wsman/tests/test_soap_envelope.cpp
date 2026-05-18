@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
+#include "wsman/operations.h"
 #include "wsman/soap_envelope.h"
 
 #include <QtTest>
@@ -19,6 +20,8 @@ private slots:
     void parseGetResponseHeaders();
     void parseFault();
     void findScalarExtractsPowerState();
+    void deleteEnvelopeShape();
+    void classifyAccessInfoSelectsCimInfoFormat();
 };
 
 namespace {
@@ -136,6 +139,55 @@ void TestSoapEnvelope::findScalarExtractsPowerState()
 {
     const SoapResponse r = parseResponse(QByteArray(kPowerStateResponse));
     QCOMPARE(findScalar(r.bodyXml, QStringLiteral("PowerState")), QStringLiteral("2"));
+}
+
+void TestSoapEnvelope::deleteEnvelopeShape()
+{
+    QHash<QString, QString> sel{
+        {QStringLiteral("Name"), QStringLiteral("Intel(r) AMT:HTTP Proxy Access Point 1")},
+    };
+    const QByteArray env = buildDeleteEnvelope(
+        QStringLiteral("http://intel.com/wbem/wscim/1/ips-schema/1/"
+                       "IPS_HTTPProxyAccessPoint"),
+        sel,
+        QStringLiteral("http://10.0.0.5:16992/wsman"),
+        QStringLiteral("uuid:delete-1"));
+
+    // Well-formed XML.
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Right WS-Transfer action.
+    QVERIFY(env.contains("http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete"));
+    // Resource URI in the header.
+    QVERIFY(env.contains("IPS_HTTPProxyAccessPoint"));
+    // Selector with the right key.
+    QVERIFY(env.contains("SelectorSet"));
+    QVERIFY(env.contains("Intel(r) AMT:HTTP Proxy Access Point 1"));
+    // MessageID echoed.
+    QVERIFY(env.contains("uuid:delete-1"));
+    // Body must be empty: there should be no instance payload to parse.
+    // The Body element exists (as an empty element); nothing wraps a
+    // resource class name inside it.
+    const SoapResponse parsedEcho = parseResponse(env);
+    QVERIFY(parsedEcho.bodyXml.trimmed().isEmpty()
+            || !parsedEcho.bodyXml.contains("IPS_HTTPProxyAccessPoint"));
+}
+
+void TestSoapEnvelope::classifyAccessInfoSelectsCimInfoFormat()
+{
+    // CIM_RemoteServiceAccessPoint.InfoFormat: 3 = IPv4, 4 = IPv6.
+    QCOMPARE(classifyAccessInfo(QStringLiteral("10.0.0.5")), 3);
+    QCOMPARE(classifyAccessInfo(QStringLiteral("192.168.1.1")), 3);
+    QCOMPARE(classifyAccessInfo(QStringLiteral("::1")), 4);
+    QCOMPARE(classifyAccessInfo(QStringLiteral("fe80::1")), 4);
+    // Intel extension 201 = DNS name.
+    QCOMPARE(classifyAccessInfo(QStringLiteral("proxy.corp.example.com")), 201);
+    QCOMPARE(classifyAccessInfo(QStringLiteral("localhost")), 201);
+    // Garbage falls through to "treat as FQDN" so AMT can fault it
+    // server-side rather than us silently rewriting the input.
+    QCOMPARE(classifyAccessInfo(QStringLiteral("not an ip or host")), 201);
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)

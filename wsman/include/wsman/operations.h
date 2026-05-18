@@ -932,6 +932,10 @@ struct MpsServer
 /// One HTTP proxy — from `IPS_HTTPProxyAccessPoint` (AMT 11+).
 struct MpsHttpProxy
 {
+    /// Instance `Name` (the CIM key). Needed as the selector when
+    /// deleting the entry — Intel AMT uses `Name` as the load-bearing
+    /// identity for HTTP proxy access points.
+    QString name;
     QString accessInfo;
     int port = 0;
     QString networkDnsSuffix;
@@ -989,6 +993,29 @@ struct RemoteAccessResult
 /// classes into one result. Read-only — edit flows are out of scope.
 void getRemoteAccess(WsmanClient *client,
                      std::function<void(RemoteAccessResult)> callback);
+
+/// Invoke `IPS_HTTPProxyService.AddProxyAccessPoint` to register a new
+/// HTTP proxy with the CIRA stack. `infoFormat` follows the CIM
+/// `CIM_RemoteServiceAccessPoint.InfoFormat` codes — 3 = IPv4,
+/// 4 = IPv6, 201 = DNS name (Intel's extension; legacy code uses
+/// the same value). AMT caps the proxy list at 15 entries.
+void addHttpProxy(WsmanClient *client, const QString &accessInfo,
+                  int infoFormat, int port,
+                  const QString &networkDnsSuffix,
+                  std::function<void(InvokeResult)> callback);
+
+/// Helper for `addHttpProxy`: classify `accessInfo` into a CIM
+/// InfoFormat code. IPv4 → 3, IPv6 → 4, anything else (FQDN) → 201.
+/// Pure function so the controller can call it for validation too.
+[[nodiscard]] int classifyAccessInfo(const QString &accessInfo);
+
+/// WS-Transfer Delete on `IPS_HTTPProxyAccessPoint` with the
+/// `Name` selector populated from `MpsHttpProxy::name`. The class
+/// has additional CIM keys (`SystemName`, `CreationClassName`,
+/// `SystemCreationClassName`) but Intel AMT accepts a Delete that
+/// only selects on `Name`.
+void deleteHttpProxy(WsmanClient *client, const QString &name,
+                     std::function<void(InvokeResult)> callback);
 
 /// WiFi port-level state from `CIM_WiFiPort` + `CIM_WiFiEndpoint` +
 /// `AMT_WiFiPortConfigurationService`. Each field is independently

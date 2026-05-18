@@ -24,6 +24,7 @@ constexpr char kAnonymousReplyTo[] =
 
 constexpr char kActionGet[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get";
 constexpr char kActionPut[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Put";
+constexpr char kActionDelete[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete";
 constexpr char kActionEnumerate[] =
     "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Enumerate";
 constexpr char kActionPull[] =
@@ -113,6 +114,33 @@ QByteArray buildGetEnvelope(const QString &resourceUri,
 
     writeAddressingHeader(w, QString::fromLatin1(kActionGet), to, messageId, resourceUri,
                             selectors);
+
+    w.writeEmptyElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+QByteArray buildDeleteEnvelope(const QString &resourceUri,
+                                const QHash<QString, QString> &selectors,
+                                const QString &to,
+                                const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap), QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman), QStringLiteral("w"));
+    w.writeNamespace(QString::fromLatin1(kNsTransfer), QStringLiteral("t"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    writeAddressingHeader(w, QString::fromLatin1(kActionDelete), to, messageId,
+                            resourceUri, selectors);
 
     w.writeEmptyElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
 

@@ -7,6 +7,7 @@
 #include "wsman/wsman_client.h"
 
 
+#include <QHostAddress>
 #include <QObject>
 #include <QUuid>
 #include <QXmlStreamReader>
@@ -3806,6 +3807,7 @@ void getRemoteAccess(WsmanClient *client,
             r.httpProxySupported = true;
             for (const QByteArray &item : st->items[int(Kind::ProxyAccessPoint)]) {
                 MpsHttpProxy p;
+                p.name = findScalar(item, QStringLiteral("Name"));
                 p.accessInfo = findScalar(item, QStringLiteral("AccessInfo"));
                 bool conv = false;
                 const int port = findScalar(item, QStringLiteral("Port")).toInt(&conv);
@@ -3869,6 +3871,73 @@ void getRemoteAccess(WsmanClient *client,
     kickEnum(Kind::MpsAuth,          kMpsUsernamePasswordResource);
     kickGet(Kind::ProxyService,      kHttpProxyServiceResource);
     kickEnum(Kind::ProxyAccessPoint, kHttpProxyAccessPointResource);
+}
+
+int classifyAccessInfo(const QString &accessInfo)
+{
+    QHostAddress addr;
+    if (addr.setAddress(accessInfo)) {
+        if (addr.protocol() == QAbstractSocket::IPv4Protocol)
+            return 3;
+        if (addr.protocol() == QAbstractSocket::IPv6Protocol)
+            return 4;
+    }
+    // Intel's IPS_HTTPProxyAccessPoint extends the CIM InfoFormat enum
+    // with 201 = "DNS name" for FQDN proxies. Anything that's not a
+    // literal IP gets that code; AMT validates the string against
+    // the format on the server side.
+    return 201;
+}
+
+void addHttpProxy(WsmanClient *client, const QString &accessInfo,
+                  int infoFormat, int port,
+                  const QString &networkDnsSuffix,
+                  std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("AccessInfo"),       accessInfo);
+    params.insert(QStringLiteral("InfoFormat"),       QString::number(infoFormat));
+    params.insert(QStringLiteral("Port"),             QString::number(port));
+    params.insert(QStringLiteral("NetworkDnsSuffix"), networkDnsSuffix);
+
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kHttpProxyServiceResource),
+        QStringLiteral("AddProxyAccessPoint"),
+        /*selectors*/ {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            r.returnValue = rv.toInt();
+            r.ok = (r.returnValue == 0);
+            if (!r.ok) {
+                r.error = QStringLiteral(
+                    "AddProxyAccessPoint returned %1").arg(rv);
+            }
+        },
+        std::move(callback));
+}
+
+void deleteHttpProxy(WsmanClient *client, const QString &name,
+                     std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("Name"), name);
+    const QByteArray env = buildDeleteEnvelope(
+        QString::fromLatin1(kHttpProxyAccessPointResource), selectors,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            // WS-Transfer Delete has no ReturnValue — the absence of a
+            // SOAP Fault means success. runRequest already short-circuits
+            // on Fault and on transport errors, so reaching here means
+            // the instance was deleted.
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
 }
 
 QString wifiAuthMethodLabel(int code)
