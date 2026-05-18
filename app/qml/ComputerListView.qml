@@ -16,6 +16,7 @@ Rectangle {
     function setCurrentRow(row) { list.currentIndex = row; }
 
     signal addRequested
+    signal scanRequested
     signal openDetailsRequested(int row)
 
     color: Colors.bg
@@ -173,6 +174,16 @@ Rectangle {
                 ToolTip.text: qsTr("Remove selected")
                 ToolTip.visible: hovered
                 onClicked: ComputerModel.removeAt(list.currentIndex)
+            }
+
+            Button {
+                text: qsTr("Scan…")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeXs
+                implicitHeight: 28
+                ToolTip.text: qsTr("Discover AMT devices on a subnet")
+                ToolTip.visible: hovered
+                onClicked: root.scanRequested()
             }
 
             Item { Layout.fillWidth: true }

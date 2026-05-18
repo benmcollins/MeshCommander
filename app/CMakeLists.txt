@@ -33,6 +33,8 @@ qt_add_executable(qumesh
     src/mjpeg_avi_recorder.h
     src/certmodel.cpp
     src/certmodel.h
+    src/scannercontroller.cpp
+    src/scannercontroller.h
     src/updater.h
 )
 
@@ -62,6 +64,7 @@ qt_add_qml_module(qumesh
         qml/ComputerListView.qml
         qml/ComputerStatusPane.qml
         qml/EditComputerDialog.qml
+        qml/ScanDialog.qml
         qml/MigrationBanner.qml
         qml/TitleBar.qml
         qml/StatusBar.qml
@@ -117,6 +120,7 @@ target_link_libraries(qumesh PRIVATE
     qumesh_kvm
     qumesh_certs
     qumesh_wsman
+    qumesh_rmcp
     qumesh_ssh
 )
 
