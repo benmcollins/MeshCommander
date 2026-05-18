@@ -93,8 +93,32 @@ struct DecodedRect {
 };
 
 // --- Handshake -------------------------------------------------------
+//
+// RFB version policy (issue #176)
+// -------------------------------
+// QuMesh's KVM viewer pins the negotiated RFB version to **3.8**.
+//
+// Intel CSME 21 (Panther Lake-era firmware) removes RFB 4.0 support
+// from AMT's KVM channel; older firmware all speaks 3.8 in addition
+// to whatever later version it advertises. Picking 3.8 unconditionally
+// keeps us working across the entire CSME 12–CSME 21+ range without a
+// runtime branch.
+//
+// Practical guardrails for KVM contributors:
+//   1. `buildVersionResponse` takes no input and always emits
+//      "RFB 003.008\n" — do not adapt to whatever the server
+//      advertised. A regression test in `test_kvm_session.cpp`
+//      exercises a CSME 21-style server announcing 4.0 to lock this
+//      down.
+//   2. Don't depend on RFB 4.0-only encodings (some compression
+//      schemes, pixel-format extensions) or 4.0-only message types
+//      anywhere downstream in this module.
+//   3. Cursor capture / pointer / keyboard event paths must use the
+//      3.8 message types (`PointerEvent`, `KeyEvent`, `CursorShape`
+//      pseudo-encoding), not the 4.0 redefinitions.
 
-/// Look for the 12-byte ProtocolVersion string. Always emits "RFB 003.008".
+/// Look for the 12-byte ProtocolVersion string. Always emits
+/// "RFB 003.008" — see the version policy comment above.
 QByteArray buildVersionResponse();
 
 /// Parse the 1-byte count + n bytes of security types. Currently we
