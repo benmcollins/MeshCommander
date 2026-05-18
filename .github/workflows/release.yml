@@ -163,15 +163,21 @@ jobs:
         shell: bash
         run: cmake --build build --parallel
 
-      - name: Test (smoke)
+      - name: Test (smoke, macOS)
+        if: runner.os == 'macOS'
         shell: bash
         working-directory: build
+        run: ctest --output-on-failure --parallel
+
+      - name: Test (smoke, Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        working-directory: build
         run: |
-          # See ci.yml — test exes on Windows need windeps DLLs on PATH.
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            RT="${RUNNER_TEMP//\\//}"
-            export PATH="$RT/windeps/x64-windows/bin:$PATH"
-          fi
+          rem See ci.yml — test exes need windeps DLLs on PATH and
+          rem we do the prepend in native cmd to avoid bash→cmd PATH
+          rem translation surprises.
+          set "PATH=%RUNNER_TEMP%\windeps\x64-windows\bin;%PATH%"
           ctest --output-on-failure --parallel
 
       - name: Package
