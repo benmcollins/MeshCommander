@@ -4,7 +4,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(QuMesh
-    VERSION 1.1.2
+    VERSION 1.1.3
     DESCRIPTION "QuMesh — native Qt6/QML console for Intel AMT (vPro) devices"
     LANGUAGES CXX
 )
