@@ -453,11 +453,24 @@ jobs:
           # over time. First-ever release: prior fetch fails, we start
           # fresh. Each item carries sparkle:os so Sparkle and
           # WinSparkle each pick the entries that match their platform.
+          #
+          # Validate the previous feed before forwarding its items. If
+          # a prior release ever published malformed XML (the v1.1.0
+          # bare-base64-signature bug, #206 / #208), unconditionally
+          # carrying its <item> blocks forward keeps every subsequent
+          # release malformed. xmllint failure here drops the historical
+          # entries from that release backward — the lesser harm than
+          # propagating broken XML forever.
           PREV_ITEMS=""
           if gh release download --repo "${{ github.repository }}" \
                                   --pattern appcast.xml \
                                   --dir prev_appcast 2>/dev/null; then
-            PREV_ITEMS=$(awk '/<item>/,/<\/item>/' prev_appcast/appcast.xml)
+            if xmllint --noout prev_appcast/appcast.xml 2>/tmp/prev_xmllint.err; then
+              PREV_ITEMS=$(awk '/<item>/,/<\/item>/' prev_appcast/appcast.xml)
+            else
+              echo "::warning::Previous appcast.xml is not well-formed XML; starting feed history fresh. xmllint output:" >&2
+              cat /tmp/prev_xmllint.err >&2
+            fi
           fi
           NEW_ITEMS=""
           for fragment in appcast/item-macos.xml appcast/item-windows.xml; do
@@ -480,6 +493,18 @@ jobs:
             </channel>
           </rss>
           APPCAST
+
+          # Refuse to publish a malformed feed. Without this guard the
+          # publish step happily uploads broken XML and the regression
+          # is invisible until a user hits Check for Updates and sees
+          # Sparkle's parse-error dialog (see #206 / #208).
+          if ! xmllint --noout dist/appcast.xml 2>/tmp/final_xmllint.err; then
+            echo "::error::Assembled dist/appcast.xml is not well-formed XML; refusing to publish." >&2
+            cat /tmp/final_xmllint.err >&2
+            echo "--- dist/appcast.xml ---" >&2
+            cat -n dist/appcast.xml >&2
+            exit 1
+          fi
 
       - name: List artifacts
         run: ls -la dist/
