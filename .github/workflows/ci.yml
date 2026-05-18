@@ -68,21 +68,24 @@ jobs:
           WINDEPS_SHA256: 187cf10bc46c282ae231c772f559587e92c18c4a2e8db6ff08462e7bc315c4c4
         run: |
           set -euo pipefail
+          # $RUNNER_TEMP on windows-latest comes in as a native Windows
+          # path (`D:\a\_temp`). Git-bash's tar interprets the `D:` as
+          # a `host:path` remote spec and the backslashes as escapes,
+          # so it can never find a `-C` target. Forward-slash the path
+          # and pair with `--force-local` to neutralise both halves.
+          RT="${RUNNER_TEMP//\\//}"
           VERSION=${WINDEPS_TAG#windeps-}
           URL="https://github.com/${{ github.repository }}/releases/download/${WINDEPS_TAG}/qumesh-windeps-x64-windows-${VERSION}.tar.gz"
-          curl -sSL "$URL" -o "$RUNNER_TEMP/windeps.tar.gz"
-          echo "$WINDEPS_SHA256  $RUNNER_TEMP/windeps.tar.gz" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/windeps"
-          # --force-local: $RUNNER_TEMP on windows-latest is `D:\a\_temp`
-          # and the colon makes GNU tar treat it as a `host:path` remote
-          # spec. Force-local pins tar to local-file semantics.
-          tar --force-local -xzf "$RUNNER_TEMP/windeps.tar.gz" -C "$RUNNER_TEMP/windeps"
+          curl -sSL "$URL" -o "$RT/windeps.tar.gz"
+          echo "$WINDEPS_SHA256  $RT/windeps.tar.gz" | sha256sum -c -
+          mkdir -p "$RT/windeps"
+          tar --force-local -xzf "$RT/windeps.tar.gz" -C "$RT/windeps"
           # The tarball opens to a single top-level x64-windows/ tree
           # in the same layout as vcpkg's install prefix, so CMake's
           # `find_package(OpenSSL …)` and `find_package(libssh CONFIG
           # REQUIRED)` resolve once CMAKE_PREFIX_PATH points there.
           # No vcpkg toolchain file needed.
-          echo "CMAKE_PREFIX_PATH=$RUNNER_TEMP/windeps/x64-windows" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$RT/windeps/x64-windows" >> $GITHUB_ENV
 
       - name: Configure
         shell: bash
