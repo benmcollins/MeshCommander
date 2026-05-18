@@ -54,40 +54,45 @@ jobs:
           brew install libssh
           echo "CMAKE_PREFIX_PATH=$(brew --prefix libssh)${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
 
-      # Forward the GHA cache service URL + runtime token so vcpkg's
-      # `x-gha` binary-source provider can talk to it from the bash
-      # shell. These env vars are normally only exposed to JavaScript
-      # actions; github-script re-exports them via core.exportVariable
-      # so subsequent steps (incl. the vcpkg install below) inherit
-      # them. See #190.
-      - name: Export GHA cache env for vcpkg (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
-      - name: Install libssh + openssl via vcpkg (Windows)
+      # Fetch the prebuilt openssl + libssh tarball published by
+      # `.github/workflows/build-windeps.yml` to a `windeps-vN`
+      # release. This replaces a ~10 min `vcpkg install` per run with
+      # a ~5 s `curl + tar`. Bump WINDEPS_TAG + WINDEPS_SHA256 in
+      # lockstep with a re-run of build-windeps.yml when the bundled
+      # openssl / libssh need a refresh. See #196.
+      - name: Fetch prebuilt openssl + libssh (Windows)
         if: runner.os == 'Windows'
         shell: bash
         env:
-          # `x-gha,readwrite` uploads built binaries to the GitHub
-          # Actions cache and pulls them back on subsequent runs keyed
-          # by abi-hash. First run after a vcpkg or registry bump
-          # populates the cache (~10 min); cache hits drop the install
-          # to seconds. See #190.
-          VCPKG_BINARY_SOURCES: 'clear;x-gha,readwrite'
+          WINDEPS_TAG: windeps-v1
+          WINDEPS_SHA256: 187cf10bc46c282ae231c772f559587e92c18c4a2e8db6ff08462e7bc315c4c4
         run: |
-          # Install OpenSSL through vcpkg alongside libssh — the
-          # alternative is the chocolatey-installed OpenSSL at
-          # C:/Program Files/OpenSSL-Win64, which lives in a different
-          # ABI from the OpenSSL vcpkg's libssh was built against.
-          # Unifying through vcpkg also lets the binary cache cover
-          # OpenSSL on top of libssh.
-          /c/vcpkg/vcpkg.exe install openssl:x64-windows libssh:x64-windows
-          echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
-          echo "VCPKG_TARGET_TRIPLET=x64-windows" >> $GITHUB_ENV
+          set -euo pipefail
+          # $RUNNER_TEMP on windows-latest comes in as a native Windows
+          # path (`D:\a\_temp`). Git-bash's tar interprets the `D:` as
+          # a `host:path` remote spec and the backslashes as escapes,
+          # so it can never find a `-C` target. Forward-slash the path
+          # and pair with `--force-local` to neutralise both halves.
+          RT="${RUNNER_TEMP//\\//}"
+          VERSION=${WINDEPS_TAG#windeps-}
+          URL="https://github.com/${{ github.repository }}/releases/download/${WINDEPS_TAG}/qumesh-windeps-x64-windows-${VERSION}.tar.gz"
+          curl -sSL "$URL" -o "$RT/windeps.tar.gz"
+          echo "$WINDEPS_SHA256  $RT/windeps.tar.gz" | sha256sum -c -
+          mkdir -p "$RT/windeps"
+          tar --force-local -xzf "$RT/windeps.tar.gz" -C "$RT/windeps"
+          # build-windeps.yml drops the debug build tree to halve the
+          # tarball, but libssh's exported CMake config still imports
+          # the debug-variant config file alongside the release one,
+          # and that debug config references `debug/lib/ssh.lib` —
+          # which no longer exists, so `find_package(libssh CONFIG …)`
+          # bails. Remove the debug-config stub so only release loads.
+          rm -f "$RT/windeps/x64-windows/share/libssh/libssh-config-debug.cmake"
+          # The tarball opens to a single top-level x64-windows/ tree
+          # in the same layout as vcpkg's install prefix, so CMake's
+          # `find_package(OpenSSL …)` and `find_package(libssh CONFIG
+          # REQUIRED)` resolve once CMAKE_PREFIX_PATH points there.
+          # No vcpkg toolchain file needed.
+          echo "CMAKE_PREFIX_PATH=$RT/windeps/x64-windows" >> $GITHUB_ENV
 
       - name: Configure
         shell: bash
@@ -97,7 +102,22 @@ jobs:
         shell: bash
         run: cmake --build build --parallel
 
-      - name: Test
+      - name: Test (macOS)
+        if: runner.os == 'macOS'
         shell: bash
         working-directory: build
         run: ctest --output-on-failure --parallel
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        working-directory: build
+        run: |
+          rem Windows test exes import ssh.dll / libcrypto-3-x64.dll
+          rem dynamically and the dynamic loader needs them on PATH.
+          rem The bash-shell trick from earlier never propagated cleanly
+          rem through git-bash's POSIX→Win32 PATH translation, so do
+          rem the prepend in native cmd where %PATH% already uses ;
+          rem and Windows-form drive letters.
+          set "PATH=%RUNNER_TEMP%\windeps\x64-windows\bin;%PATH%"
+          ctest --output-on-failure --parallel

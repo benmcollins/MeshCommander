@@ -370,22 +370,42 @@ else()
     install(TARGETS qumesh RUNTIME DESTINATION bin)
 endif()
 
-# Bundle OpenSSL's libcrypto next to the app. macdeployqt will follow
-# it as a dependency on macOS once it lives inside the bundle;
-# windeployqt does not pull in non-Qt DLLs so we install it manually.
+# Bundle openssl + libssh runtime DLLs next to QuMesh.exe on Windows.
+# macdeployqt picks these up automatically on macOS once they live in
+# the bundle; windeployqt only follows Qt deps, so we have to install
+# them by hand. Glob from every CMake prefix that has a `bin/` tree —
+# in CI that's the windeps tarball CMAKE_PREFIX_PATH points at; in a
+# manual local build it might be a vcpkg install or a hand-rolled
+# prefix. Globbing by specific filename rather than `*.dll` keeps us
+# from accidentally bundling unrelated Qt/vcpkg DLLs that find their
+# way into the search path. legacy.dll is OpenSSL 3's legacy provider
+# — loaded at runtime by libcrypto for older algorithms, not a CMake
+# target, so it needs the explicit pattern.
 if(WIN32)
-    if(TARGET OpenSSL::Crypto)
-        get_target_property(_ossl_loc OpenSSL::Crypto IMPORTED_LOCATION)
-        if(_ossl_loc)
-            install(FILES "${_ossl_loc}" DESTINATION .)
-        endif()
-        # OpenSSL 3 ships as libcrypto-3-x64.dll + a separate libssl.
-        # Glob the directory so we pick up any sibling DLLs.
-        get_filename_component(_ossl_dir "${_ossl_loc}" DIRECTORY)
-        file(GLOB _ossl_dlls "${_ossl_dir}/libcrypto-*.dll")
-        if(_ossl_dlls)
-            install(FILES ${_ossl_dlls} DESTINATION .)
-        endif()
+    set(_windeps_dll_patterns
+        "libcrypto-*.dll"
+        "libssl-*.dll"
+        "legacy.dll"
+        "ssh.dll"
+    )
+    set(_windeps_dlls)
+    foreach(_prefix IN LISTS CMAKE_PREFIX_PATH)
+        foreach(_pat IN LISTS _windeps_dll_patterns)
+            file(GLOB _matches "${_prefix}/bin/${_pat}")
+            list(APPEND _windeps_dlls ${_matches})
+        endforeach()
+    endforeach()
+    if(_windeps_dlls)
+        list(REMOVE_DUPLICATES _windeps_dlls)
+        install(FILES ${_windeps_dlls} DESTINATION .)
+        # Also copy into the build tree so `cmake --build && QuMesh.exe`
+        # finds the DLLs without an `install` first.
+        add_custom_command(TARGET qumesh POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${_windeps_dlls}
+                "$<TARGET_FILE_DIR:qumesh>/"
+            VERBATIM
+        )
     endif()
 endif()
 
