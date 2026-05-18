@@ -73,6 +73,12 @@ jobs:
           rm -rf "$ROOT/debug"
           find "$ROOT" -type f -name '*.pdb' -delete
           rm -rf "$ROOT/tools"
+          # libssh's exported CMake package loads BOTH the release and
+          # debug per-config files via a glob. The debug one points at
+          # `debug/lib/ssh.lib`, which we just deleted — so leaving it
+          # would make `find_package(libssh CONFIG)` fail in consumers.
+          # Drop the debug-config stub so only the release config loads.
+          rm -f "$ROOT/share/libssh/libssh-config-debug.cmake"
 
       - name: Capture component versions
         id: vers

@@ -150,6 +150,9 @@ jobs:
           echo "$WINDEPS_SHA256  $RT/windeps.tar.gz" | sha256sum -c -
           mkdir -p "$RT/windeps"
           tar --force-local -xzf "$RT/windeps.tar.gz" -C "$RT/windeps"
+          # See ci.yml — libssh's bundled debug-config stub references
+          # files we slim out, so delete it to leave only the release.
+          rm -f "$RT/windeps/x64-windows/share/libssh/libssh-config-debug.cmake"
           echo "CMAKE_PREFIX_PATH=$RT/windeps/x64-windows" >> $GITHUB_ENV
 
       - name: Configure

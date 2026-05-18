@@ -80,6 +80,13 @@ jobs:
           echo "$WINDEPS_SHA256  $RT/windeps.tar.gz" | sha256sum -c -
           mkdir -p "$RT/windeps"
           tar --force-local -xzf "$RT/windeps.tar.gz" -C "$RT/windeps"
+          # build-windeps.yml drops the debug build tree to halve the
+          # tarball, but libssh's exported CMake config still imports
+          # the debug-variant config file alongside the release one,
+          # and that debug config references `debug/lib/ssh.lib` —
+          # which no longer exists, so `find_package(libssh CONFIG …)`
+          # bails. Remove the debug-config stub so only release loads.
+          rm -f "$RT/windeps/x64-windows/share/libssh/libssh-config-debug.cmake"
           # The tarball opens to a single top-level x64-windows/ tree
           # in the same layout as vcpkg's install prefix, so CMake's
           # `find_package(OpenSSL …)` and `find_package(libssh CONFIG
