@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/benmcollins/QuMesh/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/benmcollins/QuMesh/actions/workflows/ci.yml/badge.svg?branch=master"/></a>
+  <a href="https://github.com/benmcollins/QuMesh/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/benmcollins/QuMesh/actions/workflows/ci.yml/badge.svg?branch=main"/></a>
   <a href="https://github.com/benmcollins/QuMesh/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/benmcollins/QuMesh?include_prereleases&sort=semver"/></a>
   <a href="LICENSE.md"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"/></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-1e293b"/>
