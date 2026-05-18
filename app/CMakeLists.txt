@@ -388,8 +388,35 @@ if(WIN32)
         "legacy.dll"
         "ssh.dll"
     )
+    # Build the search list from three sources because none alone is
+    # reliable on CI:
+    #   1. The CMake variable CMAKE_PREFIX_PATH (set via -D on the
+    #      command line, e.g. local builds).
+    #   2. $ENV{CMAKE_PREFIX_PATH} — find_package() reads this directly,
+    #      but CMake does *not* always promote it to the CMake variable.
+    #      Observed in the v1.1.0 release run: find_package(OpenSSL)
+    #      resolved fine via the env var, while the foreach below saw
+    #      an empty CMake variable and the glob found nothing, so the
+    #      packaged QuMesh.exe shipped without libcrypto/libssl/ssh and
+    #      failed to load.
+    #   3. The directory two levels up from OPENSSL_CRYPTO_LIBRARY,
+    #      which find_package(OpenSSL) sets to <prefix>/lib/libcrypto.lib.
+    #      Authoritative since it's whatever find_package actually picked.
+    set(_search_prefixes ${CMAKE_PREFIX_PATH})
+    if(DEFINED ENV{CMAKE_PREFIX_PATH})
+        list(APPEND _search_prefixes "$ENV{CMAKE_PREFIX_PATH}")
+    endif()
+    if(OPENSSL_CRYPTO_LIBRARY)
+        get_filename_component(_p "${OPENSSL_CRYPTO_LIBRARY}" DIRECTORY)
+        get_filename_component(_p "${_p}" DIRECTORY)
+        list(APPEND _search_prefixes "${_p}")
+    endif()
+    if(_search_prefixes)
+        list(REMOVE_DUPLICATES _search_prefixes)
+    endif()
+
     set(_windeps_dlls)
-    foreach(_prefix IN LISTS CMAKE_PREFIX_PATH)
+    foreach(_prefix IN LISTS _search_prefixes)
         foreach(_pat IN LISTS _windeps_dll_patterns)
             file(GLOB _matches "${_prefix}/bin/${_pat}")
             list(APPEND _windeps_dlls ${_matches})
@@ -406,6 +433,13 @@ if(WIN32)
                 "$<TARGET_FILE_DIR:qumesh>/"
             VERBATIM
         )
+    else()
+        message(WARNING
+            "Windows runtime DLLs (libcrypto, libssl, legacy, ssh) not "
+            "found under any of: CMAKE_PREFIX_PATH='${CMAKE_PREFIX_PATH}', "
+            "ENV{CMAKE_PREFIX_PATH}='$ENV{CMAKE_PREFIX_PATH}', "
+            "OPENSSL_CRYPTO_LIBRARY='${OPENSSL_CRYPTO_LIBRARY}'. "
+            "The packaged QuMesh.exe will fail to load at startup.")
     endif()
 endif()
 
