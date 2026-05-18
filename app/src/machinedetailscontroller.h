@@ -212,6 +212,15 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(int optInPolicyTimeoutSec READ optInPolicyTimeoutSec
                    NOTIFY optInStatusChanged)
 
+    // KVM settings (#175) — sit on the same IPS_KVMRedirectionSettingData
+    // class as the OptIn fields above, so they ride the same refresh.
+    Q_PROPERTY(bool kvmIs5900PortEnabled READ kvmIs5900PortEnabled
+                   NOTIFY optInStatusChanged)
+    Q_PROPERTY(int  kvmSessionTimeoutMinutes READ kvmSessionTimeoutMinutes
+                   NOTIFY optInStatusChanged)
+    Q_PROPERTY(bool kvmGreyscaleRequested READ kvmGreyscaleRequested
+                   NOTIFY optInStatusChanged)
+
 public:
     explicit MachineDetailsController(QObject *parent = nullptr);
     ~MachineDetailsController() override;
@@ -308,6 +317,9 @@ public:
     [[nodiscard]] bool canModifyOptInPolicy() const { return m_canModifyOptInPolicy; }
     [[nodiscard]] bool kvmOptInPolicy() const { return m_kvmOptInPolicy; }
     [[nodiscard]] int  optInPolicyTimeoutSec() const { return m_optInPolicyTimeoutSec; }
+    [[nodiscard]] bool kvmIs5900PortEnabled() const { return m_kvmIs5900PortEnabled; }
+    [[nodiscard]] int  kvmSessionTimeoutMinutes() const { return m_kvmSessionTimeoutMinutes; }
+    [[nodiscard]] bool kvmGreyscaleRequested() const { return m_kvmGreyscaleRequested; }
 
     [[nodiscard]] QVariantList eventLog() const { return m_eventLog; }
     [[nodiscard]] QVariantList userAccounts() const { return m_userAccounts; }
@@ -377,6 +389,17 @@ public:
     /// `optInPolicyChangeFailed` if AMT rejects the Put (most often
     /// because the current login lacks the realm).
     Q_INVOKABLE void setKvmOptInPolicyEnabled(bool enabled);
+    /// Apply a partial update to IPS_KVMRedirectionSettingData. `fields`
+    /// is a key→value map; recognised keys: `is5900PortEnabled` (bool),
+    /// `optInPolicy` (bool), `sessionTimeoutMinutes` (int), `rfbPassword`
+    /// (string; empty clears it), `greyscaleRequested` (bool). Any key
+    /// not present in the map is left untouched on the firmware side.
+    /// See #175.
+    Q_INVOKABLE void setKvmSettings(const QVariantMap &fields);
+    /// Enable / disable KVM at the device level via
+    /// `CIM_KVMRedirectionSAP.RequestStateChange`. Disabling stops new
+    /// sessions until re-enabled. See #175.
+    Q_INVOKABLE void setKvmServiceEnabled(bool enabled);
     /// Start the AMT-side consent prompt — the firmware shows a
     /// 6-digit code on the target's local screen.
     Q_INVOKABLE void startOptIn();
@@ -667,6 +690,9 @@ private:
     bool m_canModifyOptInPolicy = false;
     bool m_kvmOptInPolicy = false;
     int  m_optInPolicyTimeoutSec = 0;
+    bool m_kvmIs5900PortEnabled = false;
+    int  m_kvmSessionTimeoutMinutes = 0;
+    bool m_kvmGreyscaleRequested = false;
     bool m_optInPolling = false;       ///< See `startOptInPolling`.
     QTimer *m_optInPollTimer = nullptr;
 

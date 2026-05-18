@@ -267,6 +267,34 @@ struct OptInServiceResult
     /// didn't expose it (older AMT). Drives the countdown in the
     /// PIN-entry dialog. See #171.
     int optInPolicyTimeoutSec = 0;
+
+    /// `IPS_KVMRedirectionSettingData.Is5900PortEnabled` — VNC port
+    /// listener toggle. Editable via `setKvmSettings` (#175).
+    bool is5900PortEnabled = false;
+    /// `IPS_KVMRedirectionSettingData.SessionTimeout` — minutes of idle
+    /// before the firmware auto-closes a KVM session. 0 = no timeout.
+    int sessionTimeoutMinutes = 0;
+    /// `IPS_KVMRedirectionSettingData.GreyscalePixelFormatRequested` —
+    /// hint to send 8-bit greyscale instead of RGB565 (bandwidth saver).
+    /// QuMesh itself always negotiates RGB565, but legacy management
+    /// tools may consume this.
+    bool greyscalePixelFormatRequested = false;
+};
+
+/// Partial-update payload for `setKvmSettings` (#175). Each `set*` flag
+/// gates whether the corresponding field is included in the Put.
+/// Unset fields are echoed back verbatim from the previous Get so the
+/// AMT validator stays happy.
+struct KvmSettingsPatch
+{
+    bool setOptInPolicy = false;             bool optInPolicy = false;
+    bool setIs5900PortEnabled = false;       bool is5900PortEnabled = false;
+    bool setSessionTimeoutMinutes = false;   int  sessionTimeoutMinutes = 0;
+    /// Pass an empty string to clear the password; non-empty to set it.
+    /// The firmware never echoes the password back on Get; we only ever
+    /// send it when `setRfbPassword` is true.
+    bool setRfbPassword = false;             QString rfbPassword;
+    bool setGreyscaleRequested = false;      bool greyscaleRequested = false;
 };
 
 /// Read `IPS_OptInService` + `IPS_KVMRedirectionSettingData` in one
@@ -298,6 +326,20 @@ void cancelOptIn(WsmanClient *client,
 /// realm needed to modify the policy.
 void setKvmOptInPolicy(WsmanClient *client, bool policyRequired,
                        std::function<void(InvokeResult)> callback);
+
+/// Apply a partial update to `IPS_KVMRedirectionSettingData`. The op
+/// reads the current record, merges in whichever fields the patch
+/// flags as set, and Puts it back — the firmware validator requires
+/// the full record on every Put. See #175.
+void setKvmSettings(WsmanClient *client, const KvmSettingsPatch &patch,
+                    std::function<void(InvokeResult)> callback);
+
+/// Invoke `CIM_KVMRedirectionSAP.RequestStateChange` to enable or
+/// disable KVM at the device level. `RequestedState = 2` (Enabled) or
+/// `3` (Disabled). Disabling KVM stops new sessions until re-enabled.
+/// See #175.
+void setKvmRedirectionEnabled(WsmanClient *client, bool enabled,
+                              std::function<void(InvokeResult)> callback);
 
 /// Send the DMTF `Identify` discovery message to the endpoint configured on
 /// `client` and invoke `callback` exactly once with the result. Requires

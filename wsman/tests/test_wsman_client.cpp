@@ -43,6 +43,8 @@ private slots:
     void getWakeAlarmsExtractsNestedStartTimeAndInterval();
     void executeBrowsePrefixesClassNamesAndCarriesRawXml();
     void getSystemDefenseEnumeratesAllFourFilterClasses();
+    void setKvmSettingsRoundTripsPartialPatch();
+    void setKvmRedirectionEnabledSendsCorrectRequestedState();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -2489,6 +2491,140 @@ void TestWsmanClient::getSystemDefenseEnumeratesAllFourFilterClasses()
     QCOMPARE(result.ipFilters.first().protocol,   17);
     QCOMPARE(result.subFilters.first().filterClass,
              QStringLiteral("AMT_Hdr8021Filter"));
+}
+
+void TestWsmanClient::setKvmSettingsRoundTripsPartialPatch()
+{
+    // The Put must echo back the un-patched fields verbatim and apply
+    // the patched fields. Capture the Put body and inspect it.
+    QByteArray capturedPut;
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     const QByteArray body = req.body();
+                     const bool isPut = body.contains("/transfer/Put");
+                     QByteArray response;
+                     if (!isPut) {
+                         // Initial Get — return a representative record.
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                             " xmlns:k=\"http://intel.com/wbem/wscim/1/ips-schema/1/IPS_KVMRedirectionSettingData\">"
+                             "<s:Header/><s:Body>"
+                             "<k:IPS_KVMRedirectionSettingData>"
+                             "<k:InstanceID>Intel(r) KVM Redirection Settings</k:InstanceID>"
+                             "<k:EnabledByMEBx>true</k:EnabledByMEBx>"
+                             "<k:Is5900PortEnabled>false</k:Is5900PortEnabled>"
+                             "<k:OptInPolicy>false</k:OptInPolicy>"
+                             "<k:OptInPolicyTimeout>120</k:OptInPolicyTimeout>"
+                             "<k:SessionTimeout>0</k:SessionTimeout>"
+                             "<k:DefaultScreen>0</k:DefaultScreen>"
+                             "<k:GreyscalePixelFormatRequested>false</k:GreyscalePixelFormatRequested>"
+                             "</k:IPS_KVMRedirectionSettingData>"
+                             "</s:Body></s:Envelope>";
+                     } else {
+                         capturedPut = body;
+                         response =
+                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\">"
+                             "<s:Header/><s:Body></s:Body></s:Envelope>";
+                     }
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                response);
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    KvmSettingsPatch patch;
+    patch.setIs5900PortEnabled = true;     patch.is5900PortEnabled = true;
+    patch.setSessionTimeoutMinutes = true; patch.sessionTimeoutMinutes = 10;
+    patch.setRfbPassword = true;           patch.rfbPassword = QStringLiteral("hunter2!");
+    // OptInPolicy + Greyscale stay untouched → should round-trip
+    // from the Get response.
+
+    InvokeResult result;
+    QEventLoop loop;
+    setKvmSettings(&client, patch,
+        [&](InvokeResult r) { result = r; loop.quit(); });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+
+    // Patched fields land on the wire with the new values. The Put
+    // envelope namespaces the body elements via the `r:` prefix the
+    // builder assigns to the resource URI.
+    QVERIFY2(capturedPut.contains("Is5900PortEnabled>true"),
+             capturedPut.constData());
+    QVERIFY2(capturedPut.contains("SessionTimeout>10"),
+             capturedPut.constData());
+    QVERIFY2(capturedPut.contains("hunter2!"),
+             capturedPut.constData());
+
+    // Untouched fields preserved from the Get response.
+    QVERIFY2(capturedPut.contains("OptInPolicy>false"),
+             capturedPut.constData());
+    QVERIFY2(capturedPut.contains("OptInPolicyTimeout>120"),
+             capturedPut.constData());
+}
+
+void TestWsmanClient::setKvmRedirectionEnabledSendsCorrectRequestedState()
+{
+    QByteArray captured;
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     captured = req.body();
+                     constexpr const char *resp =
+                         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                         "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                         " xmlns:k=\"http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_KVMRedirectionSAP\">"
+                         "<s:Header/><s:Body>"
+                         "<k:RequestStateChange_OUTPUT>"
+                         "<k:ReturnValue>0</k:ReturnValue>"
+                         "</k:RequestStateChange_OUTPUT>"
+                         "</s:Body></s:Envelope>";
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                QByteArray(resp));
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    // Disable case — RequestedState 3.
+    InvokeResult result;
+    QEventLoop loop;
+    setKvmRedirectionEnabled(&client, false,
+        [&](InvokeResult r) { result = r; loop.quit(); });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QVERIFY2(captured.contains("RequestedState"), captured.constData());
+    QVERIFY2(captured.contains(">3<"), captured.constData());
+
+    captured.clear();
+    QEventLoop loop2;
+    setKvmRedirectionEnabled(&client, true,
+        [&](InvokeResult r) { result = r; loop2.quit(); });
+    QTimer::singleShot(5000, &loop2, &QEventLoop::quit);
+    loop2.exec();
+
+    QVERIFY(result.ok);
+    QVERIFY2(captured.contains(">2<"), captured.constData());
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)
