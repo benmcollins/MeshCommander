@@ -2467,6 +2467,21 @@ void getOptInStatus(WsmanClient *client,
                                 s.bodyXml,
                                 QStringLiteral("OptInPolicyTimeout")).toInt(&conv);
                             if (conv) partial->optInPolicyTimeoutSec = t;
+                            // KVM settings fields (#175).
+                            const QString port = findScalar(s.bodyXml,
+                                QStringLiteral("Is5900PortEnabled"));
+                            partial->is5900PortEnabled =
+                                port.toLower() == QStringLiteral("true")
+                                || port == QStringLiteral("1");
+                            conv = false;
+                            const int sto = findScalar(s.bodyXml,
+                                QStringLiteral("SessionTimeout")).toInt(&conv);
+                            if (conv) partial->sessionTimeoutMinutes = sto;
+                            const QString grey = findScalar(s.bodyXml,
+                                QStringLiteral("GreyscalePixelFormatRequested"));
+                            partial->greyscalePixelFormatRequested =
+                                grey.toLower() == QStringLiteral("true")
+                                || grey == QStringLiteral("1");
                         }
                     }
                     partial->ok = true;
@@ -2612,6 +2627,132 @@ void setKvmOptInPolicy(WsmanClient *client, bool policyRequired,
                     (*cb)(res);
                 });
         });
+}
+
+void setKvmSettings(WsmanClient *client, const KvmSettingsPatch &patch,
+                    std::function<void(InvokeResult)> callback)
+{
+    // Same read-modify-write dance as setKvmOptInPolicy, but with a
+    // partial-update patch. The Put requires the full record echoed
+    // back; any field the patch doesn't override gets passed through
+    // verbatim. RFBPassword is special — the firmware never echoes it
+    // back, so we only include it on the Put when the patch sets it.
+    const QString to = client ? client->endpoint().toString() : QString();
+    auto cb = std::make_shared<std::function<void(InvokeResult)>>(std::move(callback));
+    auto p = std::make_shared<KvmSettingsPatch>(patch);
+
+    const QByteArray getEnv = buildGetEnvelope(
+        QString::fromLatin1(kKvmRedirectionSettingDataResource),
+        {}, to, newMessageId());
+    auto *reply = client->sendEnvelope(getEnv);
+    QObject::connect(reply, &WsmanReply::finished, client,
+        [reply, client, to, cb, p]() {
+            const QByteArray body = reply->readAll();
+            const bool err = reply->hasError();
+            const QString errStr = reply->errorString();
+            reply->deleteLater();
+            InvokeResult r;
+            if (err) { r.error = errStr; (*cb)(r); return; }
+            const SoapResponse soap = parseResponse(body);
+            if (soap.isFault()) { r.error = soap.fault; (*cb)(r); return; }
+
+            QHash<QString, QString> props;
+            const QList<QString> echoKeys = {
+                QStringLiteral("EnabledByMEBx"),
+                QStringLiteral("Is5900PortEnabled"),
+                QStringLiteral("OptInPolicy"),
+                QStringLiteral("OptInPolicyTimeout"),
+                QStringLiteral("SessionTimeout"),
+                QStringLiteral("DefaultScreen"),
+                QStringLiteral("InitialDecimationModeForLowResScreens"),
+                QStringLiteral("GreyscalePixelFormatRequested"),
+                QStringLiteral("BackToBackFeatureSupported"),
+            };
+            for (const QString &k : echoKeys) {
+                const QString v = findScalar(soap.bodyXml, k);
+                if (!v.isEmpty()) props.insert(k, v);
+            }
+
+            if (p->setOptInPolicy)
+                props.insert(QStringLiteral("OptInPolicy"),
+                             p->optInPolicy ? QStringLiteral("true")
+                                            : QStringLiteral("false"));
+            if (p->setIs5900PortEnabled)
+                props.insert(QStringLiteral("Is5900PortEnabled"),
+                             p->is5900PortEnabled ? QStringLiteral("true")
+                                                  : QStringLiteral("false"));
+            if (p->setSessionTimeoutMinutes)
+                props.insert(QStringLiteral("SessionTimeout"),
+                             QString::number(p->sessionTimeoutMinutes));
+            if (p->setGreyscaleRequested)
+                props.insert(QStringLiteral("GreyscalePixelFormatRequested"),
+                             p->greyscaleRequested ? QStringLiteral("true")
+                                                   : QStringLiteral("false"));
+            if (p->setRfbPassword)
+                props.insert(QStringLiteral("RFBPassword"), p->rfbPassword);
+
+            QHash<QString, QString> sel;
+            sel.insert(QStringLiteral("InstanceID"),
+                       QStringLiteral("Intel(r) KVM Redirection Settings"));
+
+            const QByteArray putEnv = buildPutEnvelope(
+                QString::fromLatin1(kKvmRedirectionSettingDataResource),
+                QStringLiteral("IPS_KVMRedirectionSettingData"),
+                sel, props, to, newMessageId());
+
+            auto *r2 = client->sendEnvelope(putEnv);
+            QObject::connect(r2, &WsmanReply::finished, client,
+                [r2, cb]() {
+                    const QByteArray body2 = r2->readAll();
+                    const bool err2 = r2->hasError();
+                    const QString errStr2 = r2->errorString();
+                    r2->deleteLater();
+                    InvokeResult res;
+                    if (err2) { res.error = errStr2; (*cb)(res); return; }
+                    const SoapResponse s = parseResponse(body2);
+                    if (s.isFault()) { res.error = s.fault; (*cb)(res); return; }
+                    res.ok = true;
+                    res.returnValue = 0;
+                    (*cb)(res);
+                });
+        });
+}
+
+void setKvmRedirectionEnabled(WsmanClient *client, bool enabled,
+                              std::function<void(InvokeResult)> callback)
+{
+    // CIM_KVMRedirectionSAP.RequestStateChange — RequestedState 2 = Enabled,
+    // 3 = Disabled per the DMTF state-machine enum.
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("Name"),
+                     QStringLiteral("Intel(r) KVM Redirection SAP"));
+    selectors.insert(QStringLiteral("SystemCreationClassName"),
+                     QStringLiteral("CIM_ComputerSystem"));
+    selectors.insert(QStringLiteral("SystemName"), QStringLiteral("Intel(r) AMT"));
+    selectors.insert(QStringLiteral("CreationClassName"),
+                     QStringLiteral("CIM_KVMRedirectionSAP"));
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("RequestedState"),
+                  QString::number(enabled ? 2 : 3));
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kKvmRedirectionSapResource),
+        QStringLiteral("RequestStateChange"),
+        selectors, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            if (rv.isEmpty()) {
+                r.error = QStringLiteral("response had no ReturnValue");
+                return;
+            }
+            bool conv = false;
+            r.returnValue = rv.toInt(&conv);
+            r.ok = conv && (r.returnValue == 0 || r.returnValue == 4096);
+            if (!r.ok && r.error.isEmpty())
+                r.error = QStringLiteral("RequestStateChange returned %1").arg(rv);
+        },
+        std::move(callback));
 }
 
 namespace {

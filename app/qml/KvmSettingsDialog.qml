@@ -1,0 +1,146 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>.
+
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Controls.Basic
+import QtQuick.Layouts
+import QuMesh
+
+/// Editor for `IPS_KVMRedirectionSettingData` (#175). Pulls initial
+/// values from `controller` properties at open; on Apply, hands the
+/// dirty subset to `controller.setKvmSettings`.
+Dialog {
+    id: root
+
+    property var controller: null
+
+    title: qsTr("KVM settings")
+    modal: true
+    closePolicy: Popup.CloseOnEscape
+    anchors.centerIn: parent
+    standardButtons: Dialog.Cancel | Dialog.Apply
+    implicitWidth: 520
+
+    // Snapshot at open so we can diff against the firmware's reality
+    // and Put only the dirty fields. Leaving a checkbox unchanged
+    // means the patch omits that field entirely.
+    property bool initialPortEnabled: false
+    property bool initialOptIn: false
+    property int  initialTimeout: 0
+    property bool initialGrey: false
+
+    onAboutToShow: {
+        if (root.controller) {
+            root.initialPortEnabled = root.controller.kvmIs5900PortEnabled;
+            root.initialOptIn       = root.controller.kvmOptInPolicy;
+            root.initialTimeout     = root.controller.kvmSessionTimeoutMinutes;
+            root.initialGrey        = root.controller.kvmGreyscaleRequested;
+            portCheck.checked       = root.initialPortEnabled;
+            optInCheck.checked      = root.initialOptIn;
+            timeoutField.text       = String(root.initialTimeout);
+            greyCheck.checked       = root.initialGrey;
+            passwordField.text      = "";
+        }
+    }
+
+    onApplied: {
+        if (!root.controller) return;
+        const fields = {};
+        if (portCheck.checked !== root.initialPortEnabled)
+            fields.is5900PortEnabled = portCheck.checked;
+        if (optInCheck.checked !== root.initialOptIn)
+            fields.optInPolicy = optInCheck.checked;
+        const t = parseInt(timeoutField.text);
+        if (!isNaN(t) && t !== root.initialTimeout)
+            fields.sessionTimeoutMinutes = t;
+        if (greyCheck.checked !== root.initialGrey)
+            fields.greyscaleRequested = greyCheck.checked;
+        // Password is always sent when non-empty (set new) or when
+        // the operator ticked "clear". Empty input + no clear =
+        // leave existing password alone.
+        if (passwordField.text.length > 0)
+            fields.rfbPassword = passwordField.text;
+        else if (clearPwCheck.checked)
+            fields.rfbPassword = "";
+
+        if (Object.keys(fields).length > 0)
+            root.controller.setKvmSettings(fields);
+        root.close();
+    }
+
+    contentItem: ColumnLayout {
+        spacing: 12
+
+        Text {
+            text: qsTr("These settings live on the device and apply to every KVM session, not just this one.")
+            color: Colors.text
+            font.family: Type.sans
+            font.pixelSize: Type.sizeS
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
+        }
+
+        CheckBox {
+            id: portCheck
+            text: qsTr("Enable VNC listener on port 5900")
+        }
+
+        CheckBox {
+            id: optInCheck
+            text: qsTr("Require user consent for KVM sessions")
+        }
+
+        CheckBox {
+            id: greyCheck
+            text: qsTr("Request 8-bit greyscale (bandwidth saver)")
+        }
+
+        RowLayout {
+            spacing: 8
+            Layout.fillWidth: true
+
+            Text {
+                text: qsTr("Idle timeout (minutes, 0 = none)")
+                color: Colors.text
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                Layout.fillWidth: true
+            }
+            TextField {
+                id: timeoutField
+                Layout.preferredWidth: 80
+                inputMethodHints: Qt.ImhDigitsOnly
+                validator: IntValidator { bottom: 0; top: 65535 }
+                font.family: Type.mono
+                font.pixelSize: Type.sizeS
+            }
+        }
+
+        ColumnLayout {
+            spacing: 4
+            Layout.fillWidth: true
+
+            Text {
+                text: qsTr("RFB password (additional to AMT auth)")
+                color: Colors.textMuted
+                font.family: Type.sans
+                font.pixelSize: Type.sizeXs
+            }
+            TextField {
+                id: passwordField
+                Layout.fillWidth: true
+                placeholderText: qsTr("Leave empty to keep existing")
+                echoMode: TextInput.Password
+                font.family: Type.mono
+                font.pixelSize: Type.sizeS
+            }
+            CheckBox {
+                id: clearPwCheck
+                text: qsTr("Clear existing RFB password")
+                enabled: passwordField.text.length === 0
+            }
+        }
+    }
+}

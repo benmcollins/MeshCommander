@@ -138,6 +138,11 @@ AppWindow {
         }
     }
 
+    KvmSettingsDialog {
+        id: kvmSettingsDialog
+        controller: controller
+    }
+
     // Surfaces a Put-rejected message when the AMT login can't modify
     // the consent policy. Cleared on the next successful refresh.
     Connections {
@@ -1861,6 +1866,30 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 text: qsTr("Open KVM")
 enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 onClicked: sessionLoader.launchAt(1)
+                            }
+
+                            // Device-level KVM settings (#175). These
+                            // persist on the firmware and apply to every
+                            // KVM session regardless of which console
+                            // initiates it.
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 4
+                                spacing: 8
+                                FlatButton {
+                                    text: qsTr("KVM settings…")
+                                    enabled: !controller.busy
+                                        && controller.canModifyOptInPolicy
+                                    onClicked: kvmSettingsDialog.open()
+                                }
+                                FlatButton {
+                                    text: controller.kvmEnabled
+                                        ? qsTr("Disable KVM")
+                                        : qsTr("Enable KVM")
+                                    enabled: !controller.busy
+                                        && controller.kvmAvailable
+                                    onClicked: controller.setKvmServiceEnabled(!controller.kvmEnabled)
+                                }
                             }
                         }
                     }

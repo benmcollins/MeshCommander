@@ -81,6 +81,7 @@ qt_add_qml_module(qumesh
         qml/CertPinFlash.qml
         qml/FlatButton.qml
         qml/HttpsBootPrompt.qml
+        qml/KvmSettingsDialog.qml
         qml/OptInPrompt.qml
         qml/Paths.qml
         qml/PlatformErasePrompt.qml

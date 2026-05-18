@@ -554,6 +554,9 @@ void MachineDetailsController::refreshOptInStatus()
                 m_canModifyOptInPolicy  = r.canModifyOptInPolicy;
                 m_kvmOptInPolicy        = r.kvmOptInPolicy;
                 m_optInPolicyTimeoutSec = r.optInPolicyTimeoutSec;
+                m_kvmIs5900PortEnabled  = r.is5900PortEnabled;
+                m_kvmSessionTimeoutMinutes = r.sessionTimeoutMinutes;
+                m_kvmGreyscaleRequested = r.greyscalePixelFormatRequested;
                 emit optInStatusChanged();
                 // Drive the polling state machine. See #171: while
                 // we're between StartOptIn and SendOptInCode, watch
@@ -596,6 +599,57 @@ void MachineDetailsController::setKvmOptInPolicyEnabled(bool enabled)
             } else {
                 emit optInPolicyChangeFailed(r.error);
             }
+        });
+}
+
+void MachineDetailsController::setKvmSettings(const QVariantMap &fields)
+{
+    setLastError({});
+    qumesh::wsman::KvmSettingsPatch patch;
+    if (fields.contains(QStringLiteral("optInPolicy"))) {
+        patch.setOptInPolicy = true;
+        patch.optInPolicy = fields.value(QStringLiteral("optInPolicy")).toBool();
+    }
+    if (fields.contains(QStringLiteral("is5900PortEnabled"))) {
+        patch.setIs5900PortEnabled = true;
+        patch.is5900PortEnabled = fields.value(QStringLiteral("is5900PortEnabled")).toBool();
+    }
+    if (fields.contains(QStringLiteral("sessionTimeoutMinutes"))) {
+        patch.setSessionTimeoutMinutes = true;
+        patch.sessionTimeoutMinutes = fields.value(QStringLiteral("sessionTimeoutMinutes")).toInt();
+    }
+    if (fields.contains(QStringLiteral("rfbPassword"))) {
+        patch.setRfbPassword = true;
+        patch.rfbPassword = fields.value(QStringLiteral("rfbPassword")).toString();
+    }
+    if (fields.contains(QStringLiteral("greyscaleRequested"))) {
+        patch.setGreyscaleRequested = true;
+        patch.greyscaleRequested = fields.value(QStringLiteral("greyscaleRequested")).toBool();
+    }
+    incInflight();
+    qumesh::wsman::setKvmSettings(m_client, patch,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("KVM settings: %1").arg(r.error));
+            // Re-read so the read-only QML bindings reflect the
+            // firmware's reality (which may have clamped values).
+            refreshOptInStatus();
+        });
+}
+
+void MachineDetailsController::setKvmServiceEnabled(bool enabled)
+{
+    setLastError({});
+    incInflight();
+    qumesh::wsman::setKvmRedirectionEnabled(m_client, enabled,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("KVM enable/disable: %1").arg(r.error));
+            // The redirection-status fields will pick the change up
+            // on the next overview refresh.
+            refreshOverview();
         });
 }
 
