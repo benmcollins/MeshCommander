@@ -143,6 +143,13 @@ AppWindow {
         controller: controller
     }
 
+    HttpProxyDialog {
+        id: httpProxyDialog
+        onConfirmed: function(accessInfo, port, networkDnsSuffix) {
+            controller.addHttpProxy(accessInfo, port, networkDnsSuffix);
+        }
+    }
+
     // Surfaces a Put-rejected message when the AMT login can't modify
     // the consent policy. Cleared on the next successful refresh.
     Connections {
@@ -2174,6 +2181,32 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                             Layout.fillWidth: true
                                             elide: Text.ElideRight
                                         }
+                                        FlatButton {
+                                            text: qsTr("Delete")
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeXs
+                                            onClicked: controller.deleteHttpProxy(modelData.name || "")
+                                        }
+                                    }
+                                }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: 6
+                                    spacing: 8
+                                    Text {
+                                        text: qsTr("%1 / 15")
+                                            .arg((controller.remoteAccess.httpProxies || []).length)
+                                        color: Colors.textFaint
+                                        font.family: Type.mono
+                                        font.pixelSize: Type.sizeXs
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    AccentButton {
+                                        text: qsTr("Add proxy…")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        enabled: (controller.remoteAccess.httpProxies || []).length < 15
+                                        onClicked: httpProxyDialog.openForAdd()
                                     }
                                 }
                             }

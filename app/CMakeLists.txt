@@ -65,6 +65,7 @@ qt_add_qml_module(qumesh
         qml/ComputerStatusPane.qml
         qml/EditComputerDialog.qml
         qml/ScanDialog.qml
+        qml/HttpProxyDialog.qml
         qml/MigrationBanner.qml
         qml/TitleBar.qml
         qml/StatusBar.qml

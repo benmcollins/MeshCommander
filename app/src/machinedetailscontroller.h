@@ -354,6 +354,19 @@ public:
     Q_INVOKABLE void refreshAuditLog();
     Q_INVOKABLE void refreshDeviceCerts();
     Q_INVOKABLE void refreshRemoteAccess();
+
+    /// Invoke `IPS_HTTPProxyService.AddProxyAccessPoint` and re-read
+    /// the CIRA pane on success. `accessInfo` must be non-empty and
+    /// `port` 1–65535; the in-memory list must hold fewer than 15
+    /// entries (AMT firmware cap). Failures land in `lastError`.
+    /// See #177.
+    Q_INVOKABLE void addHttpProxy(const QString &accessInfo, int port,
+                                  const QString &networkDnsSuffix);
+
+    /// Delete the `IPS_HTTPProxyAccessPoint` with the given `Name`
+    /// and re-read the CIRA pane on success. See #177.
+    Q_INVOKABLE void deleteHttpProxy(const QString &name);
+
     Q_INVOKABLE void refreshWireless();
     /// Enumerate AMT_AgentPresenceWatchdog + read
     /// AMT_AgentPresenceCapabilities for the Watchdogs pane. See #164.

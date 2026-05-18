@@ -68,6 +68,16 @@ struct PullChunk
 /// context, and the EndOfSequence flag from a `PullResponse` body.
 [[nodiscard]] PullChunk parsePullResponse(const QByteArray &bodyXml);
 
+/// Build a WS-Transfer `Delete` envelope. Same shape as Get — the
+/// addressing header carries the action, the resource URI, and the
+/// `SelectorSet` that identifies which instance to remove — and the
+/// body is empty. AMT applies the delete to the (single) instance
+/// whose CIM keys match the supplied selectors.
+[[nodiscard]] QByteArray buildDeleteEnvelope(const QString &resourceUri,
+                                              const QHash<QString, QString> &selectors,
+                                              const QString &to,
+                                              const QString &messageId);
+
 /// Build a WS-Eventing/Transfer custom-action `Invoke` envelope. The body
 /// contains the named method element with the provided parameter
 /// key/value pairs. The full action URI is `<resourceUri>/<methodName>`,
