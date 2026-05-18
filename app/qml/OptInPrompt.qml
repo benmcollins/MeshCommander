@@ -18,15 +18,41 @@ Dialog {
     /// (wrong code, expired, etc.). Shown in red under the field.
     property string errorText: ""
 
+    /// Seconds the firmware will wait for the operator to enter the
+    /// consent code (from `IPS_KVMRedirectionSettingData.OptInPolicyTimeout`).
+    /// 0 hides the countdown. Set via `openFor(timeout)`.
+    property int timeoutSec: 0
+    property int secondsRemaining: 0
+
     signal submitted(int code)
     signal cancelled
 
-    function openFor() {
+    function openFor(timeout) {
         root.errorText = "";
         codeField.text = "";
+        root.timeoutSec = timeout || 0;
+        root.secondsRemaining = root.timeoutSec;
+        countdownTimer.start();
         root.open();
         codeField.forceActiveFocus();
     }
+
+    Timer {
+        id: countdownTimer
+        interval: 1000
+        repeat: true
+        onTriggered: {
+            if (root.secondsRemaining <= 0) {
+                stop();
+                root.cancelled();
+                root.reject();
+                return;
+            }
+            root.secondsRemaining -= 1;
+        }
+    }
+
+    onClosed: countdownTimer.stop()
 
     title: qsTr("Enter consent code")
     modal: true
@@ -59,6 +85,16 @@ Dialog {
             Layout.fillWidth: true
             Layout.preferredHeight: 48
             Keys.onReturnPressed: if (codeField.text.length === 6) submitBtn.clicked()
+        }
+
+        Text {
+            visible: root.timeoutSec > 0
+            text: qsTr("Time remaining: %1s").arg(root.secondsRemaining)
+            color: root.secondsRemaining <= 10 ? Colors.error : Colors.textMuted
+            font.family: Type.mono
+            font.pixelSize: Type.sizeXs
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
         }
 
         Text {

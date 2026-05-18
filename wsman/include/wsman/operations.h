@@ -261,6 +261,12 @@ struct OptInServiceResult
     /// KVM sessions require consent before the firmware unblocks the
     /// framebuffer.
     bool kvmOptInPolicy = false;
+    /// `IPS_KVMRedirectionSettingData.OptInPolicyTimeout` — seconds the
+    /// firmware will wait for the operator to enter the consent code
+    /// before tearing the in-progress opt-in down. 0 when the firmware
+    /// didn't expose it (older AMT). Drives the countdown in the
+    /// PIN-entry dialog. See #171.
+    int optInPolicyTimeoutSec = 0;
 };
 
 /// Read `IPS_OptInService` + `IPS_KVMRedirectionSettingData` in one

@@ -14,6 +14,8 @@
 
 #include <QVariantMap>
 
+class QTimer;
+
 namespace qumesh::ssh { class SshSession; }
 
 namespace qumesh::app {
@@ -203,6 +205,12 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(int optInState READ optInState NOTIFY optInStatusChanged)
     Q_PROPERTY(bool canModifyOptInPolicy READ canModifyOptInPolicy NOTIFY optInStatusChanged)
     Q_PROPERTY(bool kvmOptInPolicy READ kvmOptInPolicy NOTIFY optInStatusChanged)
+    /// `IPS_KVMRedirectionSettingData.OptInPolicyTimeout` — seconds the
+    /// firmware will wait for the operator to enter the consent code.
+    /// Drives the countdown on the PIN-entry modal. 0 when the firmware
+    /// didn't expose the field. See #171.
+    Q_PROPERTY(int optInPolicyTimeoutSec READ optInPolicyTimeoutSec
+                   NOTIFY optInStatusChanged)
 
 public:
     explicit MachineDetailsController(QObject *parent = nullptr);
@@ -299,6 +307,7 @@ public:
     [[nodiscard]] int  optInState() const { return m_optInState; }
     [[nodiscard]] bool canModifyOptInPolicy() const { return m_canModifyOptInPolicy; }
     [[nodiscard]] bool kvmOptInPolicy() const { return m_kvmOptInPolicy; }
+    [[nodiscard]] int  optInPolicyTimeoutSec() const { return m_optInPolicyTimeoutSec; }
 
     [[nodiscard]] QVariantList eventLog() const { return m_eventLog; }
     [[nodiscard]] QVariantList userAccounts() const { return m_userAccounts; }
@@ -485,6 +494,17 @@ signals:
     /// Result of `sendOptInCode` — when ok, the redir framebuffer /
     /// serial / IDE-R should unblock on the active session.
     void optInCodeResult(bool ok, const QString &error);
+    /// Polling saw `OptInState` transition to `InSession` (4) —
+    /// consent has been granted (either by entering the code, or by
+    /// the operator at the target hitting "Allow" on the local
+    /// screen for firmwares that support that). The PIN-entry modal
+    /// should close and the redirection session can proceed.
+    void optInGranted();
+    /// Polling saw `OptInState` drop back to NotStarted/Requested
+    /// after we'd seen it Displayed — the target-side operator
+    /// either cancelled or the firmware timed the request out. The
+    /// modal should close with an "expired or denied" message. See #171.
+    void optInExpiredOrDenied();
     void powerChangeRequested(int state);
     void powerChangeCompleted(int state, bool ok, const QString &error);
     /// Emitted after `trustPendingCert(true)` — the QML layer persists
@@ -646,6 +666,12 @@ private:
     int m_optInState = 0;
     bool m_canModifyOptInPolicy = false;
     bool m_kvmOptInPolicy = false;
+    int  m_optInPolicyTimeoutSec = 0;
+    bool m_optInPolling = false;       ///< See `startOptInPolling`.
+    QTimer *m_optInPollTimer = nullptr;
+
+    void startOptInPolling();
+    void stopOptInPolling();
 };
 
 } // namespace qumesh::app
