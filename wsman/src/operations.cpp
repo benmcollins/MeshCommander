@@ -145,6 +145,13 @@ constexpr char kPhysicalPackageResource[] =
 constexpr char kBatteryResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_Battery";
 
+constexpr char kSolSessionUsingPortResource[] =
+    "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_SolSessionUsingPort";
+constexpr char kKvmSessionUsingPortResource[] =
+    "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_KvmSessionUsingPort";
+constexpr char kIderSessionUsingPortResource[] =
+    "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_IderSessionUsingPort";
+
 constexpr char kAuditLogResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuditLog";
 
@@ -4862,6 +4869,75 @@ void setEnvironmentDetection(WsmanClient *client,
             r.ok = true;
         },
         std::move(callback));
+}
+
+namespace {
+
+ActiveRedirectionSession parseActiveSessionRow(const QByteArray &item)
+{
+    ActiveRedirectionSession s;
+    s.sourceAddress = findScalar(item, QStringLiteral("SourceAddress"));
+    bool conv = false;
+    const int p = findScalar(item, QStringLiteral("SourcePort")).toInt(&conv);
+    if (conv) s.sourcePort = p;
+    // The Dependent / Antecedent EPRs both carry a SAP InstanceID — pull
+    // the first non-empty one we see. Useful for differentiating
+    // multiple-of-the-same-kind sessions (rare on AMT but possible).
+    s.sessionInstanceId = findScalar(item, QStringLiteral("InstanceID"));
+    return s;
+}
+
+} // namespace
+
+void getActiveSessions(WsmanClient *client,
+                       std::function<void(ActiveSessionsResult)> callback)
+{
+    enum class Kind { Sol, Kvm, Ider, _Count };
+    constexpr int kCount = int(Kind::_Count);
+    struct State {
+        std::array<bool, kCount> done{};
+        std::array<QList<QByteArray>, kCount> items;
+        std::array<QString, kCount> errors;
+        std::function<void(ActiveSessionsResult)> cb;
+    };
+    auto st = std::make_shared<State>();
+    st->cb = std::move(callback);
+
+    auto maybeFire = [st]() mutable {
+        for (bool d : st->done)
+            if (!d) return;
+        ActiveSessionsResult r;
+        auto collect = [&](const QList<QByteArray> &items,
+                            QList<ActiveRedirectionSession> &out) {
+            for (const QByteArray &it : items)
+                out.append(parseActiveSessionRow(it));
+        };
+        collect(st->items[int(Kind::Sol)],  r.sol);
+        collect(st->items[int(Kind::Kvm)],  r.kvm);
+        collect(st->items[int(Kind::Ider)], r.ider);
+        // Whole-call ok unless every enumeration faulted with the same
+        // error — partial faults just leave that channel empty.
+        const auto &errs = st->errors;
+        r.ok = !(errs[0].length() && errs[1].length() && errs[2].length()
+                 && errs[0] == errs[1] && errs[1] == errs[2]);
+        if (!r.ok) r.error = errs[0];
+        st->cb(std::move(r));
+    };
+
+    auto kick = [client, st, maybeFire](Kind k, const char *uri) {
+        enumerateAll(client, uri,
+            [st, k, maybeFire](QList<QByteArray> items, QString error) mutable {
+                const int idx = int(k);
+                st->items[idx]  = std::move(items);
+                st->errors[idx] = error;
+                st->done[idx]   = true;
+                maybeFire();
+            });
+    };
+
+    kick(Kind::Sol,  kSolSessionUsingPortResource);
+    kick(Kind::Kvm,  kKvmSessionUsingPortResource);
+    kick(Kind::Ider, kIderSessionUsingPortResource);
 }
 
 void setUserInitiatedConnectionState(WsmanClient *client, int requestedState,

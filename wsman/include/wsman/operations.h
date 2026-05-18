@@ -1234,6 +1234,42 @@ void setWired8021xProfile(WsmanClient *client, bool enabled,
                            int authenticationProtocol,
                            std::function<void(InvokeResult)> callback);
 
+/// One row from one of the three `IPS_*SessionUsingPort` enumerations.
+/// AMT exposes only a handful of scalars per row: the source IP / MAC
+/// the remote console used to connect, plus a system-side EPR that
+/// points at the active session record. All three classes (SOL, KVM,
+/// IDE-R) share the same shape — we collapse them into one struct.
+struct ActiveRedirectionSession
+{
+    /// `SourceAddress` field from the row — usually the IPv4 or IPv6
+    /// the remote console initiated from.
+    QString sourceAddress;
+    /// `SourcePort` — the remote's ephemeral port. 0 when missing.
+    int sourcePort = 0;
+    /// CIM-style EPR text reduced to a single identifying string;
+    /// surfaced read-only for the operator. The legacy NW.js console
+    /// rendered it as a small monospace caption.
+    QString sessionInstanceId;
+};
+
+struct ActiveSessionsResult
+{
+    bool ok = false;
+    QString error;
+    QList<ActiveRedirectionSession> sol;
+    QList<ActiveRedirectionSession> kvm;
+    QList<ActiveRedirectionSession> ider;
+};
+
+/// Enumerate `IPS_SolSessionUsingPort`, `IPS_KvmSessionUsingPort`,
+/// and `IPS_IderSessionUsingPort` in parallel and stitch into one
+/// result. Tolerates per-class faults — a faulted enumeration just
+/// leaves its list empty. AMT allows at most one session per channel
+/// so the lists are typically 0–1 entries long, but we surface
+/// whatever the firmware returns. See #160.
+void getActiveSessions(WsmanClient *client,
+                       std::function<void(ActiveSessionsResult)> callback);
+
 /// Walk every page of `AMT_AuditLog.ReadRecords` and return the parsed
 /// records. Pages are 16-record chunks per the AMT contract. Faulted
 /// pages short-circuit and return the entries collected so far with
