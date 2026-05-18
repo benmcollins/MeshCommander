@@ -249,64 +249,6 @@ jobs:
             exit $RC
           fi
 
-      - name: Sign update for Sparkle (macOS, when secret provisioned)
-        if: runner.os == 'macOS' && env.SPARKLE_ED_PRIVATE_KEY != ''
-        env:
-          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
-        shell: bash
-        working-directory: build
-        run: |
-          # Pull the same Sparkle tarball CMake fetches; we only need
-          # bin/sign_update from it. Cache-friendly: tar.xz is < 14 MB.
-          SPARKLE_VER=2.6.4
-          SPARKLE_URL="https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VER}/Sparkle-${SPARKLE_VER}.tar.xz"
-          curl -sL "$SPARKLE_URL" -o /tmp/sparkle.tar.xz
-          mkdir -p /tmp/sparkle && tar -xf /tmp/sparkle.tar.xz -C /tmp/sparkle
-          KEY_FILE=$(mktemp)
-          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$KEY_FILE"
-          DMG=$(ls QuMesh-*-macos.dmg | head -1)
-          # sign_update prints `sparkle:edSignature="..." length="..."`
-          # straight to stdout; capture it for the appcast item below.
-          SIG=$(/tmp/sparkle/bin/sign_update "$DMG" --ed-key-file "$KEY_FILE")
-          rm -f "$KEY_FILE"
-          # Stash the bits the publish job needs to assemble appcast.xml.
-          # Step runs with working-directory: build, so `..` is the
-          # repo root — upload-artifact resolves its `path:` the same way.
-          mkdir -p "$GITHUB_WORKSPACE/appcast"
-          TAG="${GITHUB_REF##*/}"
-          VERSION="${TAG#v}"
-          DMG_NAME=$(basename "$DMG")
-          PUBDATE=$(LC_ALL=en_US.UTF-8 date -u +"%a, %d %b %Y %H:%M:%S +0000")
-          # Use the tag annotation as release notes; fall back to a
-          # one-liner if the tag is not annotated.
-          NOTES=$(git tag -l --format='%(contents)' "$TAG")
-          if [ -z "$NOTES" ]; then NOTES="QuMesh $TAG"; fi
-          {
-            echo "<item>"
-            echo "  <title>$VERSION</title>"
-            echo "  <pubDate>$PUBDATE</pubDate>"
-            echo "  <sparkle:os>macos</sparkle:os>"
-            echo "  <description><![CDATA["
-            printf '%s\n' "$NOTES"
-            echo "  ]]></description>"
-            echo "  <enclosure url=\"https://github.com/${{ github.repository }}/releases/download/${TAG}/${DMG_NAME}\""
-            echo "             sparkle:version=\"$VERSION\""
-            echo "             sparkle:os=\"macos\""
-            echo "             $SIG"
-            echo "             type=\"application/octet-stream\" />"
-            echo "</item>"
-          } > "$GITHUB_WORKSPACE/appcast/item-macos.xml"
-
-      - name: Upload appcast fragment (macOS)
-        if: runner.os == 'macOS' && env.SPARKLE_ED_PRIVATE_KEY != ''
-        env:
-          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: appcast-fragment-macos
-          path: appcast/item-macos.xml
-          if-no-files-found: error
-
       - name: Sign update for WinSparkle (Windows, when secret provisioned)
         if: runner.os == 'Windows' && env.SPARKLE_ED_PRIVATE_KEY != ''
         env:
@@ -342,16 +284,14 @@ jobs:
           VERSION="${TAG#v}"
           EXE_NAME=$(basename "$EXE")
           PUBDATE=$(LC_ALL=en_US.UTF-8 date -u +"%a, %d %b %Y %H:%M:%S +0000")
-          NOTES=$(git tag -l --format='%(contents)' "$TAG")
-          if [ -z "$NOTES" ]; then NOTES="QuMesh $TAG"; fi
+          # Description block is filled in by the publish job — see the
+          # corresponding comment in the macOS signing step.
           {
             echo "<item>"
             echo "  <title>$VERSION</title>"
             echo "  <pubDate>$PUBDATE</pubDate>"
             echo "  <sparkle:os>windows</sparkle:os>"
-            echo "  <description><![CDATA["
-            printf '%s\n' "$NOTES"
-            echo "  ]]></description>"
+            echo "  __NOTES_HTML_PLACEHOLDER__"
             echo "  <enclosure url=\"https://github.com/${{ github.repository }}/releases/download/${TAG}/${EXE_NAME}\""
             echo "             sparkle:version=\"$VERSION\""
             echo "             sparkle:os=\"windows\""
@@ -388,6 +328,73 @@ jobs:
             --wait
           xcrun stapler staple "$DMG"
 
+      - name: Sign update for Sparkle (macOS, when secret provisioned)
+        # MUST run after the Notarize step above. xcrun stapler staple
+        # rewrites the DMG to embed the notarization ticket, which
+        # changes its bytes and hash; signing before stapling produced
+        # a signature over the pre-staple file that no longer matched
+        # what users downloaded, and Sparkle correctly rejected the
+        # update with "improperly signed" (#211). Signing the final
+        # stapled file makes the recorded length and signature describe
+        # exactly the bytes that get published.
+        if: runner.os == 'macOS' && env.SPARKLE_ED_PRIVATE_KEY != ''
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        shell: bash
+        working-directory: build
+        run: |
+          # Pull the same Sparkle tarball CMake fetches; we only need
+          # bin/sign_update from it. Cache-friendly: tar.xz is < 14 MB.
+          SPARKLE_VER=2.6.4
+          SPARKLE_URL="https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VER}/Sparkle-${SPARKLE_VER}.tar.xz"
+          curl -sL "$SPARKLE_URL" -o /tmp/sparkle.tar.xz
+          mkdir -p /tmp/sparkle && tar -xf /tmp/sparkle.tar.xz -C /tmp/sparkle
+          KEY_FILE=$(mktemp)
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$KEY_FILE"
+          DMG=$(ls QuMesh-*-macos.dmg | head -1)
+          # sign_update prints `sparkle:edSignature="..." length="..."`
+          # straight to stdout; capture it for the appcast item below.
+          SIG=$(/tmp/sparkle/bin/sign_update "$DMG" --ed-key-file "$KEY_FILE")
+          rm -f "$KEY_FILE"
+          # Stash the bits the publish job needs to assemble appcast.xml.
+          # Step runs with working-directory: build, so `..` is the
+          # repo root — upload-artifact resolves its `path:` the same way.
+          mkdir -p "$GITHUB_WORKSPACE/appcast"
+          TAG="${GITHUB_REF##*/}"
+          VERSION="${TAG#v}"
+          DMG_NAME=$(basename "$DMG")
+          PUBDATE=$(LC_ALL=en_US.UTF-8 date -u +"%a, %d %b %Y %H:%M:%S +0000")
+          # The description block is filled in by the publish job: it
+          # reads app/release-notes/<TAG>.md (or falls back to the tag
+          # annotation), renders Markdown → HTML via pandoc, and
+          # substitutes the placeholder below. Keeping rendering in
+          # one place (publish, ubuntu-latest) avoids installing pandoc
+          # on macOS + Windows runners just to do the same conversion
+          # twice.
+          {
+            echo "<item>"
+            echo "  <title>$VERSION</title>"
+            echo "  <pubDate>$PUBDATE</pubDate>"
+            echo "  <sparkle:os>macos</sparkle:os>"
+            echo "  __NOTES_HTML_PLACEHOLDER__"
+            echo "  <enclosure url=\"https://github.com/${{ github.repository }}/releases/download/${TAG}/${DMG_NAME}\""
+            echo "             sparkle:version=\"$VERSION\""
+            echo "             sparkle:os=\"macos\""
+            echo "             $SIG"
+            echo "             type=\"application/octet-stream\" />"
+            echo "</item>"
+          } > "$GITHUB_WORKSPACE/appcast/item-macos.xml"
+
+      - name: Upload appcast fragment (macOS)
+        if: runner.os == 'macOS' && env.SPARKLE_ED_PRIVATE_KEY != ''
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: appcast-fragment-macos
+          path: appcast/item-macos.xml
+          if-no-files-found: error
+
       - name: Collect artifact
         shell: bash
         working-directory: build
@@ -417,13 +424,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install xmllint
+      - name: Install xmllint + pandoc
         # libxml2-utils ships xmllint, used by the Assemble step to
         # validate the previous + final appcast.xml. Not pre-installed
         # on ubuntu-latest as of 2026-05; without this step the
         # validation degrades into `command not found` and the publish
         # step fails (#208 follow-up).
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends libxml2-utils
+        #
+        # pandoc renders the per-version Markdown release notes
+        # (app/release-notes/<TAG>.md) into the HTML that Sparkle's
+        # WebKit description view actually displays. Centralising
+        # rendering here lets the per-OS build jobs stay rendering-
+        # agnostic — they emit a placeholder in their fragment and
+        # the substitute step below fills it in.
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends libxml2-utils pandoc
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
@@ -450,6 +464,60 @@ jobs:
           name: appcast-fragment-windows
           path: appcast/
         continue-on-error: true
+
+      - name: Render release notes (Markdown → HTML)
+        # Source precedence: `app/release-notes/<TAG>.md` (e.g.
+        # v1.1.3.md), else a bare `<VERSION>.md` (e.g. 1.1.3.md), else
+        # the git tag annotation. The tag annotation is engineering-
+        # oriented (issue numbers, CI details, file paths); the
+        # per-version Markdown file is where prose for end users
+        # lives. Adding a new release without that file emits a
+        # ::warning:: and falls back so we never block a release on
+        # a missing notes file — but the warning makes the omission
+        # visible in the run log so it can be addressed next time.
+        #
+        # Substitutes `__NOTES_HTML_PLACEHOLDER__` (emitted by the
+        # per-OS sign steps) with a real <description> block carrying
+        # the rendered HTML inside CDATA. Sparkle's description view
+        # is WebKit, so anything pandoc emits (headings, lists,
+        # fenced code, links, emphasis) renders.
+        if: hashFiles('appcast/item-macos.xml') != '' || hashFiles('appcast/item-windows.xml') != ''
+        run: |
+          TAG="${GITHUB_REF##*/}"
+          VERSION="${TAG#v}"
+          NOTES_MD=""
+          if [ -f "app/release-notes/${TAG}.md" ]; then
+            NOTES_MD=$(cat "app/release-notes/${TAG}.md")
+            echo "Using app/release-notes/${TAG}.md as release notes."
+          elif [ -f "app/release-notes/${VERSION}.md" ]; then
+            NOTES_MD=$(cat "app/release-notes/${VERSION}.md")
+            echo "Using app/release-notes/${VERSION}.md as release notes."
+          else
+            NOTES_MD=$(git tag -l --format='%(contents)' "$TAG")
+            echo "::warning::No app/release-notes/${TAG}.md or ${VERSION}.md found; falling back to git tag annotation."
+          fi
+          if [ -z "$NOTES_MD" ]; then NOTES_MD="QuMesh $TAG"; fi
+
+          NOTES_HTML=$(printf '%s\n' "$NOTES_MD" | pandoc -f gfm -t html)
+
+          for fragment in appcast/item-macos.xml appcast/item-windows.xml; do
+            if [ -f "$fragment" ]; then
+              awk -v html="$NOTES_HTML" '
+                /__NOTES_HTML_PLACEHOLDER__/ {
+                  print "  <description><![CDATA["
+                  print html
+                  print "  ]]></description>"
+                  next
+                }
+                { print }
+              ' "$fragment" > "$fragment.tmp" && mv "$fragment.tmp" "$fragment"
+            fi
+          done
+
+          echo "--- Rendered fragments ---"
+          for fragment in appcast/item-macos.xml appcast/item-windows.xml; do
+            [ -f "$fragment" ] && { echo "=== $fragment ==="; cat "$fragment"; }
+          done
 
       - name: Assemble appcast (macOS + Windows)
         if: hashFiles('appcast/item-macos.xml') != '' || hashFiles('appcast/item-windows.xml') != ''
