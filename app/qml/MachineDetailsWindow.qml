@@ -150,6 +150,31 @@ AppWindow {
         }
     }
 
+    EnvDetectionDialog {
+        id: envDetectionDialog
+        controller: controller
+    }
+
+    UserInitiatedDialog {
+        id: userInitiatedDialog
+        controller: controller
+    }
+
+    MpsServerDialog {
+        id: mpsServerDialog
+        controller: controller
+    }
+
+    ConfirmDialog {
+        id: mpsConfirmDialog
+        property string pendingName: ""
+        onProceed: {
+            if (pendingName.length > 0)
+                controller.removeMpServer(pendingName);
+            pendingName = "";
+        }
+    }
+
     UserAccountDialog {
         id: userAccountDialog
         controller: controller
@@ -2256,6 +2281,25 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                     color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true
                                 }
                             }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 8
+                                Item { Layout.fillWidth: true }
+                                FlatButton {
+                                    text: qsTr("User initiation…")
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                    onClicked: userInitiatedDialog.openForEdit(
+                                        controller.remoteAccess.userInitiated)
+                                }
+                                FlatButton {
+                                    text: qsTr("Domains…")
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                    onClicked: envDetectionDialog.openForEdit(
+                                        controller.remoteAccess.envDetection)
+                                }
+                            }
                         }
 
                         // --- Policies (User Initiated / Alert / Periodic) ---
@@ -2374,6 +2418,37 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                             Layout.fillWidth: true
                                             elide: Text.ElideRight
                                         }
+                                        FlatButton {
+                                            text: qsTr("Edit")
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeXs
+                                            onClicked: mpsServerDialog.openForEdit(modelData)
+                                        }
+                                        FlatButton {
+                                            text: qsTr("Delete")
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeXs
+                                            onClicked: {
+                                                mpsConfirmDialog.ask(
+                                                    qsTr("Delete MPS server?"),
+                                                    qsTr("Removes %1 from the AMT CIRA stack. Linked auth credentials cascade.").arg(modelData.name),
+                                                    qsTr("Delete"), true);
+                                                mpsConfirmDialog.pendingName = modelData.name;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: 6
+                                    spacing: 8
+                                    Item { Layout.fillWidth: true }
+                                    AccentButton {
+                                        text: qsTr("Add server…")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        onClicked: mpsServerDialog.openForAdd()
                                     }
                                 }
                             }

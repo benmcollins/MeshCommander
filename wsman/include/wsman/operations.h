@@ -1053,6 +1053,59 @@ void addHttpProxy(WsmanClient *client, const QString &accessInfo,
 void deleteHttpProxy(WsmanClient *client, const QString &name,
                      std::function<void(InvokeResult)> callback);
 
+/// Put the `AMT_EnvironmentDetectionSettingData` with a new list of
+/// detection-domain strings. AMT decides the device is "on-network"
+/// when DNS resolves any of these, and only opens CIRA tunnels when
+/// it can't. An empty list means "always treat as off-network".
+/// See #158.
+void setEnvironmentDetection(WsmanClient *client,
+                              const QStringList &detectionStrings,
+                              std::function<void(InvokeResult)> callback);
+
+/// Invoke `AMT_UserInitiatedConnectionService.RequestStateChange`.
+/// `requestedState` is one of the EnabledState codes the read side
+/// exposes: 32768 Disabled / 32769 BIOS / 32770 OS / 32771 BIOS+OS.
+/// See #158.
+void setUserInitiatedConnectionState(WsmanClient *client, int requestedState,
+                                      std::function<void(InvokeResult)> callback);
+
+/// Input shape for `addMpServer`. `mpsType` is 0 = CIRA, 1 = CILA.
+/// `authMethod` follows the AMT enum: 1 = none, 2 = MSChapV2-style
+/// HTTP digest (legacy default). When `authMethod == 1` the username
+/// and password are ignored.
+struct MpServerInput
+{
+    QString accessInfo;        ///< IPv4 / IPv6 / FQDN string.
+    int     infoFormat = 201;  ///< CIM code: 3=IPv4, 4=IPv6, 201=DNS.
+    int     port = 4433;
+    int     authMethod = 2;
+    QString username;
+    QString password;
+    QString commonName;        ///< Trusted CN for cert validation.
+    int     mpsType = 0;
+};
+
+/// Invoke `AMT_RemoteAccessService.AddMpServer`. AMT creates a new
+/// `AMT_ManagementPresenceRemoteSAP` instance plus (when auth is
+/// non-empty) a linked `AMT_MPSUsernamePassword` row. See #158.
+void addMpServer(WsmanClient *client, const MpServerInput &input,
+                  std::function<void(InvokeResult)> callback);
+
+/// Put on `AMT_ManagementPresenceRemoteSAP` with the SAP's `Name`
+/// selector. Edits AccessInfo / Port / InfoFormat / CN in place
+/// without touching the auth credentials. See #158.
+void updateMpServer(WsmanClient *client, const QString &name,
+                    const QString &accessInfo, int infoFormat, int port,
+                    const QString &commonName,
+                    std::function<void(InvokeResult)> callback);
+
+/// WS-Transfer Delete on `AMT_ManagementPresenceRemoteSAP` with the
+/// `Name` selector. AMT cascades the matching MPSUsernamePassword
+/// row, so a follow-up delete on the auth class isn't needed. See
+/// #158.
+void removeMpServer(WsmanClient *client, const QString &name,
+                     std::function<void(InvokeResult)> callback);
+
 /// WiFi port-level state from `CIM_WiFiPort` + `CIM_WiFiEndpoint` +
 /// `AMT_WiFiPortConfigurationService`. Each field is independently
 /// populated; missing ones leave defaults so the QML can render

@@ -175,6 +175,8 @@ constexpr char kRemoteAccessPolicyAppliesToMpsResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_RemoteAccessPolicyAppliesToMPS";
 constexpr char kManagementPresenceRemoteSapResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_ManagementPresenceRemoteSAP";
+constexpr char kRemoteAccessServiceResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_RemoteAccessService";
 constexpr char kMpsUsernamePasswordResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_MPSUsernamePassword";
 constexpr char kHttpProxyServiceResource[] =
@@ -4787,6 +4789,185 @@ void setWired8021xProfile(WsmanClient *client, bool enabled,
         QString::fromLatin1(kWired8021xProfileResource),
         QStringLiteral("AMT_8021XProfile"),
         /*selectors*/ {}, props,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void setEnvironmentDetection(WsmanClient *client,
+                              const QStringList &detectionStrings,
+                              std::function<void(InvokeResult)> callback)
+{
+    // DetectionStrings is a repeated XML element; hand-roll the Put
+    // envelope so we can emit one <DetectionStrings>…</DetectionStrings>
+    // child per entry. AMT validates the rest of the record server-
+    // side; ElementName and the InstanceID are firmware-fixed and not
+    // sent back.
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    const QString resource =
+        QString::fromLatin1(kEnvironmentDetectionResource);
+    const QString to = client ? client->endpoint().toString() : QString();
+    const QString msgId = newMessageId();
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(resource,                            QStringLiteral("r"));
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/09/transfer/Put"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), msgId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing), QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeEndElement(); // Header
+
+    // Body
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resource,
+                         QStringLiteral("AMT_EnvironmentDetectionSettingData"));
+    for (const QString &s : detectionStrings)
+        w.writeTextElement(resource, QStringLiteral("DetectionStrings"), s);
+    w.writeEndElement(); // AMT_EnvironmentDetectionSettingData
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+
+    runRequest<InvokeResult>(client, out, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void setUserInitiatedConnectionState(WsmanClient *client, int requestedState,
+                                      std::function<void(InvokeResult)> callback)
+{
+    // CIM-style 4-part selectors for the singleton service.
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("Name"),
+                     QStringLiteral("Intel(r) AMT User Initiated Connection Service"));
+    selectors.insert(QStringLiteral("SystemCreationClassName"),
+                     QStringLiteral("CIM_ComputerSystem"));
+    selectors.insert(QStringLiteral("SystemName"), QStringLiteral("Intel(r) AMT"));
+    selectors.insert(QStringLiteral("CreationClassName"),
+                     QStringLiteral("AMT_UserInitiatedConnectionService"));
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("RequestedState"),
+                  QString::number(requestedState));
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kUserInitiatedConnectionResource),
+        QStringLiteral("RequestStateChange"),
+        selectors, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            if (rv.isEmpty()) {
+                r.error = QStringLiteral(
+                    "AMT_UserInitiatedConnectionService.RequestStateChange:"
+                    " no ReturnValue");
+                return;
+            }
+            bool conv = false;
+            r.returnValue = rv.toInt(&conv);
+            // 0 = Completed, 4096 = Method Parameters Checked - Job Started.
+            r.ok = conv && (r.returnValue == 0 || r.returnValue == 4096);
+            if (!r.ok)
+                r.error = QStringLiteral("RequestStateChange returned %1").arg(rv);
+        },
+        std::move(callback));
+}
+
+void addMpServer(WsmanClient *client, const MpServerInput &input,
+                  std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("AccessInfo"),  input.accessInfo);
+    params.insert(QStringLiteral("InfoFormat"),  QString::number(input.infoFormat));
+    params.insert(QStringLiteral("Port"),        QString::number(input.port));
+    params.insert(QStringLiteral("AuthMethod"),  QString::number(input.authMethod));
+    if (input.authMethod != 1) {
+        params.insert(QStringLiteral("Username"), input.username);
+        params.insert(QStringLiteral("Password"), input.password);
+    }
+    params.insert(QStringLiteral("CommonName"),  input.commonName);
+    params.insert(QStringLiteral("MpsType"),     QString::number(input.mpsType));
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kRemoteAccessServiceResource),
+        QStringLiteral("AddMpServer"),
+        /*selectors*/ {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            r.returnValue = rv.toInt();
+            r.ok = (r.returnValue == 0);
+            if (!r.ok) {
+                r.error = QStringLiteral("AddMpServer returned %1").arg(
+                    rv.isEmpty() ? QStringLiteral("(no ReturnValue)") : rv);
+            }
+        },
+        std::move(callback));
+}
+
+void updateMpServer(WsmanClient *client, const QString &name,
+                    const QString &accessInfo, int infoFormat, int port,
+                    const QString &commonName,
+                    std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("Name"), name);
+    QHash<QString, QString> props;
+    props.insert(QStringLiteral("Name"),        name);
+    props.insert(QStringLiteral("AccessInfo"),  accessInfo);
+    props.insert(QStringLiteral("InfoFormat"),  QString::number(infoFormat));
+    props.insert(QStringLiteral("Port"),        QString::number(port));
+    props.insert(QStringLiteral("CN"),          commonName);
+    const QByteArray env = buildPutEnvelope(
+        QString::fromLatin1(kManagementPresenceRemoteSapResource),
+        QStringLiteral("AMT_ManagementPresenceRemoteSAP"),
+        selectors, props,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void removeMpServer(WsmanClient *client, const QString &name,
+                     std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("Name"), name);
+    const QByteArray env = buildDeleteEnvelope(
+        QString::fromLatin1(kManagementPresenceRemoteSapResource), selectors,
         client ? client->endpoint().toString() : QString(), newMessageId());
     runRequest<InvokeResult>(client, env, {},
         [](const QByteArray & /*body*/, InvokeResult &r) {

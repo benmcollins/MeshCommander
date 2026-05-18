@@ -1756,6 +1756,12 @@ void MachineDetailsController::refreshRemoteAccess()
             QVariantList proxies;
             for (const auto &p : r.httpProxies) {
                 QVariantMap m;
+                // The `name` key is the load-bearing selector for the
+                // Delete invoke; it was missing from the original
+                // Phase-A→Phase-B handoff (HTTP proxies, #214), so the
+                // sidebar's Delete button silently fired the empty-name
+                // path. Surface it so QML can read modelData.name.
+                m.insert(QStringLiteral("name"),       p.name);
                 m.insert(QStringLiteral("accessInfo"), p.accessInfo);
                 m.insert(QStringLiteral("port"),       p.port);
                 m.insert(QStringLiteral("networkDnsSuffix"), p.networkDnsSuffix);
@@ -1840,6 +1846,178 @@ void MachineDetailsController::deleteHttpProxy(const QString &name)
                 setLastError(r.error.isEmpty()
                     ? QStringLiteral("HTTP proxy: delete failed.")
                     : QStringLiteral("HTTP proxy: %1").arg(r.error));
+                return;
+            }
+            refreshRemoteAccess();
+        });
+}
+
+void MachineDetailsController::setEnvironmentDetection(const QStringList &domains)
+{
+    setLastError({});
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Env detection: host is empty."));
+        return;
+    }
+    QStringList trimmed;
+    trimmed.reserve(domains.size());
+    for (const QString &d : domains) {
+        const QString t = d.trimmed();
+        if (!t.isEmpty()) trimmed.append(t);
+    }
+    incInflight();
+    qumesh::wsman::setEnvironmentDetection(m_client, trimmed,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Env detection: failed.")
+                    : QStringLiteral("Env detection: %1").arg(r.error));
+                return;
+            }
+            refreshRemoteAccess();
+        });
+}
+
+void MachineDetailsController::setUserInitiatedConnectionState(int enabledState)
+{
+    setLastError({});
+    if (enabledState < 32768 || enabledState > 32771) {
+        setLastError(QStringLiteral(
+            "User-initiated CIRA: state %1 is outside 32768..32771.")
+            .arg(enabledState));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("User-initiated CIRA: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::setUserInitiatedConnectionState(m_client, enabledState,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("User-initiated CIRA: failed.")
+                    : QStringLiteral("User-initiated CIRA: %1").arg(r.error));
+                return;
+            }
+            refreshRemoteAccess();
+        });
+}
+
+void MachineDetailsController::addMpServer(const QVariantMap &fields)
+{
+    setLastError({});
+    qumesh::wsman::MpServerInput in;
+    in.accessInfo = fields.value(QStringLiteral("accessInfo")).toString().trimmed();
+    in.port       = fields.value(QStringLiteral("port"), 4433).toInt();
+    in.commonName = fields.value(QStringLiteral("commonName")).toString();
+    in.mpsType    = fields.value(QStringLiteral("mpsType"), 0).toInt();
+    in.authMethod = fields.value(QStringLiteral("authMethod"), 1).toInt();
+    in.username   = fields.value(QStringLiteral("username")).toString();
+    in.password   = fields.value(QStringLiteral("password")).toString();
+    in.infoFormat = qumesh::wsman::classifyAccessInfo(in.accessInfo);
+
+    if (in.accessInfo.isEmpty()) {
+        setLastError(QStringLiteral("Add MPS: AccessInfo is empty."));
+        return;
+    }
+    if (in.port < 1 || in.port > 65535) {
+        setLastError(QStringLiteral(
+            "Add MPS: port %1 is out of range (1–65535).").arg(in.port));
+        return;
+    }
+    if (in.authMethod != 1
+        && (in.username.isEmpty() || in.password.isEmpty())) {
+        setLastError(QStringLiteral(
+            "Add MPS: auth method requires both username and password."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Add MPS: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::addMpServer(m_client, in,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Add MPS: failed.")
+                    : QStringLiteral("Add MPS: %1").arg(r.error));
+                return;
+            }
+            refreshRemoteAccess();
+        });
+}
+
+void MachineDetailsController::updateMpServer(const QString &name,
+                                              const QVariantMap &fields)
+{
+    setLastError({});
+    if (name.isEmpty()) {
+        setLastError(QStringLiteral("Edit MPS: missing identity."));
+        return;
+    }
+    const QString accessInfo =
+        fields.value(QStringLiteral("accessInfo")).toString().trimmed();
+    const int port = fields.value(QStringLiteral("port"), 4433).toInt();
+    const QString commonName =
+        fields.value(QStringLiteral("commonName")).toString();
+    if (accessInfo.isEmpty()) {
+        setLastError(QStringLiteral("Edit MPS: AccessInfo is empty."));
+        return;
+    }
+    if (port < 1 || port > 65535) {
+        setLastError(QStringLiteral(
+            "Edit MPS: port %1 is out of range.").arg(port));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Edit MPS: host is empty."));
+        return;
+    }
+    const int infoFormat = qumesh::wsman::classifyAccessInfo(accessInfo);
+    incInflight();
+    qumesh::wsman::updateMpServer(m_client, name, accessInfo, infoFormat, port,
+                                   commonName,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Edit MPS: failed.")
+                    : QStringLiteral("Edit MPS: %1").arg(r.error));
+                return;
+            }
+            refreshRemoteAccess();
+        });
+}
+
+void MachineDetailsController::removeMpServer(const QString &name)
+{
+    setLastError({});
+    if (name.isEmpty()) {
+        setLastError(QStringLiteral("Remove MPS: missing identity."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Remove MPS: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::removeMpServer(m_client, name,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Remove MPS: failed.")
+                    : QStringLiteral("Remove MPS: %1").arg(r.error));
                 return;
             }
             refreshRemoteAccess();
