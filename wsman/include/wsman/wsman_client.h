@@ -95,13 +95,17 @@ public:
     /// Per-request transfer timeout. Default 30 s. Pass 0 to disable.
     void setTransferTimeoutMs(int ms);
 
-    /// Optional socket factory. When set, each new request takes its
-    /// transport socket from this callback (one fresh fd per reply)
+    /// Optional async socket factory. When set, each new request takes
+    /// its transport socket from this callback (one fresh fd per reply)
     /// instead of opening a fresh TCP connection to the endpoint's
     /// host/port. Used by the per-machine SSH tunnel: the factory
-    /// opens a new `SshTunnel` for each WSMAN call and returns the
-    /// Qt-side fd of its socketpair. Returning -1 fails the request.
-    using SocketFactory = std::function<qintptr()>;
+    /// kicks off a new `SshTunnel` open and invokes the completion
+    /// callback with the Qt-side fd of its socketpair when ready, or
+    /// with `fd < 0` plus an error message on failure. The factory
+    /// must invoke the callback exactly once, even on error; the
+    /// request's transfer timeout covers the open window too.
+    using SocketCallback = std::function<void(qintptr fd, QString error)>;
+    using SocketFactory  = std::function<void(SocketCallback)>;
     void setSocketFactory(SocketFactory factory);
 
     /// Serialize outbound requests so at most one is in flight at a

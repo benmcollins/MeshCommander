@@ -4,10 +4,17 @@
 #include "redir/redir_client.h"
 
 #include <QCryptographicHash>
+#include <QPointer>
 #include <QSslCertificate>
 #include <QSslConfiguration>
 #include <QSslSocket>
 #include <QTcpSocket>
+
+#ifdef Q_OS_WIN
+#  include <winsock2.h>
+#else
+#  include <unistd.h>
+#endif
 
 namespace qumesh::redir {
 
@@ -43,13 +50,35 @@ void RedirectionClient::setCredentials(QString user, QString pass)
 void RedirectionClient::connectTo(const QString &host, quint16 port)
 {
     if (m_tunnelOpener) {
-        const qintptr fd = m_tunnelOpener(host, port);
-        if (fd < 0) {
-            fail(QStringLiteral("SSH tunnel could not be opened to %1:%2")
-                     .arg(host).arg(port));
-            return;
-        }
-        connectViaSocketDescriptor(fd);
+        // Tunnel open is async — show the user "Connecting…" up front
+        // and let the callback either drive the rest of the connect or
+        // surface the failure. The UI thread never blocks on libssh.
+        setState(State::Connecting);
+        QPointer<RedirectionClient> self(this);
+        m_tunnelOpener(host, port,
+                       [self, host, port](qintptr fd, QString error) {
+            if (self.isNull()) {
+                // Caller went away while the tunnel was opening. Close
+                // the orphan fd so the pump on the other end of the
+                // socketpair sees EOF and exits cleanly.
+                if (fd >= 0) {
+#ifdef Q_OS_WIN
+                    ::closesocket(static_cast<SOCKET>(fd));
+#else
+                    ::close(static_cast<int>(fd));
+#endif
+                }
+                return;
+            }
+            if (fd < 0) {
+                self->fail(error.isEmpty()
+                               ? QStringLiteral("SSH tunnel could not be opened to %1:%2")
+                                     .arg(host).arg(port)
+                               : error);
+                return;
+            }
+            self->connectViaSocketDescriptor(fd);
+        });
         return;
     }
 
