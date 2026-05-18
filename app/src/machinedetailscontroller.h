@@ -150,6 +150,9 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(QVariantMap  auditLogState   READ auditLogState   NOTIFY auditLogChanged)
     Q_PROPERTY(QVariantList auditLogEntries READ auditLogEntries NOTIFY auditLogChanged)
 
+    // Active redirection sessions (SOL / KVM / IDE-R) — read-only.
+    Q_PROPERTY(QVariantMap activeSessions READ activeSessions NOTIFY activeSessionsChanged)
+
     // Device certificate store — read-only.
     Q_PROPERTY(QVariantMap  deviceCertStore READ deviceCertStore NOTIFY deviceCertStoreChanged)
 
@@ -326,6 +329,7 @@ public:
     [[nodiscard]] QVariantMap  hardwareInventory() const { return m_hardwareInventory; }
     [[nodiscard]] QVariantMap  auditLogState() const     { return m_auditLogState; }
     [[nodiscard]] QVariantList auditLogEntries() const   { return m_auditLogEntries; }
+    [[nodiscard]] QVariantMap  activeSessions() const    { return m_activeSessions; }
     [[nodiscard]] QVariantMap  deviceCertStore() const   { return m_deviceCertStore; }
     [[nodiscard]] QVariantMap  remoteAccess() const      { return m_remoteAccess; }
     [[nodiscard]] QVariantMap  wireless() const          { return m_wireless; }
@@ -380,6 +384,12 @@ public:
 
     Q_INVOKABLE void refreshHardware();
     Q_INVOKABLE void refreshAuditLog();
+
+    /// Enumerate IPS_SolSessionUsingPort + IPS_KvmSessionUsingPort +
+    /// IPS_IderSessionUsingPort. Useful for "who's currently holding
+    /// SOL / KVM / IDE-R?" diagnostics — AMT only allows one session
+    /// per channel. See #160.
+    Q_INVOKABLE void refreshActiveSessions();
     Q_INVOKABLE void refreshDeviceCerts();
 
     /// Install a certificate parsed from PEM-encoded `pem` into the
@@ -632,6 +642,7 @@ signals:
     void userAccountsChanged();
     void hardwareChanged();
     void auditLogChanged();
+    void activeSessionsChanged();
     void deviceCertStoreChanged();
     void remoteAccessChanged();
     void wirelessChanged();
@@ -718,6 +729,7 @@ private:
         PendingEventSubscriptions  = 1 << 12,
         PendingWakeAlarms          = 1 << 13,
         PendingSystemDefense       = 1 << 14,
+        PendingActiveSessions      = 1 << 15,
     };
     int m_pendingRefreshes = 0;
     /// `true` between `setSshConfig(enabled=true)` and the session
@@ -811,6 +823,7 @@ private:
     QVariantMap  m_hardwareInventory;
     QVariantMap  m_auditLogState;
     QVariantList m_auditLogEntries;
+    QVariantMap  m_activeSessions;
     QVariantMap  m_deviceCertStore;
     QVariantMap  m_remoteAccess;
     QVariantMap  m_wireless;

@@ -160,6 +160,7 @@ void MachineDetailsController::runPendingRefreshes()
     if (p & PendingUserAccounts) refreshUserAccounts();
     if (p & PendingHardware)     refreshHardware();
     if (p & PendingAuditLog)     refreshAuditLog();
+    if (p & PendingActiveSessions) refreshActiveSessions();
     if (p & PendingDeviceCerts)  refreshDeviceCerts();
     if (p & PendingRemoteAccess) refreshRemoteAccess();
     if (p & PendingWireless)     refreshWireless();
@@ -2126,6 +2127,44 @@ void MachineDetailsController::refreshDeviceCerts()
             store.insert(QStringLiteral("ok"),           r.ok);
             m_deviceCertStore = std::move(store);
             emit deviceCertStoreChanged();
+        });
+}
+
+void MachineDetailsController::refreshActiveSessions()
+{
+    if (deferIfSshConnecting(PendingActiveSessions)) return;
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Host is empty — cannot refresh."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::getActiveSessions(m_client,
+        [this](qumesh::wsman::ActiveSessionsResult r) {
+            decInflight();
+            if (!r.ok && !r.error.isEmpty())
+                setLastError(QStringLiteral("Active sessions: %1").arg(r.error));
+
+            const auto pack = [](const QList<qumesh::wsman::ActiveRedirectionSession> &list) {
+                QVariantList out;
+                out.reserve(list.size());
+                for (const auto &s : list) {
+                    QVariantMap m;
+                    m.insert(QStringLiteral("sourceAddress"),    s.sourceAddress);
+                    m.insert(QStringLiteral("sourcePort"),       s.sourcePort);
+                    m.insert(QStringLiteral("sessionInstanceId"), s.sessionInstanceId);
+                    out.append(m);
+                }
+                return out;
+            };
+
+            QVariantMap as;
+            as.insert(QStringLiteral("ok"),   r.ok);
+            as.insert(QStringLiteral("sol"),  pack(r.sol));
+            as.insert(QStringLiteral("kvm"),  pack(r.kvm));
+            as.insert(QStringLiteral("ider"), pack(r.ider));
+            m_activeSessions = std::move(as);
+            emit activeSessionsChanged();
         });
 }
 
