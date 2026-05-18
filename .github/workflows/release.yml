@@ -166,7 +166,13 @@ jobs:
       - name: Test (smoke)
         shell: bash
         working-directory: build
-        run: ctest --output-on-failure --parallel
+        run: |
+          # See ci.yml — test exes on Windows need windeps DLLs on PATH.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            RT="${RUNNER_TEMP//\\//}"
+            export PATH="$RT/windeps/x64-windows/bin:$PATH"
+          fi
+          ctest --output-on-failure --parallel
 
       - name: Package
         shell: bash

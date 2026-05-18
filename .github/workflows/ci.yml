@@ -105,4 +105,15 @@ jobs:
       - name: Test
         shell: bash
         working-directory: build
-        run: ctest --output-on-failure --parallel
+        run: |
+          # On Windows the test exes sit in per-subproject subdirs and
+          # don't get the windeps DLLs copied in by the qumesh target's
+          # POST_BUILD step. Add the windeps bin/ to PATH so the
+          # dynamic loader resolves ssh.dll / libcrypto / libssl /
+          # legacy at test launch. STATUS_DLL_NOT_FOUND (0xc0000135)
+          # otherwise.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            RT="${RUNNER_TEMP//\\//}"
+            export PATH="$RT/windeps/x64-windows/bin:$PATH"
+          fi
+          ctest --output-on-failure --parallel
