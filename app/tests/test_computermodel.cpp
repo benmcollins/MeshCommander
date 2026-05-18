@@ -24,6 +24,7 @@ private slots:
     void setDataEmitsDataChanged();
     void persistFailureRollsBack();
     void reloadFromStoreOnSetStore();
+    void sshConfigRoundTripsCompression();
 };
 
 void TestComputerModel::contractWithItemModelTester()
@@ -158,6 +159,57 @@ void TestComputerModel::reloadFromStoreOnSetStore()
     m.setStore(&store);
     QCOMPARE(m.rowCount(), 1);
     QCOMPARE(m.at(0).name, QStringLiteral("a"));
+}
+
+void TestComputerModel::sshConfigRoundTripsCompression()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+
+    // Save with compression enabled.
+    {
+        ConfigStore store(tmp.path());
+        ComputerModel m;
+        m.setStore(&store);
+        const int row = m.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"),
+                                      QStringLiteral("u"), QStringLiteral("p"), false);
+        QCOMPARE(row, 0);
+        const QVariantMap cfg = {
+            {QStringLiteral("enabled"), true},
+            {QStringLiteral("host"), QStringLiteral("jump.example.com")},
+            {QStringLiteral("port"), 22},
+            {QStringLiteral("user"), QStringLiteral("ubuntu")},
+            {QStringLiteral("authMode"), 0},
+            {QStringLiteral("password"), QStringLiteral("pw")},
+            {QStringLiteral("compression"), true},
+        };
+        QVERIFY(m.setSshConfig(row, cfg));
+        const QVariantMap readBack = m.sshConfigFor(row);
+        QCOMPARE(readBack.value(QStringLiteral("compression")).toBool(), true);
+    }
+
+    // Reload from disk; flag must survive.
+    {
+        ConfigStore store(tmp.path());
+        ComputerModel m;
+        m.setStore(&store);
+        QCOMPARE(m.rowCount(), 1);
+        const QVariantMap cfg = m.sshConfigFor(0);
+        QCOMPARE(cfg.value(QStringLiteral("compression")).toBool(), true);
+    }
+
+    // Configs without the field default to false.
+    {
+        QTemporaryDir tmp2;
+        QVERIFY(tmp2.isValid());
+        ConfigStore store(tmp2.path());
+        ComputerModel m;
+        m.setStore(&store);
+        m.addComputer(QStringLiteral("b"), QStringLiteral("2.2.2.2"),
+                       QStringLiteral("u"), QStringLiteral("p"), false);
+        const QVariantMap cfg = m.sshConfigFor(0);
+        QCOMPARE(cfg.value(QStringLiteral("compression")).toBool(), false);
+    }
 }
 
 QTEST_GUILESS_MAIN(TestComputerModel)

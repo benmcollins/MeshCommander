@@ -57,6 +57,9 @@ public:
         QString privateKeyPassphrase; ///< Optional passphrase for the key.
         QStringList trustedHostKeyFingerprints; ///< Pinned SHA-256 host keys.
         int connectTimeoutMs = 15000;
+        /// When `true`, prefer zlib on the SSH transport
+        /// (`"zlib@openssh.com,zlib,none"`). libssh's default is `none`.
+        bool compression = false;
     };
 
     explicit SshSession(QObject *parent = nullptr);

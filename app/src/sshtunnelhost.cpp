@@ -78,6 +78,7 @@ void SshTunnelHost::setConfig(const QVariantMap &cfg)
     p.password = cfg.value(QStringLiteral("password")).toString();
     p.privateKeyPath = cfg.value(QStringLiteral("keyPath")).toString();
     p.privateKeyPassphrase = cfg.value(QStringLiteral("keyPassphrase")).toString();
+    p.compression = cfg.value(QStringLiteral("compression")).toBool();
     const QVariantList fps = cfg.value(QStringLiteral("trustedHostKeyFingerprints"))
                                   .toList();
     for (const QVariant &v : fps) p.trustedHostKeyFingerprints.append(v.toString());

@@ -47,6 +47,7 @@ struct Computer
     QString sshKeyPath;
     QString sshKeyPassphrase;
     QStringList sshTrustedHostKeyFingerprints;
+    bool sshCompression = false; ///< Negotiate zlib on the SSH transport.
 
     [[nodiscard]] QJsonObject toJson() const;
     [[nodiscard]] static Computer fromJson(const QJsonObject &obj);
