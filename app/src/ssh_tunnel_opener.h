@@ -10,18 +10,20 @@ namespace qumesh::ssh { class SshSession; }
 
 namespace qumesh::app {
 
-/// Build a `RedirectionClient::TunnelOpener` that opens a fresh
-/// `SshTunnel` over the given session for every connect attempt. The
-/// returned callback captures `session` by raw pointer; the caller
-/// must keep `session` alive while the underlying RedirectionClient
-/// may reconnect.
+/// Build a `RedirectionClient::TunnelOpener` that asynchronously opens
+/// a fresh `SshTunnel` over the given session for every connect
+/// attempt. The returned callback captures `session` by raw pointer;
+/// the caller must keep `session` alive while the underlying
+/// RedirectionClient may reconnect.
 qumesh::redir::RedirectionClient::TunnelOpener
 makeSshTunnelOpener(qumesh::ssh::SshSession *session);
 
 /// Same idea but for `WsmanClient::SocketFactory` (one channel per
 /// request, short-lived). `amtHost` / `amtPort` capture the WSMAN
 /// endpoint at controller setup time so the lambda doesn't need to
-/// look up the URL again.
+/// look up the URL again. The callback is invoked asynchronously once
+/// the SSH channel handshake completes; the UI thread never blocks
+/// on libssh.
 qumesh::wsman::WsmanClient::SocketFactory
 makeSshSocketFactory(qumesh::ssh::SshSession *session, QString amtHost, quint16 amtPort);
 

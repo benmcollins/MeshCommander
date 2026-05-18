@@ -5,13 +5,13 @@
 #include "ssh/ssh_session.h"
 #include "ssh_session_worker.h"
 
-#include <QMutexLocker>
 #include <QPointer>
 #include <QThread>
 
 #include <libssh/libssh.h>
 
 #include <atomic>
+#include <memory>
 
 #ifdef Q_OS_WIN
 #  include <winsock2.h>
@@ -33,9 +33,6 @@
 
 namespace qumesh::ssh {
 
-// Forward-declared in ssh_session.cpp; we only need its raw session
-// pointer and mutex here, so reach into it via the public worker()
-// handle.
 class SshSessionWorker;
 
 namespace {
@@ -189,58 +186,24 @@ qint64 fdWrite(qintptr fd, const char *buf, qint64 len)
 /// socketpair. Spins on its own QThread, takes the session mutex
 /// briefly for each libssh call so multiple tunnels on the same
 /// session can interleave.
+///
+/// The pump receives an already-open `ssh_channel` from the SshTunnel
+/// — it doesn't drive the channel-open itself. The new async open
+/// flow keeps the channel handshake on the SSH worker thread; the
+/// pump thread only runs once we have something to pump.
 class SshTunnelPump : public QThread
 {
     Q_OBJECT
 public:
-    SshTunnelPump(SshSession *session, QString remoteHost, quint16 remotePort)
+    SshTunnelPump(SshSession *session, ssh_channel channel, qintptr pumpFd)
         : m_session(session),
-          m_remoteHost(std::move(remoteHost)),
-          m_remotePort(remotePort) {}
+          m_channel(channel),
+          m_pumpFd(pumpFd) {}
 
     ~SshTunnelPump() override
     {
         stop();
         wait();
-    }
-
-    /// Synchronously open the channel + socketpair. Returns the Qt-side
-    /// fd on success, -1 on failure (and sets `m_error`).
-    qintptr openSync()
-    {
-        // Ask the session's worker to open a channel for us. The worker
-        // serializes access to the ssh_session.
-        SshSessionWorker *w = m_session->worker();
-        if (w == nullptr) {
-            m_error = QStringLiteral("SSH session is not connected");
-            return -1;
-        }
-        ssh_channel ch = nullptr;
-        bool ok = QMetaObject::invokeMethod(
-            w, [w, host = m_remoteHost, port = m_remotePort, &ch]() {
-                ch = const_cast<SshSessionWorker *>(w)->openForwardChannel(host, port);
-            }, Qt::BlockingQueuedConnection);
-        if (!ok || ch == nullptr) {
-            m_error = QStringLiteral("Failed to open SSH channel to %1:%2")
-                          .arg(m_remoteHost).arg(m_remotePort);
-            return -1;
-        }
-        m_channel = ch;
-
-        qintptr fds[2] = {-1, -1};
-        if (makeSocketPair(fds) != 0) {
-            // Tear down the channel; we held the session mutex implicitly
-            // via the worker call above.
-            QMetaObject::invokeMethod(w, [ch]() {
-                ssh_channel_close(ch);
-                ssh_channel_free(ch);
-            }, Qt::BlockingQueuedConnection);
-            m_channel = nullptr;
-            m_error = QStringLiteral("socketpair() failed");
-            return -1;
-        }
-        m_pumpFd = fds[0];
-        return fds[1];
     }
 
     void stop()
@@ -376,13 +339,26 @@ protected:
 
 private:
     SshSession *m_session = nullptr;
-    QString m_remoteHost;
-    quint16 m_remotePort = 0;
     ssh_channel m_channel = nullptr;
     qintptr m_pumpFd = -1;
     std::atomic<bool> m_stop{false};
     QString m_error;
 };
+
+namespace {
+
+/// Shared state for an in-flight async channel open. Lives at least as
+/// long as both the worker-side lambda and the result-arrival lambda,
+/// even if the `SshTunnel` is destroyed between them. The `abandoned`
+/// flag tells the worker callback to free the channel itself instead
+/// of trying to hand it back to a destroyed tunnel.
+struct OpenState
+{
+    QPointer<SshSessionWorker> worker;
+    std::atomic<bool> abandoned{false};
+};
+
+} // namespace
 
 struct SshTunnel::Private
 {
@@ -390,9 +366,10 @@ struct SshTunnel::Private
     QString remoteHost;
     quint16 remotePort = 0;
     std::unique_ptr<SshTunnelPump> pump;
-    qintptr localFd = -1;
     bool opened = false;
     QString lastError;
+    std::shared_ptr<OpenState> openState;
+    bool destroyConnected = false;
 };
 
 SshTunnel::SshTunnel(SshSession *session, QString remoteHost, quint16 remotePort,
@@ -406,6 +383,9 @@ SshTunnel::SshTunnel(SshSession *session, QString remoteHost, quint16 remotePort
 
 SshTunnel::~SshTunnel()
 {
+    // If an open is still in flight, tell the worker-side lambda to
+    // free the channel itself instead of posting back to us.
+    if (d->openState) d->openState->abandoned.store(true);
     close();
 }
 
@@ -416,56 +396,120 @@ void SshTunnel::open()
         emit failed(d->lastError);
         return;
     }
-    d->pump = std::make_unique<SshTunnelPump>(d->session, d->remoteHost, d->remotePort);
-    const qintptr fd = d->pump->openSync();
-    if (fd < 0) {
-        d->lastError = d->pump->error();
-        d->pump.reset();
+    SshSessionWorker *w = d->session->worker();
+    if (w == nullptr) {
+        d->lastError = QStringLiteral("SSH session worker not available");
         emit failed(d->lastError);
         return;
     }
-    d->localFd = fd;
-    d->opened = true;
 
-    // Two teardown paths, both routed through close():
-    //   1. SshSession dies first — its aboutToDestroy fires before the
-    //      worker thread is quit, so close() joins the pump while the
-    //      worker is still alive (no dangling-pointer invokes).
-    //   2. Pump exits naturally (EOF either side) — close() emits
-    //      closed(), which the opener's connection turns into
-    //      deleteLater so the orphan SshTunnel doesn't leak.
-    QObject::connect(d->session, &SshSession::aboutToDestroy,
-                     this, &SshTunnel::close, Qt::DirectConnection);
+    // Wire aboutToDestroy → close() once; the connection survives across
+    // the async open boundary. Pump exit emits closed() the same way.
+    if (!d->destroyConnected) {
+        QObject::connect(d->session, &SshSession::aboutToDestroy,
+                         this, &SshTunnel::close, Qt::DirectConnection);
+        d->destroyConnected = true;
+    }
+
+    auto state = std::make_shared<OpenState>();
+    state->worker = w;
+    d->openState = state;
+
+    QPointer<SshTunnel> self(this);
+    const QString host = d->remoteHost;
+    const quint16 port = d->remotePort;
+
+    QMetaObject::invokeMethod(w, [state, host, port, self]() {
+        SshSessionWorker *worker = state->worker.data();
+        if (worker == nullptr) return;
+        ssh_channel ch = worker->openForwardChannel(host, port);
+
+        // If the tunnel was destroyed (or close()d) while we were in
+        // the libssh handshake, free the channel right here on the
+        // worker — never bounce it back.
+        if (state->abandoned.load(std::memory_order_acquire)) {
+            if (ch != nullptr) {
+                ssh_channel_close(ch);
+                ssh_channel_free(ch);
+            }
+            return;
+        }
+
+        QMetaObject::invokeMethod(self.data(), [self, state, ch]() {
+            // Same race on the result-arrival side: if we've been
+            // destroyed between the worker posting and us processing,
+            // post a cleanup back to the worker. (Channel handles must
+            // be freed on the same thread that owns the ssh_session.)
+            if (self.isNull() || state->abandoned.load(std::memory_order_acquire)) {
+                if (ch != nullptr) {
+                    SshSessionWorker *w = state->worker.data();
+                    if (w != nullptr) {
+                        QMetaObject::invokeMethod(w, [ch]() {
+                            ssh_channel_close(ch);
+                            ssh_channel_free(ch);
+                        }, Qt::QueuedConnection);
+                    }
+                }
+                return;
+            }
+            self->onChannelOpened(ch);
+        }, Qt::QueuedConnection);
+    }, Qt::QueuedConnection);
+}
+
+void SshTunnel::onChannelOpened(void *rawChannel)
+{
+    auto *ch = static_cast<ssh_channel>(rawChannel);
+    if (ch == nullptr) {
+        d->lastError = QStringLiteral("Failed to open SSH channel to %1:%2")
+                           .arg(d->remoteHost).arg(d->remotePort);
+        d->openState.reset();
+        emit failed(d->lastError);
+        return;
+    }
+
+    qintptr fds[2] = { -1, -1 };
+    if (makeSocketPair(fds) != 0) {
+        // Channel is open but we couldn't build the socketpair; tear
+        // down the channel via the worker before failing.
+        SshSessionWorker *w = d->openState ? d->openState->worker.data() : nullptr;
+        if (w != nullptr) {
+            QMetaObject::invokeMethod(w, [ch]() {
+                ssh_channel_close(ch);
+                ssh_channel_free(ch);
+            }, Qt::QueuedConnection);
+        }
+        d->lastError = QStringLiteral("socketpair() failed");
+        d->openState.reset();
+        emit failed(d->lastError);
+        return;
+    }
+
+    d->pump = std::make_unique<SshTunnelPump>(d->session, ch, fds[0]);
     QObject::connect(d->pump.get(), &QThread::finished,
                      this, &SshTunnel::close, Qt::QueuedConnection);
-
     d->pump->start();
-    emit opened();
+    d->opened = true;
+    d->openState.reset();
+
+    // Ownership of fds[1] transfers to the receiver of opened().
+    emit opened(fds[1]);
 }
 
 void SshTunnel::close()
 {
+    // Abandon any in-flight open. Already-abandoned is a no-op.
+    if (d->openState) d->openState->abandoned.store(true);
+
     if (d->pump != nullptr) {
         d->pump->stop();
         d->pump->wait();
         d->pump.reset();
     }
-    if (d->localFd >= 0) {
-        // If the caller hasn't taken the fd yet, close it ourselves.
-        closeFd(d->localFd);
-        d->localFd = -1;
-    }
     if (d->opened) {
         d->opened = false;
         emit closed();
     }
-}
-
-qintptr SshTunnel::takeLocalFd()
-{
-    const qintptr fd = d->localFd;
-    d->localFd = -1;
-    return fd;
 }
 
 bool SshTunnel::isOpen() const { return d->opened; }

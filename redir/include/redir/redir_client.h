@@ -109,12 +109,16 @@ public:
     /// transfers to the client.
     void connectViaSocketDescriptor(qintptr fd);
 
-    /// Install a callback that returns a pre-connected socket fd given
-    /// the AMT host + port. When set, `connectTo()` calls the opener
-    /// instead of opening a TCP connection — same code path as
-    /// `connectViaSocketDescriptor`. Used by the SSH-tunnel controllers
-    /// so they can keep the existing `connectTo(host, port)` API.
-    using TunnelOpener = std::function<qintptr(const QString &host, quint16 port)>;
+    /// Install an async callback that delivers a pre-connected socket
+    /// fd given the AMT host + port. When set, `connectTo()` calls the
+    /// opener instead of opening a TCP connection — the completion
+    /// callback feeds into the same code path as
+    /// `connectViaSocketDescriptor`. The opener must invoke the
+    /// callback exactly once with either `fd >= 0` and an empty error
+    /// string, or `fd < 0` and a non-empty error string.
+    using TunnelCallback = std::function<void(qintptr fd, QString error)>;
+    using TunnelOpener   = std::function<void(const QString &host, quint16 port,
+                                              TunnelCallback done)>;
     void setTunnelOpener(TunnelOpener opener) { m_tunnelOpener = std::move(opener); }
 
     void disconnectFromHost();

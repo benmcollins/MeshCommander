@@ -15,6 +15,12 @@
 
 #include <memory>
 
+#ifdef Q_OS_WIN
+#  include <winsock2.h>
+#else
+#  include <unistd.h>
+#endif
+
 namespace qumesh::wsman {
 
 namespace {
@@ -290,59 +296,23 @@ void writeRequestBytes(QSslSocket *sock, const QByteArray &method,
 
 namespace {
 
-/// Open or adopt the socket the reply will use. Sets `Connecting` or
-/// `TlsHandshaking` and connects all the socket signals.
-void startTransport(WsmanReply *reply, WsmanClient *client,
-                    WsmanClient::Private &cd, WsmanReply::Private &rd)
+void readMore(WsmanReply *reply, WsmanClient *client,
+              WsmanClient::Private &cd, WsmanReply::Private &rd);
+
+/// Common socket setup shared by direct and factory-supplied sockets.
+/// Attaches the TLS, error, and read-side handlers; the readyRead
+/// handler is wired here too so callers don't need to duplicate it.
+void wireSocketHandlers(WsmanReply *reply, WsmanClient *client,
+                        WsmanClient::Private &cd, WsmanReply::Private &rd,
+                        QSslSocket *sock, bool prompts)
 {
-    QSslSocket *sock = nullptr;
-    bool fromFactory = false;
-    if (cd.socketFactory) {
-        const qintptr fd = cd.socketFactory();
-        if (fd < 0) {
-            rd.errorString = QStringLiteral("SSH tunnel socket could not be opened");
-            rd.state = WsmanReply::Private::Failed;
-            rd.finished = true;
-            QMetaObject::invokeMethod(reply, &WsmanReply::finished, Qt::QueuedConnection);
-            return;
-        }
-        sock = new QSslSocket(reply);
-        if (!sock->setSocketDescriptor(fd, QAbstractSocket::ConnectedState)) {
-            rd.errorString = QStringLiteral("setSocketDescriptor failed: %1").arg(sock->errorString());
-            rd.state = WsmanReply::Private::Failed;
-            rd.finished = true;
-            sock->deleteLater();
-            QMetaObject::invokeMethod(reply, &WsmanReply::finished, Qt::QueuedConnection);
-            return;
-        }
-        fromFactory = true;
-    } else {
-        sock = new QSslSocket(reply);
-    }
     rd.socket = sock;
-
-    if (rd.timeoutTimer == nullptr && cd.timeoutMs > 0) {
-        rd.timeoutTimer = new QTimer(reply);
-        rd.timeoutTimer->setSingleShot(true);
-        rd.timeoutTimer->setInterval(cd.timeoutMs);
-        QObject::connect(rd.timeoutTimer, &QTimer::timeout, reply, [reply, &rd]() {
-            if (rd.finished) return;
-            rd.errorString = QStringLiteral("Request timed out");
-            rd.state = WsmanReply::Private::Failed;
-            if (rd.socket != nullptr) rd.socket->abort();
-            rd.finished = true;
-            emit reply->finished();
-        });
-        rd.timeoutTimer->start();
-    }
-
     const bool tls = cd.endpoint.scheme().compare(
         QStringLiteral("https"), Qt::CaseInsensitive) == 0;
 
     if (tls) {
-        // Same TLS-with-fingerprint-pinning behavior we had under QNAM.
         QObject::connect(sock, &QSslSocket::sslErrors,
-                         reply, [sock, &cd, client](const QList<QSslError> &errors) {
+                         reply, [sock, &cd, client, prompts](const QList<QSslError> &errors) {
             const QList<QSslCertificate> chain = sock->peerCertificateChain();
             if (chain.isEmpty()) return;
             const QSslCertificate &leaf = chain.first();
@@ -352,6 +322,7 @@ void startTransport(WsmanReply *reply, WsmanClient *client,
                 sock->ignoreSslErrors(errors);
                 return;
             }
+            if (!prompts) return; // retry path doesn't re-prompt
             PeerCertSummary s;
             const auto subjects = leaf.subjectInfo(QSslCertificate::CommonName);
             const auto issuers  = leaf.issuerInfo(QSslCertificate::CommonName);
@@ -379,64 +350,151 @@ void startTransport(WsmanReply *reply, WsmanClient *client,
         emit reply->finished();
     });
 
-    if (fromFactory) {
-        // Skip TCP connect entirely; socket is already in ConnectedState.
-        if (tls) {
-            QObject::connect(sock, &QSslSocket::encrypted, reply, [reply]() {
-                // emit Qt::QueuedConnection through invokeMethod so
-                // any pending sslErrors handler has run first.
-                QMetaObject::invokeMethod(reply, [reply]() {
-                    auto &rd = *reply->d;
-                    if (rd.finished) return;
-                    rd.state = WsmanReply::Private::WritingRequest;
-                    writeRequestBytes(rd.socket, rd.method, rd.requestPath,
-                                       rd.hostHeader, rd.soapAction, rd.envelope,
+    QObject::connect(sock, &QSslSocket::readyRead, reply,
+                     [reply, client, &cd, &rd]() { readMore(reply, client, cd, rd); });
+}
+
+/// Close an orphaned tunnel fd when the consuming reply died before
+/// the async socket factory delivered its result.
+void closeOrphanFd(qintptr fd)
+{
+    if (fd < 0) return;
+#ifdef Q_OS_WIN
+    ::closesocket(static_cast<SOCKET>(fd));
+#else
+    ::close(static_cast<int>(fd));
+#endif
+}
+
+/// Open or adopt the socket the reply will use. Sets `Connecting` or
+/// `TlsHandshaking` and connects all the socket signals. With an async
+/// socket factory the function returns immediately; the remainder of
+/// the setup runs from inside the factory's completion callback.
+void startTransport(WsmanReply *reply, WsmanClient *client,
+                    WsmanClient::Private &cd, WsmanReply::Private &rd)
+{
+    // Start the timeout timer first so it covers the async socket-open
+    // window too. Previously the timer was only armed after the
+    // (synchronous) factory returned, so a stalled tunnel open could
+    // sit forever.
+    if (rd.timeoutTimer == nullptr && cd.timeoutMs > 0) {
+        rd.timeoutTimer = new QTimer(reply);
+        rd.timeoutTimer->setSingleShot(true);
+        rd.timeoutTimer->setInterval(cd.timeoutMs);
+        QObject::connect(rd.timeoutTimer, &QTimer::timeout, reply, [reply, &rd]() {
+            if (rd.finished) return;
+            rd.errorString = QStringLiteral("Request timed out");
+            rd.state = WsmanReply::Private::Failed;
+            if (rd.socket != nullptr) rd.socket->abort();
+            rd.finished = true;
+            emit reply->finished();
+        });
+        rd.timeoutTimer->start();
+    }
+
+    const bool tls = cd.endpoint.scheme().compare(
+        QStringLiteral("https"), Qt::CaseInsensitive) == 0;
+
+    auto finishViaFactorySocket = [client, &cd, &rd](WsmanReply *r, QSslSocket *sock) {
+        const bool tlsLocal = cd.endpoint.scheme().compare(
+            QStringLiteral("https"), Qt::CaseInsensitive) == 0;
+        wireSocketHandlers(r, client, cd, rd, sock, /*prompts=*/true);
+        if (tlsLocal) {
+            QObject::connect(sock, &QSslSocket::encrypted, r, [r]() {
+                // Queue through invokeMethod so any pending sslErrors
+                // handler runs first.
+                QMetaObject::invokeMethod(r, [r]() {
+                    auto &rd2 = *r->d;
+                    if (rd2.finished) return;
+                    rd2.state = WsmanReply::Private::WritingRequest;
+                    writeRequestBytes(rd2.socket, rd2.method, rd2.requestPath,
+                                       rd2.hostHeader, rd2.soapAction, rd2.envelope,
                                        QByteArray());
-                    rd.state = WsmanReply::Private::ReadingHeaders;
+                    rd2.state = WsmanReply::Private::ReadingHeaders;
                 }, Qt::QueuedConnection);
             });
             rd.state = WsmanReply::Private::TlsHandshaking;
             sock->setPeerVerifyName(cd.endpoint.host());
             sock->startClientEncryption();
         } else {
-            // Plain HTTP — skip TLS, write immediately.
             rd.state = WsmanReply::Private::WritingRequest;
             writeRequestBytes(sock, rd.method, rd.requestPath, rd.hostHeader,
                               rd.soapAction, rd.envelope, QByteArray());
             rd.state = WsmanReply::Private::ReadingHeaders;
         }
-    } else {
-        // Direct connect.
-        QObject::connect(sock, &QSslSocket::connected, reply, [reply, sock, tls, &cd]() {
+    };
+
+    if (cd.socketFactory) {
+        rd.state = WsmanReply::Private::Connecting;
+        QPointer<WsmanReply> wr(reply);
+        cd.socketFactory(
+            [wr, &rd, finishViaFactorySocket](qintptr fd, QString error) {
+                if (wr.isNull()) {
+                    closeOrphanFd(fd);
+                    return;
+                }
+                if (rd.finished) {
+                    closeOrphanFd(fd);
+                    return;
+                }
+                if (fd < 0) {
+                    rd.errorString = error.isEmpty()
+                        ? QStringLiteral("SSH tunnel socket could not be opened")
+                        : error;
+                    rd.state = WsmanReply::Private::Failed;
+                    rd.finished = true;
+                    if (rd.timeoutTimer != nullptr) rd.timeoutTimer->stop();
+                    emit wr->finished();
+                    return;
+                }
+                auto *sock = new QSslSocket(wr.data());
+                if (!sock->setSocketDescriptor(fd, QAbstractSocket::ConnectedState)) {
+                    rd.errorString = QStringLiteral("setSocketDescriptor failed: %1")
+                                         .arg(sock->errorString());
+                    rd.state = WsmanReply::Private::Failed;
+                    rd.finished = true;
+                    sock->deleteLater();
+                    if (rd.timeoutTimer != nullptr) rd.timeoutTimer->stop();
+                    emit wr->finished();
+                    return;
+                }
+                finishViaFactorySocket(wr.data(), sock);
+            });
+        return;
+    }
+
+    // Direct TCP connect.
+    auto *sock = new QSslSocket(reply);
+    wireSocketHandlers(reply, client, cd, rd, sock, /*prompts=*/true);
+    QObject::connect(sock, &QSslSocket::connected, reply, [reply, sock, tls, &cd]() {
+        auto &rd = *reply->d;
+        if (rd.finished) return;
+        if (tls) {
+            rd.state = WsmanReply::Private::TlsHandshaking;
+            sock->setPeerVerifyName(cd.endpoint.host());
+            sock->startClientEncryption();
+        } else {
+            rd.state = WsmanReply::Private::WritingRequest;
+            writeRequestBytes(sock, rd.method, rd.requestPath, rd.hostHeader,
+                              rd.soapAction, rd.envelope, QByteArray());
+            rd.state = WsmanReply::Private::ReadingHeaders;
+        }
+    });
+    if (tls) {
+        QObject::connect(sock, &QSslSocket::encrypted, reply, [reply]() {
             auto &rd = *reply->d;
             if (rd.finished) return;
-            if (tls) {
-                rd.state = WsmanReply::Private::TlsHandshaking;
-                sock->setPeerVerifyName(cd.endpoint.host());
-                sock->startClientEncryption();
-            } else {
-                rd.state = WsmanReply::Private::WritingRequest;
-                writeRequestBytes(sock, rd.method, rd.requestPath, rd.hostHeader,
-                                   rd.soapAction, rd.envelope, QByteArray());
-                rd.state = WsmanReply::Private::ReadingHeaders;
-            }
+            rd.state = WsmanReply::Private::WritingRequest;
+            writeRequestBytes(rd.socket, rd.method, rd.requestPath,
+                              rd.hostHeader, rd.soapAction, rd.envelope,
+                              QByteArray());
+            rd.state = WsmanReply::Private::ReadingHeaders;
         });
-        if (tls) {
-            QObject::connect(sock, &QSslSocket::encrypted, reply, [reply]() {
-                auto &rd = *reply->d;
-                if (rd.finished) return;
-                rd.state = WsmanReply::Private::WritingRequest;
-                writeRequestBytes(rd.socket, rd.method, rd.requestPath,
-                                   rd.hostHeader, rd.soapAction, rd.envelope,
-                                   QByteArray());
-                rd.state = WsmanReply::Private::ReadingHeaders;
-            });
-        }
-        rd.state = WsmanReply::Private::Connecting;
-        const QString host = cd.endpoint.host();
-        const quint16 port = static_cast<quint16>(cd.endpoint.port(tls ? 16993 : 16992));
-        sock->connectToHost(host, port);
     }
+    rd.state = WsmanReply::Private::Connecting;
+    const QString host = cd.endpoint.host();
+    const quint16 port = static_cast<quint16>(cd.endpoint.port(tls ? 16993 : 16992));
+    sock->connectToHost(host, port);
 }
 
 void readMore(WsmanReply *reply, WsmanClient *client,
@@ -475,50 +533,8 @@ void retryWithDigest(WsmanReply *reply, WsmanClient *client,
     rd.currentChunkRemaining = 0;
     rd.readingChunkSize = true;
 
-    // Open a new transport and write with auth.
-    QSslSocket *sock = nullptr;
-    bool fromFactory = false;
-    if (cd.socketFactory) {
-        const qintptr fd = cd.socketFactory();
-        if (fd < 0) {
-            finishReply(reply, rd, QStringLiteral("SSH tunnel socket could not be opened"));
-            return;
-        }
-        sock = new QSslSocket(reply);
-        if (!sock->setSocketDescriptor(fd, QAbstractSocket::ConnectedState)) {
-            finishReply(reply, rd, QStringLiteral("setSocketDescriptor failed"));
-            sock->deleteLater();
-            return;
-        }
-        fromFactory = true;
-    } else {
-        sock = new QSslSocket(reply);
-    }
-    rd.socket = sock;
-
     const bool tls = cd.endpoint.scheme().compare(
         QStringLiteral("https"), Qt::CaseInsensitive) == 0;
-
-    if (tls) {
-        QObject::connect(sock, &QSslSocket::sslErrors,
-                         reply, [sock, &cd, client](const QList<QSslError> &errors) {
-            const QList<QSslCertificate> chain = sock->peerCertificateChain();
-            if (chain.isEmpty()) return;
-            const QSslCertificate &leaf = chain.first();
-            const QString fp = fingerprintFor(leaf);
-            if (cd.trustedFingerprints.contains(fp)) {
-                emit client->peerCertVerifiedByPin(fp);
-                sock->ignoreSslErrors(errors);
-            }
-        });
-    }
-    QObject::connect(sock, &QSslSocket::errorOccurred, reply,
-                     [reply, &rd](QAbstractSocket::SocketError) {
-        if (rd.finished) return;
-        finishReply(reply, rd, rd.socket->errorString());
-    });
-    QObject::connect(sock, &QSslSocket::readyRead, reply,
-                     [reply, client, &cd, &rd]() { readMore(reply, client, cd, rd); });
 
     const QByteArray auth = buildDigestHeader(cd, rd.method, rd.requestPath,
                                               cd.user.toUtf8(), cd.pass.toUtf8(),
@@ -532,33 +548,61 @@ void retryWithDigest(WsmanReply *reply, WsmanClient *client,
         rd.state = WsmanReply::Private::ReadingHeaders;
     };
 
-    if (fromFactory) {
+    auto wireFactorySocket = [client, &cd, &rd, doWrite, tls](WsmanReply *r, QSslSocket *sock) {
+        wireSocketHandlers(r, client, cd, rd, sock, /*prompts=*/false);
         if (tls) {
-            QObject::connect(sock, &QSslSocket::encrypted, reply, doWrite);
+            QObject::connect(sock, &QSslSocket::encrypted, r, doWrite);
             rd.state = WsmanReply::Private::TlsHandshaking;
             sock->setPeerVerifyName(cd.endpoint.host());
             sock->startClientEncryption();
         } else {
             doWrite();
         }
-    } else {
-        QObject::connect(sock, &QSslSocket::connected, reply, [sock, tls, &cd, doWrite, reply]() {
-            auto &rd = *reply->d;
-            if (rd.finished) return;
-            if (tls) {
-                rd.state = WsmanReply::Private::TlsHandshaking;
-                sock->setPeerVerifyName(cd.endpoint.host());
-                sock->startClientEncryption();
-            } else {
-                doWrite();
-            }
-        });
-        if (tls) QObject::connect(sock, &QSslSocket::encrypted, reply, doWrite);
+    };
+
+    if (cd.socketFactory) {
         rd.state = WsmanReply::Private::Connecting;
-        const QString host = cd.endpoint.host();
-        const quint16 port = static_cast<quint16>(cd.endpoint.port(tls ? 16993 : 16992));
-        sock->connectToHost(host, port);
+        QPointer<WsmanReply> wr(reply);
+        cd.socketFactory([wr, &rd, wireFactorySocket](qintptr fd, QString error) {
+            if (wr.isNull()) { closeOrphanFd(fd); return; }
+            if (rd.finished) { closeOrphanFd(fd); return; }
+            if (fd < 0) {
+                finishReply(wr.data(), rd,
+                            error.isEmpty()
+                                ? QStringLiteral("SSH tunnel socket could not be opened")
+                                : error);
+                return;
+            }
+            auto *sock = new QSslSocket(wr.data());
+            if (!sock->setSocketDescriptor(fd, QAbstractSocket::ConnectedState)) {
+                finishReply(wr.data(), rd, QStringLiteral("setSocketDescriptor failed"));
+                sock->deleteLater();
+                return;
+            }
+            wireFactorySocket(wr.data(), sock);
+        });
+        return;
     }
+
+    // Direct TCP connect.
+    auto *sock = new QSslSocket(reply);
+    wireSocketHandlers(reply, client, cd, rd, sock, /*prompts=*/false);
+    QObject::connect(sock, &QSslSocket::connected, reply, [sock, tls, &cd, doWrite, reply]() {
+        auto &rd = *reply->d;
+        if (rd.finished) return;
+        if (tls) {
+            rd.state = WsmanReply::Private::TlsHandshaking;
+            sock->setPeerVerifyName(cd.endpoint.host());
+            sock->startClientEncryption();
+        } else {
+            doWrite();
+        }
+    });
+    if (tls) QObject::connect(sock, &QSslSocket::encrypted, reply, doWrite);
+    rd.state = WsmanReply::Private::Connecting;
+    const QString host = cd.endpoint.host();
+    const quint16 port = static_cast<quint16>(cd.endpoint.port(tls ? 16993 : 16992));
+    sock->connectToHost(host, port);
 }
 
 /// Single read pass: consume the socket buffer, advance the state
@@ -751,15 +795,14 @@ WsmanReply *WsmanClient::sendEnvelope(const QByteArray &envelope, const char *so
     auto startNow = [reply, client, &cd, &rd]() {
         // If we already have a valid Digest challenge cached, send the
         // first attempt pre-authed and skip the 401 round-trip.
+        // startTransport / retryWithDigest both attach the readyRead
+        // handler internally now — needed because with an async socket
+        // factory `rd.socket` isn't populated when these return.
         if (cd.haveDigestChallenge && !cd.user.isEmpty()) {
             retryWithDigest(reply, client, cd, rd);
             return;
         }
         startTransport(reply, client, cd, rd);
-        if (rd.socket != nullptr) {
-            QObject::connect(rd.socket, &QSslSocket::readyRead, reply,
-                             [reply, client, &cd, &rd]() { readMore(reply, client, cd, rd); });
-        }
     };
 
     if (!cd.serializeRequests) {
@@ -786,10 +829,6 @@ WsmanReply *WsmanClient::sendEnvelope(const QByteArray &envelope, const char *so
                 retryWithDigest(next, c, cd2, nrd);
             } else {
                 startTransport(next, c, cd2, nrd);
-                if (nrd.socket != nullptr) {
-                    QObject::connect(nrd.socket, &QSslSocket::readyRead, next,
-                                     [next, c, &cd2, &nrd]() { readMore(next, c, cd2, nrd); });
-                }
             }
             return;
         }
