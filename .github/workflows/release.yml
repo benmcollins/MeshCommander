@@ -417,6 +417,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install xmllint
+        # libxml2-utils ships xmllint, used by the Assemble step to
+        # validate the previous + final appcast.xml. Not pre-installed
+        # on ubuntu-latest as of 2026-05; without this step the
+        # validation degrades into `command not found` and the publish
+        # step fails (#208 follow-up).
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends libxml2-utils
+
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
