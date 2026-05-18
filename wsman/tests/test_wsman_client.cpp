@@ -1847,6 +1847,15 @@ void TestWsmanClient::setHighAccuracyTimeSyncEncodesParamsAndDecodesReturn()
     QVERIFY2(captured.contains("1700000001"), captured.constData());
     QVERIFY2(captured.contains("Tm2"), captured.constData());
     QVERIFY2(captured.contains("1700000002"), captured.constData());
+
+    // AMT's XSD requires the three params in this exact order;
+    // shuffling them yields SchemaValidationError.
+    const int iTa0 = captured.indexOf("Ta0");
+    const int iTm1 = captured.indexOf("Tm1");
+    const int iTm2 = captured.indexOf("Tm2");
+    QVERIFY2(iTa0 < iTm1 && iTm1 < iTm2,
+             qPrintable(QStringLiteral("Ta0/Tm1/Tm2 out of order: %1/%2/%3")
+                            .arg(iTa0).arg(iTm1).arg(iTm2)));
 }
 
 void TestWsmanClient::getPowerSchemesEnumeratesAndDetectsCurrentViaElementSettingData()
