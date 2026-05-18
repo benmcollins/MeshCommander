@@ -129,34 +129,25 @@ jobs:
               "$KEYCHAIN_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
-      # Forward the GHA cache service URL + runtime token so vcpkg's
-      # `x-gha` binary-source provider can talk to it from the bash
-      # shell. See #190.
-      - name: Export GHA cache env for vcpkg (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
-      - name: Install libssh + openssl via vcpkg (Windows)
+      # Fetch the prebuilt openssl + libssh tarball published by
+      # `.github/workflows/build-windeps.yml` — same fast path the CI
+      # workflow uses, see #196. Bump WINDEPS_TAG + WINDEPS_SHA256
+      # (here and in ci.yml) when refreshing the bundled dep versions.
+      - name: Fetch prebuilt openssl + libssh (Windows)
         if: runner.os == 'Windows'
         shell: bash
         env:
-          # See #190 — `x-gha,readwrite` lets vcpkg cache built
-          # binaries in the GitHub Actions cache across runs, keyed
-          # by abi-hash. Release runs share the cache populated by the
-          # CI workflow.
-          VCPKG_BINARY_SOURCES: 'clear;x-gha,readwrite'
+          WINDEPS_TAG: windeps-v1
+          WINDEPS_SHA256: 187cf10bc46c282ae231c772f559587e92c18c4a2e8db6ff08462e7bc315c4c4
         run: |
-          # Install OpenSSL through vcpkg alongside libssh so QuMesh
-          # and libssh.dll link the same ABI, and so the binary cache
-          # covers OpenSSL too. Replaces the chocolatey-OpenSSL +
-          # OPENSSL_ROOT_DIR pattern.
-          /c/vcpkg/vcpkg.exe install openssl:x64-windows libssh:x64-windows
-          echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
-          echo "VCPKG_TARGET_TRIPLET=x64-windows" >> $GITHUB_ENV
+          set -euo pipefail
+          VERSION=${WINDEPS_TAG#windeps-}
+          URL="https://github.com/${{ github.repository }}/releases/download/${WINDEPS_TAG}/qumesh-windeps-x64-windows-${VERSION}.tar.gz"
+          curl -sSL "$URL" -o "$RUNNER_TEMP/windeps.tar.gz"
+          echo "$WINDEPS_SHA256  $RUNNER_TEMP/windeps.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/windeps"
+          tar -xzf "$RUNNER_TEMP/windeps.tar.gz" -C "$RUNNER_TEMP/windeps"
+          echo "CMAKE_PREFIX_PATH=$RUNNER_TEMP/windeps/x64-windows" >> $GITHUB_ENV
 
       - name: Configure
         shell: bash
