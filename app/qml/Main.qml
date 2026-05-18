@@ -99,6 +99,8 @@ ApplicationWindow {
                 onCurrentRowChanged: root.selectedRow = listView.currentRow
                 onAddRequested: statusPane.addRequested()
                 onScanRequested: scanDialog.openDialog()
+                onLocalAmtRequested: localAmtPromptDialog.openForLocal(
+                    LocalAmtProbe.tlsAvailable)
                 onOpenDetailsRequested: function(row) { detailsLoader.launchFor(row) }
             }
 
@@ -127,6 +129,20 @@ ApplicationWindow {
 
     ScanDialog {
         id: scanDialog
+    }
+
+    LocalAmtPromptDialog {
+        id: localAmtPromptDialog
+        onCredentialsConfirmed: function(user, password, tls) {
+            const row = ComputerModel.addComputer(qsTr("This PC"),
+                                                  "127.0.0.1",
+                                                  user, password, tls);
+            if (row >= 0) {
+                root.selectedRow = row;
+                listView.setCurrentRow(row);
+                detailsLoader.launchFor(row);
+            }
+        }
     }
 
     Loader {

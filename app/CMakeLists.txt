@@ -77,6 +77,7 @@ qt_add_qml_module(qumesh
         qml/EnvDetectionDialog.qml
         qml/UserInitiatedDialog.qml
         qml/MpsServerDialog.qml
+        qml/LocalAmtPromptDialog.qml
         qml/MigrationBanner.qml
         qml/TitleBar.qml
         qml/StatusBar.qml

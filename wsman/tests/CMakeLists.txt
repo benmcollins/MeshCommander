@@ -13,6 +13,7 @@ function(qumesh_wsman_test name)
 endfunction()
 
 qumesh_wsman_test(test_soap_envelope)
+qumesh_wsman_test(test_local_amt_probe)
 
 if(TARGET Qt6::HttpServer AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_wsman_client.cpp)
     qumesh_wsman_test(test_wsman_client)
