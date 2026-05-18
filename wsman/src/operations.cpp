@@ -1682,11 +1682,15 @@ void setHighAccuracyTimeSync(WsmanClient *client,
                              qint64 ta0, qint64 tm1, qint64 tm2,
                              std::function<void(InvokeResult)> callback)
 {
-    QHash<QString, QString> params;
-    params.insert(QStringLiteral("Ta0"), QString::number(ta0));
-    params.insert(QStringLiteral("Tm1"), QString::number(tm1));
-    params.insert(QStringLiteral("Tm2"), QString::number(tm2));
-    const QByteArray env = buildInvokeEnvelope(
+    // AMT's XSD requires Ta0/Tm1/Tm2 in this exact order; the
+    // unordered overload iterates a QHash and trips
+    // SchemaValidationError when the hash spits them out shuffled.
+    const QList<QPair<QString, QString>> params{
+        { QStringLiteral("Ta0"), QString::number(ta0) },
+        { QStringLiteral("Tm1"), QString::number(tm1) },
+        { QStringLiteral("Tm2"), QString::number(tm2) },
+    };
+    const QByteArray env = buildInvokeEnvelopeOrdered(
         QString::fromLatin1(kTimeSyncResource),
         QStringLiteral("SetHighAccuracyTimeSynch"), {}, params,
         client ? client->endpoint().toString() : QString(), newMessageId());
