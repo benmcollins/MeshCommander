@@ -8,10 +8,12 @@ QuMesh — a native Qt6/QML console for managing Intel AMT (vPro) hardware over 
 
 ## Workflow
 
+The default branch is `main`. Open PRs against `main` and merge into `main`.
+
 For any non-trivial change in this repo, follow these steps in order:
 
 1. **Create an issue** describing the change.
-2. **Create a branch** named `<issue#>-<short-desc>` (e.g. `97-ssh-tunnel`).
+2. **Create a branch** off `main` named `<issue#>-<short-desc>` (e.g. `97-ssh-tunnel`).
 3. **Write the implementation plan** — the approach, files you'll touch, what's in scope and what isn't.
 4. **Comment the plan on the issue** before writing code, so the maintainer can redirect early.
 5. **Implement the plan** on the branch. Tests are required for all new code. CI (`.github/workflows/ci.yml`) builds and tests on macOS + Windows on every PR.
