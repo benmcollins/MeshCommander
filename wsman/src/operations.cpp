@@ -4510,4 +4510,290 @@ void getWireless(WsmanClient *client,
     kickGet(Kind::Wired8021x,           kWired8021xProfileResource);
 }
 
+namespace {
+
+/// Common 4-part selector set for `CIM_WiFiPort.RequestStateChange`.
+/// AMT exposes a single WiFi port with the standard CIM naming.
+QHash<QString, QString> wifiPortSelectors()
+{
+    return {
+        { QStringLiteral("Name"),                    QStringLiteral("WiFi Port 0") },
+        { QStringLiteral("SystemCreationClassName"), QStringLiteral("CIM_ComputerSystem") },
+        { QStringLiteral("SystemName"),              QStringLiteral("Intel(r) AMT") },
+        { QStringLiteral("CreationClassName"),       QStringLiteral("CIM_WiFiPort") },
+    };
+}
+
+/// Standard return-value extractor shared by every wireless invoke:
+/// 0 (Completed) and 4096 (Method Parameters Checked - Job Started) are
+/// the documented success codes for state-change and provider methods.
+auto wirelessReturnValueExtractor(const QString &what)
+{
+    return [what](const QByteArray &body, InvokeResult &r) {
+        const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+        if (rv.isEmpty()) {
+            r.error = QStringLiteral("%1: no ReturnValue in response").arg(what);
+            return;
+        }
+        bool conv = false;
+        r.returnValue = rv.toInt(&conv);
+        r.ok = conv && (r.returnValue == 0 || r.returnValue == 4096);
+        if (!r.ok)
+            r.error = QStringLiteral("%1 returned %2").arg(what, rv);
+    };
+}
+
+/// Build an `AddWiFiSettings` / `UpdateWiFiSettings` envelope by hand.
+/// AMT expects the `WiFiEndpointSettingsInput` element to wrap the
+/// SSID / auth / encryption / priority / PSK fields, and (for
+/// AddWiFiSettings) a `WiFiEndpoint` EPR pointing at the single AMT
+/// WiFi endpoint. We omit the optional `IEEE8021xSettingsInput` and
+/// credential EPRs — those are reserved for the Phase C enterprise
+/// flow.
+QByteArray buildWiFiSettingsEnvelope(const QString &methodName,
+                                      const WiFiPskProfile &profile,
+                                      const QString &to,
+                                      const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    const QString resource =
+        QString::fromLatin1(kWiFiPortConfigServiceResource);
+    const QString action = resource + QLatin1Char('/') + methodName;
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(resource,                            QStringLiteral("r"));
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeEndElement(); // Header
+
+    // Body
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resource, methodName + QStringLiteral("_INPUT"));
+
+    // WiFiEndpoint EPR — AddWiFiSettings only.
+    if (methodName == QStringLiteral("AddWiFiSettings")) {
+        w.writeStartElement(resource, QStringLiteral("WiFiEndpoint"));
+        w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                            QStringLiteral("Address"),
+                            QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+        w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                            QStringLiteral("ReferenceParameters"));
+        w.writeTextElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("ResourceURI"),
+                            QString::fromLatin1(kWiFiEndpointResource));
+        w.writeStartElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("SelectorSet"));
+        // CIM_WiFiEndpoint singleton on AMT — keyed by its standard
+        // 4-part name. Match the read side's enumeration.
+        for (const auto &kv : std::initializer_list<std::pair<QString, QString>>{
+                 { QStringLiteral("Name"),                    QStringLiteral("WiFi Endpoint 0") },
+                 { QStringLiteral("SystemCreationClassName"), QStringLiteral("CIM_ComputerSystem") },
+                 { QStringLiteral("SystemName"),              QStringLiteral("Intel(r) AMT") },
+                 { QStringLiteral("CreationClassName"),       QStringLiteral("CIM_WiFiEndpoint") },
+             }) {
+            w.writeStartElement(QString::fromLatin1(kNsWsman),
+                                QStringLiteral("Selector"));
+            w.writeAttribute(QStringLiteral("Name"), kv.first);
+            w.writeCharacters(kv.second);
+            w.writeEndElement(); // Selector
+        }
+        w.writeEndElement(); // SelectorSet
+        w.writeEndElement(); // ReferenceParameters
+        w.writeEndElement(); // WiFiEndpoint
+    }
+
+    // WiFiEndpointSettingsInput — the new/updated profile body.
+    w.writeStartElement(resource, QStringLiteral("WiFiEndpointSettingsInput"));
+    // AMT requires the InstanceID-shaped key to be the legacy
+    // "Intel(r) AMT:WiFi Endpoint Settings <ElementName>" pattern.
+    // Sending it on Update lets AMT match the existing row.
+    w.writeTextElement(resource, QStringLiteral("ElementName"),
+                        profile.elementName);
+    w.writeTextElement(resource, QStringLiteral("InstanceID"),
+                        QStringLiteral("Intel(r) AMT:WiFi Endpoint Settings %1")
+                            .arg(profile.elementName));
+    w.writeTextElement(resource, QStringLiteral("AuthenticationMethod"),
+                        QString::number(profile.authenticationMethod));
+    w.writeTextElement(resource, QStringLiteral("EncryptionMethod"),
+                        QString::number(profile.encryptionMethod));
+    w.writeTextElement(resource, QStringLiteral("SSID"), profile.ssid);
+    w.writeTextElement(resource, QStringLiteral("Priority"),
+                        QString::number(profile.priority));
+    // PSK is only meaningful for the PSK auth methods (6 = WPA2-PSK,
+    // 7 = WPA3-PSK). For enterprise methods AMT ignores it and looks
+    // at the IEEE8021xSettingsInput instead — which we don't send in
+    // this PSK-only path.
+    w.writeTextElement(resource, QStringLiteral("PSKPassPhrase"),
+                        profile.psk);
+    w.writeEndElement(); // WiFiEndpointSettingsInput
+
+    w.writeEndElement(); // <method>_INPUT
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+} // namespace
+
+void addWiFiSettingsPsk(WsmanClient *client, const WiFiPskProfile &profile,
+                         std::function<void(InvokeResult)> callback)
+{
+    const QByteArray env = buildWiFiSettingsEnvelope(
+        QStringLiteral("AddWiFiSettings"), profile,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        wirelessReturnValueExtractor(QStringLiteral("AddWiFiSettings")),
+        std::move(callback));
+}
+
+void updateWiFiSettingsPsk(WsmanClient *client, const WiFiPskProfile &profile,
+                            std::function<void(InvokeResult)> callback)
+{
+    const QByteArray env = buildWiFiSettingsEnvelope(
+        QStringLiteral("UpdateWiFiSettings"), profile,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        wirelessReturnValueExtractor(QStringLiteral("UpdateWiFiSettings")),
+        std::move(callback));
+}
+
+void deleteWiFiProfile(WsmanClient *client, const QString &elementName,
+                        std::function<void(InvokeResult)> callback)
+{
+    // CIM_WiFiEndpointSettings is keyed by InstanceID on Intel AMT;
+    // the legacy shape is "Intel(r) AMT:WiFi Endpoint Settings <name>".
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("InstanceID"),
+                     QStringLiteral("Intel(r) AMT:WiFi Endpoint Settings %1")
+                         .arg(elementName));
+    const QByteArray env = buildDeleteEnvelope(
+        QString::fromLatin1(kWiFiEndpointSettingsResource), selectors,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void deleteAllITWiFiProfiles(WsmanClient *client,
+                              std::function<void(InvokeResult)> callback)
+{
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kWiFiPortConfigServiceResource),
+        QStringLiteral("DeleteAllITProfiles"),
+        /*selectors*/ {}, /*params*/ {},
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        wirelessReturnValueExtractor(QStringLiteral("DeleteAllITProfiles")),
+        std::move(callback));
+}
+
+void deleteAllUserWiFiProfiles(WsmanClient *client,
+                                std::function<void(InvokeResult)> callback)
+{
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kWiFiPortConfigServiceResource),
+        QStringLiteral("DeleteAllUserProfiles"),
+        /*selectors*/ {}, /*params*/ {},
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        wirelessReturnValueExtractor(QStringLiteral("DeleteAllUserProfiles")),
+        std::move(callback));
+}
+
+void setWiFiPortState(WsmanClient *client, bool enabled,
+                       std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> params;
+    // 32768 = "Enabled in S0"  — the practical "on" value AMT exposes
+    //   for WiFi (the legacy code's choice).
+    // 3     = "Disabled".
+    params.insert(QStringLiteral("RequestedState"),
+                  QString::number(enabled ? 32768 : 3));
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kWiFiPortResource),
+        QStringLiteral("RequestStateChange"),
+        wifiPortSelectors(), params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        wirelessReturnValueExtractor(
+            QStringLiteral("CIM_WiFiPort.RequestStateChange")),
+        std::move(callback));
+}
+
+void setWiFiSyncSettings(WsmanClient *client,
+                          int localProfileSynchronization,
+                          int uefiWiFiProfileShare,
+                          std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> props;
+    props.insert(QStringLiteral("LocalProfileSynchronizationEnabled"),
+                 QString::number(localProfileSynchronization));
+    props.insert(QStringLiteral("UEFIWiFiProfileShareEnabled"),
+                 QString::number(uefiWiFiProfileShare));
+    const QByteArray env = buildPutEnvelope(
+        QString::fromLatin1(kWiFiPortConfigServiceResource),
+        QStringLiteral("AMT_WiFiPortConfigurationService"),
+        /*selectors*/ {}, props,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            // Put has no ReturnValue scalar; absence of fault = success.
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void setWired8021xProfile(WsmanClient *client, bool enabled,
+                           int authenticationProtocol,
+                           std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> props;
+    props.insert(QStringLiteral("Enabled"),
+                 enabled ? QStringLiteral("true") : QStringLiteral("false"));
+    props.insert(QStringLiteral("AuthenticationProtocol"),
+                 QString::number(authenticationProtocol));
+    const QByteArray env = buildPutEnvelope(
+        QString::fromLatin1(kWired8021xProfileResource),
+        QStringLiteral("AMT_8021XProfile"),
+        /*selectors*/ {}, props,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
 } // namespace qumesh::wsman

@@ -174,6 +174,92 @@ AppWindow {
         id: certDetailsDialog
     }
 
+    WiFiProfileDialog {
+        id: wifiProfileDialog
+        controller: controller
+    }
+
+    Wired8021xDialog {
+        id: wired8021xDialog
+        controller: controller
+    }
+
+    // Lightweight inline editor for the two AMT_WiFiPortConfigurationService
+    // sync toggles. Built here rather than in a separate file because it's
+    // two CheckBoxes + Apply — a full Dialog component would be overkill.
+    Dialog {
+        id: wifiSyncDialog
+        title: qsTr("WiFi sync settings")
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.NoButton
+        implicitWidth: 460
+
+        property int initialLocal: 0
+        property int initialUefi: 0
+        property bool draftLocal: false
+        property bool draftUefi: false
+
+        function openForPort(port) {
+            initialLocal = port.localProfileSyncEnabled || 0;
+            initialUefi  = port.uefiProfileShareEnabled || 0;
+            draftLocal = initialLocal === 1;
+            draftUefi  = initialUefi === 1;
+            open();
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 14
+            CheckBox {
+                text: qsTr("Local profile synchronization — push OS-side WiFi profiles to AMT")
+                checked: wifiSyncDialog.draftLocal
+                onToggled: wifiSyncDialog.draftLocal = checked
+            }
+            CheckBox {
+                text: qsTr("UEFI WiFi profile sharing — let UEFI / pre-boot use these profiles")
+                checked: wifiSyncDialog.draftUefi
+                onToggled: wifiSyncDialog.draftUefi = checked
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                FlatButton {
+                    text: qsTr("Cancel")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    onClicked: wifiSyncDialog.reject()
+                }
+                AccentButton {
+                    text: qsTr("Apply")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    onClicked: {
+                        controller.setWifiSyncSettings(
+                            wifiSyncDialog.draftLocal ? 1 : 0,
+                            wifiSyncDialog.draftUefi  ? 1 : 0);
+                        wifiSyncDialog.accept();
+                    }
+                }
+            }
+        }
+    }
+
+    ConfirmDialog {
+        id: wifiProfileConfirmDialog
+        property string pendingName: ""
+        property string pendingMode: "" // single | bulkIT | bulkUser
+        onProceed: {
+            if (pendingMode === "single")
+                controller.deleteWiFiProfile(pendingName);
+            else if (pendingMode === "bulkIT")
+                controller.deleteAllITWiFiProfiles();
+            else if (pendingMode === "bulkUser")
+                controller.deleteAllUserWiFiProfiles();
+            pendingName = "";
+            pendingMode = "";
+        }
+    }
+
     ConfirmDialog {
         id: certConfirmDialog
         property string pendingInstance: ""
@@ -1616,6 +1702,29 @@ AppWindow {
                                           && wifiPortSection.wifiPort.uefiProfileShareEnabled !== -1
                                 }
                             }
+
+                            // Actions row — radio state toggle + sync toggles.
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 10
+                                spacing: 8
+
+                                FlatButton {
+                                    // portState 3 = Disabled; anything else (32768/32769) = enabled
+                                    readonly property bool isOn: wifiPortSection.wifiPort.portState !== 3
+                                    text: isOn ? qsTr("Disable WiFi") : qsTr("Enable WiFi")
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                    onClicked: controller.setWifiPortEnabled(!isOn)
+                                }
+                                Item { Layout.fillWidth: true }
+                                FlatButton {
+                                    text: qsTr("Sync settings…")
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                    onClicked: wifiSyncDialog.openForPort(wifiPortSection.wifiPort)
+                                }
+                            }
                         }
 
                         // --- WiFi profiles ------------------------------
@@ -1661,6 +1770,31 @@ AppWindow {
                                                 font.pixelSize: Type.sizeXs
                                                 visible: modelData.priority >= 0
                                             }
+                                            FlatButton {
+                                                // EAP-bound profiles can't be edited here yet —
+                                                // the dialog is PSK-only. Hide the button
+                                                // until Phase C lands.
+                                                visible: (modelData.eap8021xProtocol === undefined
+                                                       || modelData.eap8021xProtocol === -1)
+                                                text: qsTr("Edit")
+                                                font.family: Type.sans
+                                                font.pixelSize: Type.sizeXs
+                                                onClicked: wifiProfileDialog.openForEdit(modelData)
+                                            }
+                                            FlatButton {
+                                                text: qsTr("Delete")
+                                                font.family: Type.sans
+                                                font.pixelSize: Type.sizeXs
+                                                onClicked: {
+                                                    wifiProfileConfirmDialog.ask(
+                                                        qsTr("Delete WiFi profile?"),
+                                                        qsTr("Removes %1 from the AMT firmware. The OS-side profile (if any) is unaffected.")
+                                                            .arg(modelData.elementName),
+                                                        qsTr("Delete"), true);
+                                                    wifiProfileConfirmDialog.pendingName = modelData.elementName;
+                                                    wifiProfileConfirmDialog.pendingMode = "single";
+                                                }
+                                            }
                                         }
                                         Text {
                                             text: {
@@ -1679,6 +1813,45 @@ AppWindow {
                                             Layout.fillWidth: true
                                             elide: Text.ElideRight
                                         }
+                                    }
+                                }
+
+                                // Add + bulk delete actions.
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: 6
+                                    spacing: 8
+
+                                    FlatButton {
+                                        text: qsTr("Delete all IT profiles")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        onClicked: {
+                                            wifiProfileConfirmDialog.ask(
+                                                qsTr("Wipe all IT-channel WiFi profiles?"),
+                                                qsTr("Removes every profile this management channel installed. OS-side / user profiles are kept. Cannot be undone."),
+                                                qsTr("Wipe IT"), true);
+                                            wifiProfileConfirmDialog.pendingMode = "bulkIT";
+                                        }
+                                    }
+                                    FlatButton {
+                                        text: qsTr("Delete all user profiles")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        onClicked: {
+                                            wifiProfileConfirmDialog.ask(
+                                                qsTr("Wipe all user WiFi profiles?"),
+                                                qsTr("Removes every profile the OS pushed up via Local Profile Sync. The IT-channel profiles are kept."),
+                                                qsTr("Wipe user"), true);
+                                            wifiProfileConfirmDialog.pendingMode = "bulkUser";
+                                        }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    AccentButton {
+                                        text: qsTr("Add profile…")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        onClicked: wifiProfileDialog.openForAdd()
                                     }
                                 }
                             }
@@ -1709,6 +1882,18 @@ AppWindow {
                                 Text { text: wiredSection.wired.enabled ? qsTr("Enabled") : qsTr("Disabled"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
                                 Text { text: qsTr("Protocol"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeS }
                                 Text { text: wiredSection.wired.authProtocolLabel || qsTr("(none)"); color: Colors.text; font.family: Type.sans; font.pixelSize: Type.sizeS; Layout.fillWidth: true }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 8
+                                Item { Layout.fillWidth: true }
+                                FlatButton {
+                                    text: qsTr("Edit…")
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                    onClicked: wired8021xDialog.openForEdit(wiredSection.wired)
+                                }
                             }
                         }
                     }
