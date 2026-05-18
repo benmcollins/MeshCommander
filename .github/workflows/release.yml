@@ -328,9 +328,13 @@ jobs:
           KEY_FILE=$(mktemp)
           printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$KEY_FILE"
           EXE=$(ls QuMesh-*-windows-x64.exe | head -1)
-          # `winsparkle-tool sign` prints `sparkle:edSignature="..."`
-          # to stdout for embedding in the appcast item.
-          SIG_LINE=$("$TOOL" sign --private-key-file "$KEY_FILE" "$EXE")
+          # `winsparkle-tool sign` prints only the raw base64 signature
+          # to stdout — unlike Sparkle's `sign_update`, which emits a
+          # ready-to-paste `sparkle:edSignature="..." length="..."`
+          # fragment. Strip any trailing whitespace (Windows tools love
+          # to tack on a CRLF) so the wrap below produces a quoted
+          # attribute with no embedded newline.
+          SIG=$("$TOOL" sign --private-key-file "$KEY_FILE" "$EXE" | tr -d '[:space:]')
           rm -f "$KEY_FILE"
           LENGTH=$(stat -c '%s' "$EXE" 2>/dev/null || stat -f '%z' "$EXE")
           mkdir -p "$GITHUB_WORKSPACE/appcast"
@@ -352,7 +356,7 @@ jobs:
             echo "             sparkle:version=\"$VERSION\""
             echo "             sparkle:os=\"windows\""
             echo "             length=\"$LENGTH\""
-            echo "             $SIG_LINE"
+            echo "             sparkle:edSignature=\"$SIG\""
             echo "             type=\"application/octet-stream\" />"
             echo "</item>"
           } > "$GITHUB_WORKSPACE/appcast/item-windows.xml"
