@@ -160,6 +160,34 @@ AppWindow {
         controller: controller
     }
 
+    AddCertificateDialog {
+        id: addCertificateDialog
+        controller: controller
+    }
+
+    TlsModeDialog {
+        id: tlsModeDialog
+        controller: controller
+    }
+
+    CertDetailsDialog {
+        id: certDetailsDialog
+    }
+
+    ConfirmDialog {
+        id: certConfirmDialog
+        property string pendingInstance: ""
+        property string pendingKind: "" // "cert" or "key"
+        onProceed: {
+            if (pendingKind === "cert")
+                controller.deleteDeviceCertificate(pendingInstance);
+            else if (pendingKind === "key")
+                controller.deleteDeviceKeyPair(pendingInstance);
+            pendingInstance = "";
+            pendingKind = "";
+        }
+    }
+
     ConfirmDialog {
         id: confirmDialog
         // The user-accounts pane stashes the row + action here before
@@ -2394,6 +2422,12 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                             Layout.fillWidth: true
                                             wrapMode: Text.WordWrap
                                         }
+                                        FlatButton {
+                                            text: qsTr("Edit…")
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeXs
+                                            onClicked: tlsModeDialog.openForRow(modelData)
+                                        }
                                     }
                                 }
                             }
@@ -2412,6 +2446,17 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 6
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Item { Layout.fillWidth: true }
+                                    AccentButton {
+                                        text: qsTr("Add certificate…")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        onClicked: addCertificateDialog.openForAdd()
+                                    }
+                                }
                                 Repeater {
                                     model: (controller.deviceCertStore && controller.deviceCertStore.certificates) || []
                                     delegate: Rectangle {
@@ -2486,11 +2531,41 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                                 elide: Text.ElideRight
                                                 Layout.fillWidth: true
                                             }
-                                            Text {
-                                                text: qsTr("%1 bytes").arg(modelData.derSizeBytes || 0)
-                                                color: Colors.textFaint
-                                                font.family: Type.mono
-                                                font.pixelSize: Type.sizeXs
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                Text {
+                                                    text: qsTr("%1 bytes").arg(modelData.derSizeBytes || 0)
+                                                    color: Colors.textFaint
+                                                    font.family: Type.mono
+                                                    font.pixelSize: Type.sizeXs
+                                                    Layout.fillWidth: true
+                                                }
+                                                FlatButton {
+                                                    text: qsTr("Details…")
+                                                    font.family: Type.sans
+                                                    font.pixelSize: Type.sizeXs
+                                                    onClicked: certDetailsDialog.openForCert(modelData)
+                                                }
+                                                FlatButton {
+                                                    text: qsTr("Delete")
+                                                    font.family: Type.sans
+                                                    font.pixelSize: Type.sizeXs
+                                                    onClicked: {
+                                                        certConfirmDialog.ask(
+                                                            modelData.active === true
+                                                                ? qsTr("Delete the ACTIVE TLS certificate?")
+                                                                : qsTr("Delete certificate?"),
+                                                            modelData.active === true
+                                                                ? qsTr("This cert is currently bound by AMT_TLSCredentialContext. Removing it breaks TLS until a new cert is bound — the device may become unreachable on its TLS port.")
+                                                                : qsTr("This removes %1 from the device cert store. The AMT handle is freed and cannot be undeleted.").arg(modelData.subjectCn || modelData.subjectRaw || qsTr("the certificate")),
+                                                            qsTr("Delete"),
+                                                            true);
+                                                        certConfirmDialog.pendingInstance = modelData.instanceId;
+                                                        certConfirmDialog.pendingKind = "cert";
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -2514,16 +2589,34 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 spacing: 4
                                 Repeater {
                                     model: (controller.deviceCertStore && controller.deviceCertStore.orphanKeys) || []
-                                    delegate: Text {
+                                    delegate: RowLayout {
                                         required property var modelData
-                                        text: qsTr("%1 — %2 bytes")
-                                            .arg(modelData.instanceId)
-                                            .arg(modelData.derSizeBytes)
-                                        color: Colors.textMuted
-                                        font.family: Type.mono
-                                        font.pixelSize: Type.sizeXs
-                                        elide: Text.ElideMiddle
                                         Layout.fillWidth: true
+                                        spacing: 8
+                                        Text {
+                                            text: qsTr("%1 — %2 bytes")
+                                                .arg(modelData.instanceId)
+                                                .arg(modelData.derSizeBytes)
+                                            color: Colors.textMuted
+                                            font.family: Type.mono
+                                            font.pixelSize: Type.sizeXs
+                                            elide: Text.ElideMiddle
+                                            Layout.fillWidth: true
+                                        }
+                                        FlatButton {
+                                            text: qsTr("Delete")
+                                            font.family: Type.sans
+                                            font.pixelSize: Type.sizeXs
+                                            onClicked: {
+                                                certConfirmDialog.ask(
+                                                    qsTr("Delete orphan private key?"),
+                                                    qsTr("Removes %1 from the AMT key store. Orphan keys have no matching cert, so this is usually safe — but cannot be undone.").arg(modelData.instanceId),
+                                                    qsTr("Delete"),
+                                                    true);
+                                                certConfirmDialog.pendingInstance = modelData.instanceId;
+                                                certConfirmDialog.pendingKind = "key";
+                                            }
+                                        }
                                     }
                                 }
                             }

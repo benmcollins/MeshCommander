@@ -158,6 +158,8 @@ constexpr char kPublicKeyCertificateResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_PublicKeyCertificate";
 constexpr char kPublicPrivateKeyPairResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_PublicPrivateKeyPair";
+constexpr char kPublicKeyManagementServiceResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_PublicKeyManagementService";
 constexpr char kTlsSettingDataResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_TLSSettingData";
 constexpr char kTlsCredentialContextResource[] =
@@ -3785,6 +3787,192 @@ QStringList parseDetectionStrings(const QByteArray &bodyXml)
     }
     return out;
 }
+
+auto deviceCertReturnValueExtractor(const QString &what)
+{
+    return [what](const QByteArray &body, InvokeResult &r) {
+        const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+        r.returnValue = rv.toInt();
+        r.ok = (r.returnValue == 0);
+        if (!r.ok) {
+            r.error = QStringLiteral("%1 returned %2").arg(what,
+                rv.isEmpty() ? QStringLiteral("(no ReturnValue)") : rv);
+        }
+    };
+}
+
+} // namespace (close the outer anon so the five Phase B writers
+// below — addTrustedRootCertificate, addCertificate,
+// deleteDeviceCertificate, deleteDeviceKeyPair, setTlsSettings — are
+// reachable from outside the translation unit. Re-opened below for
+// the rest of the file's local helpers.
+
+void addTrustedRootCertificate(WsmanClient *client, const QString &certB64,
+                                std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("CertificateBlob"), certB64);
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kPublicKeyManagementServiceResource),
+        QStringLiteral("AddTrustedRootCertificate"),
+        /*selectors*/ {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        deviceCertReturnValueExtractor(QStringLiteral("AddTrustedRootCertificate")),
+        std::move(callback));
+}
+
+void addCertificate(WsmanClient *client, const QString &certB64,
+                    std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("CertificateBlob"), certB64);
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kPublicKeyManagementServiceResource),
+        QStringLiteral("AddCertificate"),
+        /*selectors*/ {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        deviceCertReturnValueExtractor(QStringLiteral("AddCertificate")),
+        std::move(callback));
+}
+
+void deleteDeviceCertificate(WsmanClient *client, const QString &instanceId,
+                              std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("InstanceID"), instanceId);
+    const QByteArray env = buildDeleteEnvelope(
+        QString::fromLatin1(kPublicKeyCertificateResource), selectors,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            // WS-Transfer Delete: absence of fault = success.
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void deleteDeviceKeyPair(WsmanClient *client, const QString &instanceId,
+                          std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("InstanceID"), instanceId);
+    const QByteArray env = buildDeleteEnvelope(
+        QString::fromLatin1(kPublicPrivateKeyPairResource), selectors,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void setTlsSettings(WsmanClient *client, const QString &instanceId,
+                    bool enabled, bool mutualAuth,
+                    bool acceptNonSecureConnections,
+                    const QStringList &trustedCn,
+                    std::function<void(InvokeResult)> callback)
+{
+    // Build the Put body by hand so we can emit the TrustedCN list as
+    // repeated elements — buildPutEnvelope's QHash<QString, QString>
+    // would collapse them. The structure is:
+    //
+    //   <r:AMT_TLSSettingData>
+    //     <r:InstanceID>…</r:InstanceID>
+    //     <r:Enabled>true|false</r:Enabled>
+    //     <r:MutualAuthentication>…</r:MutualAuthentication>
+    //     <r:AcceptNonSecureConnections>…</r:AcceptNonSecureConnections>
+    //     <r:TrustedCN>cn-1</r:TrustedCN>
+    //     <r:TrustedCN>cn-2</r:TrustedCN>
+    //     …
+    //   </r:AMT_TLSSettingData>
+    //
+    // AMT's Put validator requires every existing scalar on the
+    // record; the four toggles plus the TrustedCN list cover the
+    // editable fields. Other read-only fields (NonSecureConnections-
+    // Supported, etc.) are populated by firmware and don't need to
+    // be echoed.
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    const QString resource = QString::fromLatin1(kTlsSettingDataResource);
+    const QString to = client ? client->endpoint().toString() : QString();
+    const QString msgId = newMessageId();
+
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("InstanceID"), instanceId);
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(resource,                            QStringLiteral("r"));
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/09/transfer/Put"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing), QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), msgId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing), QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeStartElement(QString::fromLatin1(kNsWsman), QStringLiteral("SelectorSet"));
+    for (auto it = selectors.constBegin(); it != selectors.constEnd(); ++it) {
+        w.writeStartElement(QString::fromLatin1(kNsWsman), QStringLiteral("Selector"));
+        w.writeAttribute(QStringLiteral("Name"), it.key());
+        w.writeCharacters(it.value());
+        w.writeEndElement(); // Selector
+    }
+    w.writeEndElement(); // SelectorSet
+    w.writeEndElement(); // Header
+
+    // Body
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resource, QStringLiteral("AMT_TLSSettingData"));
+    w.writeTextElement(resource, QStringLiteral("InstanceID"), instanceId);
+    w.writeTextElement(resource, QStringLiteral("Enabled"),
+                        enabled ? QStringLiteral("true") : QStringLiteral("false"));
+    w.writeTextElement(resource, QStringLiteral("MutualAuthentication"),
+                        mutualAuth ? QStringLiteral("true") : QStringLiteral("false"));
+    w.writeTextElement(resource, QStringLiteral("AcceptNonSecureConnections"),
+                        acceptNonSecureConnections
+                            ? QStringLiteral("true")
+                            : QStringLiteral("false"));
+    if (mutualAuth) {
+        // TrustedCN only meaningful when mutual auth is requested.
+        for (const QString &cn : trustedCn)
+            w.writeTextElement(resource, QStringLiteral("TrustedCN"), cn);
+    }
+    w.writeEndElement(); // AMT_TLSSettingData
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+
+    runRequest<InvokeResult>(client, out, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            // Put has no ReturnValue scalar; absence of fault = success.
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+namespace {
 
 /// Decode `AMT_RemoteAccessPolicyRule.ExtendedData` for Periodic
 /// triggers. The blob is base64 over 12 bytes:
