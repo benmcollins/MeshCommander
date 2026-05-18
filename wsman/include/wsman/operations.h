@@ -1279,10 +1279,25 @@ void enumerateAuditLog(WsmanClient *client,
 
 struct EventLogEntry
 {
+    /// Synthetic 1-based index within the current GetRecords sweep —
+    /// AMT_MessageLog records have no stable RecordID across iterations.
     QString recordId;
-    QString timestamp;     ///< AMT-formatted hex string; QML formats it.
-    QString severity;      ///< CIM severity enum as text.
+    /// `yyyy-MM-dd hh:mm:ss`, treating the AMT seconds-since-epoch as a
+    /// raw clock value (no client-side timezone conversion, matching
+    /// the legacy MeshCommander display).
+    QString timestamp;
+    /// CIM severity bucket as a decimal string (0/1=OK, 2=degraded,
+    /// 3=minor, 4=major, 5=critical, 6=fatal). Kept as a string so QML
+    /// can drive its existing colour map without a custom type.
+    QString severity;
+    /// Decoded message — built from the 21-byte record's
+    /// (EventSensorType, EventOffset, EventSourceType, EventData[8])
+    /// tuple via the legacy lookup tables.
     QString message;
+    /// Human-readable entity name from `kSystemEntityTypes` (e.g.
+    /// "BIOS", "Intel(r) ME"). Empty if the entity code is out of
+    /// range. Surfaced as tooltip / secondary text in the UI.
+    QString entityLabel;
 };
 
 struct EventLogResult
@@ -1338,12 +1353,23 @@ struct UserAccountsResult
 /// The synthetic admin sentinel `999` returns "Administrator".
 [[nodiscard]] QString accessPermissionLabel(int code);
 
-/// Enumerate `AMT_EventLogEntry` instances via WS-Enumeration. Walks
-/// Pull responses until `EndOfSequence`, parses each item's RecordID /
-/// CreationTimeStamp / Severity / Message, and hands the full list to
-/// the callback.
+/// Fetch the AMT event log via `AMT_MessageLog.PositionToFirstRecord`
+/// followed by repeated `GetRecords` calls (batch size 390) until
+/// `NoMoreRecords` is set. Each base64 record is a 21-byte structure
+/// containing a UNIX-style timestamp and the (sensorType, offset,
+/// sourceType, data[8]) tuple that — combined with the lookup tables
+/// in `operations.cpp` — yields a human-readable message. The
+/// `AMT_EventLogEntry` CIM class is *not* used: AMT firmware does not
+/// populate human-readable text there.
 void enumerateEventLog(WsmanClient *client,
                        std::function<void(EventLogResult)> callback);
+
+/// Decode a single 21-byte AMT event record (already base64-decoded)
+/// into an `EventLogEntry`. Returns an empty `recordId` if the record
+/// is too short or carries a zero/sentinel timestamp. Exposed for
+/// unit testing — the production path inside `enumerateEventLog`
+/// calls the same helper.
+[[nodiscard]] EventLogEntry decodeEventRecord(const QByteArray &raw);
 
 /// Enumerate `CIM_Account` instances. Returns name, InstanceID,
 /// element name, and enabled state for each. AMT exposes both the

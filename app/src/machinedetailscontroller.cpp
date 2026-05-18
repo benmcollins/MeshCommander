@@ -867,10 +867,11 @@ void MachineDetailsController::refreshEventLog()
             list.reserve(r.entries.size());
             for (const auto &e : r.entries) {
                 QVariantMap m;
-                m.insert(QStringLiteral("recordId"),  e.recordId);
-                m.insert(QStringLiteral("timestamp"), e.timestamp);
-                m.insert(QStringLiteral("severity"),  e.severity);
-                m.insert(QStringLiteral("message"),   e.message);
+                m.insert(QStringLiteral("recordId"),    e.recordId);
+                m.insert(QStringLiteral("timestamp"),   e.timestamp);
+                m.insert(QStringLiteral("severity"),    e.severity);
+                m.insert(QStringLiteral("message"),     e.message);
+                m.insert(QStringLiteral("entityLabel"), e.entityLabel);
                 list.append(m);
             }
             m_eventLog = std::move(list);
