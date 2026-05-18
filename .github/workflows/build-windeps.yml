@@ -1,0 +1,168 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+#
+# One-shot manual workflow that builds the Windows native dependencies
+# (openssl + libssh, x64-msvc) once via vcpkg and publishes them as a
+# tarball on a `windeps-<version>` GitHub Release. `ci.yml` and
+# `release.yml` then `curl` that tarball each run, saving the ~10 min
+# vcpkg-from-source build that was dominating the Windows job.
+#
+# This workflow is not part of the per-PR pipeline. Run it by hand
+# when openssl or libssh need a refresh, or on a fresh fork:
+#
+#   gh workflow run build-windeps.yml \
+#       -f version=v1 \
+#       -f release_notes='Initial prebuilt windeps bundle.'
+#
+# It will print the tarball's SHA-256 to the job summary; copy that
+# into the `WINDEPS_SHA256` env in the consumer workflows.
+
+name: Build windeps (prebuilt openssl + libssh for Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release suffix (e.g. v1, v2). Tag will be windeps-<version>.'
+        required: true
+        default: 'v1'
+        type: string
+      release_notes:
+        description: 'Body for the GitHub Release.'
+        required: false
+        default: 'Prebuilt openssl + libssh for x64-windows. Consumed by CI/release.'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build deps on windows-latest
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build openssl + libssh via vcpkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The runner image ships C:\vcpkg. Classic mode pulls the
+          # current vcpkg-registry pins for both packages — fine for
+          # a one-off build since the resulting binaries are frozen
+          # into the tarball anyway.
+          /c/vcpkg/vcpkg.exe install \
+              openssl:x64-windows \
+              libssh:x64-windows
+
+      - name: Slim the install tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          # vcpkg's install tree contains a parallel `debug/` build
+          # we don't ship, plus .pdb files and per-package metadata
+          # (`tools/`, `share/<pkg>/{copyright,vcpkg.spdx.json,…}`)
+          # the consumer doesn't need. Strip them so the tarball is
+          # ~5 MB instead of ~40 MB.
+          ROOT='/c/vcpkg/installed/x64-windows'
+          rm -rf "$ROOT/debug"
+          find "$ROOT" -type f -name '*.pdb' -delete
+          rm -rf "$ROOT/tools"
+
+      - name: Capture component versions
+        id: vers
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `vcpkg list <pkg>` prints lines like
+          #   libssh:x64-windows         0.11.1      …
+          # — pull just the version column for the release-body summary.
+          OPENSSL_VER=$(/c/vcpkg/vcpkg.exe list openssl | awk '$1 ~ /^openssl:x64-windows$/ {print $2; exit}')
+          LIBSSH_VER=$(/c/vcpkg/vcpkg.exe list libssh  | awk '$1 ~ /^libssh:x64-windows$/  {print $2; exit}')
+          echo "openssl=$OPENSSL_VER" >> "$GITHUB_OUTPUT"
+          echo "libssh=$LIBSSH_VER"  >> "$GITHUB_OUTPUT"
+
+      - name: Pack tarball
+        id: pack
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          TARBALL="qumesh-windeps-x64-windows-${VERSION}.tar.gz"
+          # Tar from the `installed` parent so the archive opens to a
+          # top-level `x64-windows/` directory; the consumer points
+          # CMAKE_PREFIX_PATH at that extracted dir.
+          tar -C /c/vcpkg/installed -czf "$TARBALL" x64-windows
+          SHA256=$(sha256sum "$TARBALL" | awk '{print $1}')
+          SIZE=$(stat -c%s "$TARBALL" 2>/dev/null || stat -f%z "$TARBALL")
+          echo "tarball=$TARBALL"   >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256"     >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE"         >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## windeps-${VERSION}"
+            echo ""
+            echo "- File: \`$TARBALL\`"
+            echo "- Size: $SIZE bytes"
+            echo "- SHA-256: \`$SHA256\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create / update release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+          OPENSSL_VER: ${{ steps.vers.outputs.openssl }}
+          LIBSSH_VER: ${{ steps.vers.outputs.libssh }}
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+          SHA256: ${{ steps.pack.outputs.sha256 }}
+          SIZE: ${{ steps.pack.outputs.size }}
+        run: |
+          set -euo pipefail
+          TAG="windeps-${VERSION}"
+          BODY=$(cat <<BODY
+          ${RELEASE_NOTES}
+
+          ### Contents
+
+          | Component | Version |
+          |-----------|---------|
+          | openssl   | \`${OPENSSL_VER}\` |
+          | libssh    | \`${LIBSSH_VER}\`  |
+
+          ### Asset
+
+          - File: \`${TARBALL}\`
+          - Size: ${SIZE} bytes
+          - SHA-256: \`${SHA256}\`
+
+          ### Consumer wiring
+
+          Set in \`.github/workflows/ci.yml\` and \`release.yml\`:
+
+          \`\`\`yaml
+          env:
+            WINDEPS_TAG: ${TAG}
+            WINDEPS_SHA256: ${SHA256}
+          \`\`\`
+          BODY
+          )
+
+          # Treat re-runs as updates: if the release already exists,
+          # replace the asset and refresh the notes.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists — replacing asset"
+            gh release upload "$TAG" "$TARBALL" --clobber
+            gh release edit   "$TAG" --notes "$BODY"
+          else
+            gh release create "$TAG" "$TARBALL" \
+              --title "Prebuilt windeps ${VERSION}" \
+              --notes "$BODY"
+          fi
