@@ -220,16 +220,16 @@ def _convert(md: str) -> str:
                 rendered.append(_render_inline(line))
             if idx < len(paragraph) - 1 and not line.endswith("  "):
                 rendered.append(" ")
-        body.append("\\pard\\sa120\\sl276\\slmult1 " + "".join(rendered) + "\\par\n")
+        body.append("\\pard\\sa120 " + "".join(rendered) + "\\par\n")
         paragraph.clear()
 
     def emit_heading(level: int, text: str) -> None:
         flush_paragraph()
         size = {1: H1_SIZE, 2: H2_SIZE, 3: H3_SIZE, 4: H4_SIZE}.get(level, H4_SIZE)
-        # Space-before for h2+ to separate sections; tighter line spacing.
+        # Space-before for h2+ to separate sections.
         sb = 240 if level >= 2 else 120
         body.append(
-            f"\\pard\\sb{sb}\\sa120\\keepn\\f1\\fs{size}\\b "
+            f"\\pard\\sb{sb}\\sa120\\f1\\fs{size}\\b "
             + _render_inline(text)
             + "\\b0\\f0\\fs"
             + str(BODY_SIZE)
@@ -237,10 +237,15 @@ def _convert(md: str) -> str:
         )
 
     def emit_bullet(text: str) -> None:
-        # Use a literal bullet glyph (U+2022) with a hanging indent.
+        # Bullet glyph + two spaces, with a flat left indent. We deliberately
+        # do NOT use \fi-360\li720 (hanging indent) + \tab here: it renders
+        # beautifully in TextEdit but the macOS DMG SLA dialog (and a few
+        # other RTF consumers) interprets the negative first-line indent
+        # by clipping the line, hiding everything after the bullet glyph.
+        # A flat indent keeps the layout legible without that trap.
         body.append(
-            "\\pard\\fi-360\\li720\\sa80\\sl276\\slmult1 "
-            + "\\u8226?\\tab "
+            "\\pard\\li360\\sa80 "
+            + "\\u8226?  "
             + _render_inline(text)
             + "\\par\n"
         )
