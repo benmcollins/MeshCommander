@@ -180,4 +180,40 @@ To add a new language:
 - `libcrypto-3-x64.dll` on Windows (Qt's deploy tool doesn't follow
   non-Qt DLL dependencies).
 - The bundled fonts (IBM Plex Sans, JetBrains Mono).
-- The Apache 2.0 license text.
+- `LICENSE.rtf` — Apache 2.0 license text, rendered from the
+  repo-root `LICENSE.md`. Lives at `QuMesh.app/Contents/Resources/`
+  inside the bundle and at the `.dmg` root next to the app.
+
+## DMG mount-window layout (macOS)
+
+The `.dmg` opens to a 640×400 window with a branded slate-and-cyan
+background and the two icons pre-positioned: `QuMesh.app` on the left,
+the `Applications` symlink on the right, with a chevron pointing
+between them.
+
+- The background is rendered by `branding/build-icons.py` from
+  `branding/svg/qumesh-dmg-bg.svg` into a multi-resolution TIFF
+  (`branding/build/dmg-background.tiff`, embedding both 1× and 2×
+  pages so retina displays stay crisp). Both PNG variants are also
+  written and committed.
+- The mount window's layout is set by
+  `app/dmg-setup.applescript.in` — Finder runs it once when the
+  staged DMG is mounted during `cpack` and the resulting `.DS_Store`
+  is sealed into the final read-only image. The icon positions in
+  the script match the glow centres in the background SVG; if you
+  reposition one, move both.
+- The volume itself uses a custom icon (the slate squircle + Q mark
+  + cyan install-badge in `branding/svg/qumesh-dmg-volume.svg`,
+  rendered to `branding/build/qumesh-dmg.icns`). The same AppleScript
+  copies it onto the mounted volume as `.VolumeIcon.icns` and runs
+  `SetFile -a C` to set the HasCustomIcon Finder flag — required for
+  Finder to actually pick the file up. (CPack's DragNDrop generator
+  drops dotfiles other than `.background/` and `.DS_Store` during
+  its internal staging→DMG copy, so a normal `install(FILES)` of
+  `.VolumeIcon.icns` doesn't survive.)
+
+The `LICENSE.rtf` license-acceptance dialog that hdiutil presents
+before mounting the DMG is generated at CMake configure time by
+`branding/build-license.py` from `LICENSE.md`. The same RTF is what
+CPack's NSIS generator shows in the Windows installer's license
+page.

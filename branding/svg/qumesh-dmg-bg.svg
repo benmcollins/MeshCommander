@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  QuMesh .dmg background. Rendered to PNG by branding/build-icons.py
+  at 1280×800 (committed as branding/build/dmg-background.png), which
+  hdiutil displays at half-resolution on retina. The Finder mount
+  window is sized to 640×400 by app/dmg-setup.applescript.in to match.
+
+  Layout — left half: the QuMesh mark with a soft glow. Right half:
+  an Applications-folder tile and "drag to install" copy. The middle
+  shows a chevron pointing from the app icon (positioned by Finder at
+  ~(160, 200)) toward the Applications symlink (~(480, 200)). Icons
+  themselves are drawn by Finder on top of this background, so the
+  background only carries the brand surface, the hint copy, and the
+  chevron — no icon glyphs.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400">
+  <title>QuMesh installer</title>
+
+  <defs>
+    <!-- Vertical gradient on the slate background, slightly lighter
+         at the top so the brand tag-line reads cleanly. Same stops
+         as the social-preview image so the whole release surface
+         feels coherent. -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#1e293b"/>
+      <stop offset="1"   stop-color="#0f172a"/>
+    </linearGradient>
+
+    <!-- Subtle dot pattern — suggests "mesh" without competing with
+         the Finder icons drawn on top. -->
+    <pattern id="meshDots" x="0" y="0" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="14" cy="14" r="1.1" fill="#E6EDF3" opacity="0.07"/>
+    </pattern>
+
+    <!-- Soft cyan glow behind the QuMesh mark to lift it off the
+         background. -->
+    <radialGradient id="markGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0"   stop-color="#38bdf8" stop-opacity="0.22"/>
+      <stop offset="0.6" stop-color="#38bdf8" stop-opacity="0.06"/>
+      <stop offset="1"   stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Same glow on the right-hand "drop target" landing zone, in
+         a quieter blue — telegraphs "this is where the icon goes". -->
+    <radialGradient id="dropGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0"   stop-color="#94A3B8" stop-opacity="0.18"/>
+      <stop offset="0.6" stop-color="#94A3B8" stop-opacity="0.05"/>
+      <stop offset="1"   stop-color="#94A3B8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Backgrounds. -->
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <rect width="640" height="400" fill="url(#meshDots)"/>
+
+  <!-- Top brand bar: small mark + wordmark, low-key. The big icon
+       Finder draws below (the .app's actual icon) is the primary
+       visual anchor; this just identifies the surface. -->
+  <g transform="translate(28, 32)">
+    <g transform="scale(0.18)">
+      <circle cx="100" cy="100" r="50" fill="none" stroke="#E6EDF3" stroke-width="6"/>
+      <circle cx="50"  cy="100" r="5" fill="#E6EDF3"/>
+      <circle cx="150" cy="100" r="5" fill="#E6EDF3"/>
+      <circle cx="100" cy="50"  r="5" fill="#E6EDF3"/>
+      <circle cx="100" cy="150" r="5" fill="#E6EDF3"/>
+      <circle cx="64.645"  cy="64.645"  r="5" fill="#E6EDF3"/>
+      <circle cx="135.355" cy="64.645"  r="5" fill="#E6EDF3"/>
+      <circle cx="64.645"  cy="135.355" r="5" fill="#E6EDF3"/>
+      <circle cx="135.355" cy="135.355" r="5" fill="#E6EDF3"/>
+      <line x1="120" y1="120" x2="155" y2="155" stroke="#38bdf8" stroke-width="6" stroke-linecap="round"/>
+      <circle cx="155" cy="155" r="7" fill="#38bdf8"/>
+    </g>
+    <text x="48" y="24"
+          font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+          font-weight="500"
+          font-size="22"
+          letter-spacing="-0.4"
+          fill="#F1F5F9">QuMesh</text>
+  </g>
+
+  <!-- Soft glow behind where Finder will draw QuMesh.app's icon
+       (positioned by AppleScript at 160, 200). -->
+  <circle cx="160" cy="200" r="140" fill="url(#markGlow)"/>
+
+  <!-- Soft glow behind the Applications symlink (positioned at
+       480, 200). -->
+  <circle cx="480" cy="200" r="140" fill="url(#dropGlow)"/>
+
+  <!-- Chevron hint: thin "→" between the two icons. Three nested
+       chevrons fade in opacity to suggest motion / direction. -->
+  <g transform="translate(320, 200)" fill="none" stroke="#38bdf8" stroke-width="3"
+     stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="-28,-14 -14,0 -28,14" opacity="0.35"/>
+    <polyline points="-10,-14   4,0 -10,14" opacity="0.65"/>
+    <polyline points="  8,-14  22,0   8,14" opacity="0.95"/>
+  </g>
+
+  <!-- Captions under each icon. Vertical spacing leaves room for
+       Finder's own file-name label, which renders directly below
+       the icon at ~y=255 in 96px-icon mode. -->
+  <g font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+     font-weight="400"
+     fill="#94A3B8"
+     letter-spacing="0.3">
+    <text x="160" y="312" font-size="14" text-anchor="middle">Drag this</text>
+    <text x="480" y="312" font-size="14" text-anchor="middle">into here</text>
+  </g>
+
+  <!-- Bottom hint line. Sits below the icon labels Finder draws. -->
+  <text x="320" y="360"
+        font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-weight="400"
+        font-size="13"
+        fill="#64748B"
+        letter-spacing="0.4"
+        text-anchor="middle">Drop QuMesh into Applications to install</text>
+
+  <!-- Bottom-edge accent stripe, same cyan as the brand and the
+       social-preview accent. -->
+  <rect x="0" y="396" width="640" height="4" fill="#38bdf8" opacity="0.8"/>
+</svg>
