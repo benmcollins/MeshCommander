@@ -146,7 +146,10 @@ jobs:
           curl -sSL "$URL" -o "$RUNNER_TEMP/windeps.tar.gz"
           echo "$WINDEPS_SHA256  $RUNNER_TEMP/windeps.tar.gz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/windeps"
-          tar -xzf "$RUNNER_TEMP/windeps.tar.gz" -C "$RUNNER_TEMP/windeps"
+          # --force-local: $RUNNER_TEMP on windows-latest is `D:\a\_temp`
+          # and the colon makes GNU tar treat it as a `host:path` remote
+          # spec. Force-local pins tar to local-file semantics.
+          tar --force-local -xzf "$RUNNER_TEMP/windeps.tar.gz" -C "$RUNNER_TEMP/windeps"
           echo "CMAKE_PREFIX_PATH=$RUNNER_TEMP/windeps/x64-windows" >> $GITHUB_ENV
 
       - name: Configure
