@@ -3579,9 +3579,9 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
 
                         Section {
                             title: qsTr("ACTIVE SUBSCRIPTIONS")
-                            visible: controller.eventSubscriptions
+                            visible: !!(controller.eventSubscriptions
                                   && controller.eventSubscriptions.subscriptions
-                                  && controller.eventSubscriptions.subscriptions.length > 0
+                                  && controller.eventSubscriptions.subscriptions.length > 0)
                             accent: Colors.accent
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
@@ -3637,9 +3637,9 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
 
                         Section {
                             title: qsTr("LISTENER DESTINATIONS")
-                            visible: controller.eventSubscriptions
+                            visible: !!(controller.eventSubscriptions
                                   && controller.eventSubscriptions.listeners
-                                  && controller.eventSubscriptions.listeners.length > 0
+                                  && controller.eventSubscriptions.listeners.length > 0)
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
@@ -3683,9 +3683,9 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
 
                         Section {
                             title: qsTr("AVAILABLE FILTERS")
-                            visible: controller.eventSubscriptions
+                            visible: !!(controller.eventSubscriptions
                                   && controller.eventSubscriptions.filters
-                                  && controller.eventSubscriptions.filters.length > 0
+                                  && controller.eventSubscriptions.filters.length > 0)
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
@@ -3998,9 +3998,9 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             Layout.fillHeight: true
 
                             Text {
-                                visible: controller.wsmanBrowseResult
+                                visible: !!(controller.wsmanBrowseResult
                                       && !controller.wsmanBrowseResult.ok
-                                      && (controller.wsmanBrowseResult.error || "").length > 0
+                                      && (controller.wsmanBrowseResult.error || "").length > 0)
                                 text: controller.wsmanBrowseResult
                                     ? (controller.wsmanBrowseResult.error || "")
                                     : ""
