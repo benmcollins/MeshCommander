@@ -8,6 +8,13 @@ Generates platform-specific icon bundles from the master SVG files:
   - PNG renders: build/png/ at every standard size
   - Social preview: build/og-image.png (1280×640, from svg/qumesh-og.svg) —
     upload at Repo → Settings → Social preview.
+  - DMG background: build/dmg-background.tiff (multi-res 1x + 2x, from
+    svg/qumesh-dmg-bg.svg) plus matching .png copies. Consumed by
+    CPACK_DMG_BACKGROUND_IMAGE — see app/dmg-setup.applescript.in.
+  - DMG volume icon: build/qumesh-dmg.icns (from
+    svg/qumesh-dmg-volume.svg). Installed at the .dmg root as
+    `.VolumeIcon.icns`; the AppleScript flips the volume's
+    HasCustomIcon Finder bit so the OS picks it up.
 
 Requirements:
   pip install cairosvg pillow
@@ -48,6 +55,8 @@ MACOS_SVG = SVG_DIR / "qumesh-macos.svg"
 WINDOWS_SVG = SVG_DIR / "qumesh-windows.svg"
 SMALL_SVG = SVG_DIR / "qumesh-mark-small.svg"
 OG_SVG = SVG_DIR / "qumesh-og.svg"
+DMG_BG_SVG = SVG_DIR / "qumesh-dmg-bg.svg"
+DMG_VOLUME_SVG = SVG_DIR / "qumesh-dmg-volume.svg"
 
 # macOS iconset sizes: (size_px, filename, source_svg).
 # Apple expects @1x and @2x variants. We use the simplified mark for sizes <= 32px
@@ -215,6 +224,110 @@ def build_og_image() -> None:
     print(f"  -> {out_path}")
 
 
+def build_dmg_volume_icon() -> None:
+    """Build qumesh-dmg.icns — the icon Finder shows for the mounted
+    .dmg volume (sidebar, Get Info, mount-window title bar).
+
+    Same iconset structure as qumesh.icns, but rendered from the
+    branded "drive + install badge" SVG instead of the plain mark.
+    The .dmg-setup AppleScript drops it at the DMG root as
+    `.VolumeIcon.icns` and flips the volume's HasCustomIcon Finder
+    flag so the OS picks it up.
+    """
+    print("Building DMG volume iconset…")
+    iconset_dir = BUILD_DIR / "qumesh-dmg.iconset"
+    if iconset_dir.exists():
+        shutil.rmtree(iconset_dir)
+    iconset_dir.mkdir(parents=True)
+
+    # Reuse the same Apple iconset filename grid as qumesh.icns. All
+    # sizes render from a single source SVG; the install-badge is the
+    # smallest detail and stays legible down to 32 px.
+    for size, filename in [
+        (16,   "icon_16x16.png"),
+        (32,   "icon_16x16@2x.png"),
+        (32,   "icon_32x32.png"),
+        (64,   "icon_32x32@2x.png"),
+        (128,  "icon_128x128.png"),
+        (256,  "icon_128x128@2x.png"),
+        (256,  "icon_256x256.png"),
+        (512,  "icon_256x256@2x.png"),
+        (512,  "icon_512x512.png"),
+        (1024, "icon_512x512@2x.png"),
+    ]:
+        png_bytes = render_svg_to_png(DMG_VOLUME_SVG, size)
+        (iconset_dir / filename).write_bytes(png_bytes)
+
+    icns_out = BUILD_DIR / "qumesh-dmg.icns"
+    if shutil.which("iconutil"):
+        subprocess.run(
+            ["iconutil", "-c", "icns", str(iconset_dir), "-o", str(icns_out)],
+            check=True,
+        )
+        print(f"  -> {icns_out} (via iconutil)")
+    else:
+        # Pillow fallback. Same approach as _write_icns_with_pillow,
+        # inlined to keep this function self-contained.
+        entries: list[tuple[bytes, bytes]] = []
+        for size, type_code in ICNS_TYPES.items():
+            png_bytes = render_svg_to_png(DMG_VOLUME_SVG, size)
+            entries.append((type_code, png_bytes))
+        body = b""
+        for type_code, png in entries:
+            body += type_code + struct.pack(">I", len(png) + 8) + png
+        icns = b"icns" + struct.pack(">I", len(body) + 8) + body
+        icns_out.write_bytes(icns)
+        print(f"  -> {icns_out} (via Pillow fallback)")
+
+
+def build_dmg_background() -> None:
+    """Render the .dmg mount-window background as a multi-resolution
+    TIFF so it stays crisp on both standard and retina displays.
+
+    Why TIFF and not PNG: macOS Finder picks an embedded image by
+    matching its DPI tag to the display, so we ship one tile at
+    640×400 / 72 dpi (for non-retina) and one at 1280×800 / 144 dpi
+    (for @2x). hdiutil hands the whole TIFF to Finder and Finder
+    routes the right page to the right monitor — a single high-res
+    PNG would be drawn at native pixels and look comically large on
+    a 1× screen.
+
+    Mount-window dimensions (640×400) are set in
+    app/dmg-setup.applescript.in and the SVG was authored at that
+    viewBox; do not change one without updating the other.
+    """
+    print("Building DMG background…")
+    out_path = BUILD_DIR / "dmg-background.tiff"
+    # cairosvg's `dpi=` argument scales the rendered raster up while
+    # keeping the document's intrinsic point dimensions; we still
+    # pass output_width to lock pixel size so the @2x tile is exactly
+    # 1280×800. Render both pages, then assemble via Pillow.
+    png_1x = cairosvg.svg2png(url=str(DMG_BG_SVG),
+                              output_width=640, output_height=400)
+    png_2x = cairosvg.svg2png(url=str(DMG_BG_SVG),
+                              output_width=1280, output_height=800)
+    img_1x = Image.open(io.BytesIO(png_1x)).convert("RGBA")
+    img_2x = Image.open(io.BytesIO(png_2x)).convert("RGBA")
+    # Pillow stores DPI in the saved TIFF metadata, and Finder uses it
+    # to pick the right page. 72/144 are the standard pair.
+    img_1x.save(
+        out_path,
+        format="TIFF",
+        compression="tiff_lzw",
+        dpi=(72, 72),
+        save_all=True,
+        append_images=[img_2x],
+        tiffinfo={296: 2},  # ResolutionUnit = inches (2)
+    )
+    # Also write a plain PNG copy. CPack's CPACK_DMG_BACKGROUND_IMAGE
+    # accepts the raw image and copies it into the .dmg root as
+    # `.background/background.<ext>` — useful for inspection and as a
+    # fallback on tooling that doesn't grok multi-page TIFF.
+    (BUILD_DIR / "dmg-background.png").write_bytes(png_1x)
+    (BUILD_DIR / "dmg-background@2x.png").write_bytes(png_2x)
+    print(f"  -> {out_path} (1x + 2x)")
+
+
 def main() -> int:
     if not SVG_DIR.is_dir():
         print(f"SVG source directory not found: {SVG_DIR}", file=sys.stderr)
@@ -226,6 +339,8 @@ def main() -> int:
     build_macos_iconset()
     build_windows_ico()
     build_og_image()
+    build_dmg_background()
+    build_dmg_volume_icon()
 
     print("\nDone. Outputs in build/:")
     for p in sorted(BUILD_DIR.rglob("*")):

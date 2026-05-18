@@ -171,6 +171,20 @@ if(APPLE)
     set_source_files_properties("${_macos_icns}"
         PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
     target_sources(qumesh PRIVATE "${_macos_icns}")
+
+    # Bundle the rendered LICENSE.rtf next to qumesh.icns under
+    # QuMesh.app/Contents/Resources/. Same POST_BUILD-copy pattern as
+    # Sparkle.framework above — CMake's `MACOSX_PACKAGE_LOCATION` for
+    # source files is unreliable for generated files (the COPY rule
+    # only gets emitted for files that exist at configure time), so
+    # we just stage the copy ourselves.
+    add_dependencies(qumesh qumesh_license_rtf)
+    add_custom_command(TARGET qumesh POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${QUMESH_LICENSE_RTF}"
+            "$<TARGET_BUNDLE_DIR:qumesh>/Contents/Resources/LICENSE.rtf"
+        VERBATIM
+    )
 endif()
 
 # --- In-app auto-update ----------------------------------------------

@@ -49,6 +49,49 @@ FetchContent_MakeAvailable(leveldb)
 
 include(CTest)
 
+# --- License: render Markdown → RTF for the install dialogs ----------
+#
+# Both the macOS DMG license-acceptance pane (driven by hdiutil) and
+# NSIS's `MUI_PAGE_LICENSE` accept RTF or plain text — not Markdown.
+# Passing LICENSE.md verbatim left users staring at raw `#`, `**`, `_`
+# punctuation. `branding/build-license.py` is a stdlib-only converter
+# that lays the file out with proper headings, paragraphs, and bullets;
+# the same RTF then gets bundled into the app and dropped at the .dmg
+# root so users can re-open it from either place and see it rendered.
+#
+# Generated up here, before `add_subdirectory(app)`, because the app
+# target's POST_BUILD copy step needs to see QUMESH_LICENSE_RTF set
+# in its parent scope. The CPack file-existence check (later, in the
+# packaging block) wants it on disk at configure time too, so we
+# render eagerly with execute_process() and back it with a build-time
+# add_custom_command() that keeps it in sync if LICENSE.md changes.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(QUMESH_LICENSE_RTF "${CMAKE_CURRENT_BINARY_DIR}/LICENSE.rtf")
+set(_license_script "${CMAKE_CURRENT_SOURCE_DIR}/branding/build-license.py")
+set(_license_md     "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.md")
+
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} "${_license_script}"
+            "${_license_md}" "${QUMESH_LICENSE_RTF}"
+    RESULT_VARIABLE _license_rc
+    OUTPUT_VARIABLE _license_out
+    ERROR_VARIABLE  _license_err
+)
+if(NOT _license_rc EQUAL 0)
+    message(FATAL_ERROR
+        "branding/build-license.py failed (rc=${_license_rc}):\n${_license_err}")
+endif()
+
+add_custom_command(
+    OUTPUT "${QUMESH_LICENSE_RTF}"
+    COMMAND ${Python3_EXECUTABLE} "${_license_script}"
+            "${_license_md}" "${QUMESH_LICENSE_RTF}"
+    DEPENDS "${_license_script}" "${_license_md}"
+    COMMENT "Rendering LICENSE.md → LICENSE.rtf"
+    VERBATIM
+)
+add_custom_target(qumesh_license_rtf ALL DEPENDS "${QUMESH_LICENSE_RTF}")
+
 add_subdirectory(terminal)
 add_subdirectory(certs)
 add_subdirectory(ssh)
@@ -75,14 +118,61 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Native Qt6 console for Intel AMT (vPro) devices")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "QuMesh")
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.md")
 set(CPACK_VERBATIM_VARIABLES TRUE)
 set(CPACK_STRIP_FILES TRUE)
+
+set(CPACK_RESOURCE_FILE_LICENSE "${QUMESH_LICENSE_RTF}")
+
+# Drop LICENSE.rtf at the install-prefix root. On macOS that lands it
+# at the .dmg root next to QuMesh.app; on Windows it sits beside
+# QuMesh.exe in `%ProgramFiles%\QuMesh\`. The app/CMakeLists.txt block
+# additionally copies it into QuMesh.app/Contents/Resources/.
+install(FILES "${QUMESH_LICENSE_RTF}" DESTINATION .)
+
+# Note: CMake's CPack DragNDrop generator auto-creates the
+# `Applications` symlink in the .dmg root (opt out with
+# CPACK_DMG_DISABLE_APPLICATIONS_SYMLINK). We rely on that — see
+# app/dmg-setup.applescript.in, which references item "Applications".
 
 if(APPLE)
     set(CPACK_GENERATOR "DragNDrop")
     set(CPACK_DMG_VOLUME_NAME "QuMesh-${PROJECT_VERSION}")
     set(CPACK_PACKAGE_FILE_NAME "QuMesh-${PROJECT_VERSION}-macos")
+
+    # --- DMG mount-window polish -----------------------------------
+    #
+    # Three pieces work together: a background image that CPack
+    # copies to `.background/background.tiff` inside the DMG, a
+    # volume-icon ICNS dropped at the DMG root as `.VolumeIcon.icns`,
+    # and an AppleScript that Finder runs once to size the window,
+    # position the icons, bind the background picture, and flip the
+    # HasCustomIcon Finder flag so the volume icon is picked up.
+    # The AppleScript references the volume name, so it's templated
+    # through configure_file() rather than passed verbatim.
+    set(CPACK_DMG_BACKGROUND_IMAGE
+        "${CMAKE_CURRENT_SOURCE_DIR}/branding/build/dmg-background.tiff")
+
+    # `.VolumeIcon.icns` is the dotted filename Finder looks for at the
+    # root of a mounted volume; combined with the HasCustomIcon flag
+    # (set by the AppleScript via SetFile -a C) it themes both the
+    # title bar of the mount window and the sidebar entry. We can't
+    # ship it through CPack's normal install tree — the DragNDrop
+    # generator's internal staging→DMG copy quietly drops dotfiles
+    # other than `.background/` and `.DS_Store` — so the AppleScript
+    # copies the icns onto the mounted volume itself with a path baked
+    # in here via configure_file(). The set() must come *before*
+    # configure_file so the @QUMESH_VOLUME_ICON_SOURCE@ placeholder is
+    # not substituted with an empty string.
+    set(QUMESH_VOLUME_ICON_SOURCE
+        "${CMAKE_CURRENT_SOURCE_DIR}/branding/build/qumesh-dmg.icns")
+
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/app/dmg-setup.applescript.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/dmg-setup.applescript"
+        @ONLY
+    )
+    set(CPACK_DMG_DS_STORE_SETUP_SCRIPT
+        "${CMAKE_CURRENT_BINARY_DIR}/dmg-setup.applescript")
 elseif(WIN32)
     set(CPACK_GENERATOR "NSIS")
     set(CPACK_NSIS_DISPLAY_NAME "QuMesh")

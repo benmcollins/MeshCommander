@@ -1,0 +1,113 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+--
+-- Run by CPack's DragNDrop generator (via osascript) after the staged
+-- contents have been copied onto a writable DMG, before the volume is
+-- compressed into the final read-only .dmg. The script tells Finder
+-- how the mount window should open on the user's machine:
+--
+--   - window size 640×400 (matches the rendered background image);
+--   - icon view with 96px icons, no toolbar, no status bar, no sidebar;
+--   - background painted from `.background/background.tiff`;
+--   - QuMesh.app on the left at (160, 200), Applications on the right
+--     at (480, 200). Same coordinates the SVG's glow + chevron were
+--     authored against — keep all three in sync if any move.
+--
+-- The volume name is interpolated by CMake configure_file() (@ONLY),
+-- so this `.in` template must not contain any other `@name@` markers.
+
+on run argv
+    set volumeName to "@CPACK_DMG_VOLUME_NAME@"
+
+    -- hdiutil mounts the writable DMG just before this script runs,
+    -- but Finder doesn't always notice the new volume immediately —
+    -- especially under osascript spawned from cpack. Poll for up to
+    -- 30 s before talking to it, otherwise the first `tell disk` call
+    -- raises -1728 ("Can't get disk …") and the whole packaging step
+    -- aborts.
+    set waitedSeconds to 0
+    repeat
+        try
+            tell application "Finder"
+                if exists disk volumeName then exit repeat
+            end tell
+        end try
+        if waitedSeconds is greater than 30 then
+            error "DMG volume '" & volumeName & "' did not appear within 30 s"
+        end if
+        delay 1
+        set waitedSeconds to waitedSeconds + 1
+    end repeat
+
+    tell application "Finder"
+        tell disk volumeName
+            open
+
+            -- Finder window chrome: pure icon view, no sidebar /
+            -- toolbar / statusbar / pathbar. Same compact look every
+            -- commercial Mac installer ships with.
+            set current view of container window to icon view
+            set toolbar visible of container window to false
+            set statusbar visible of container window to false
+
+            -- {left, top, right, bottom} on screen. Width 640, height
+            -- 400. Top edge is unimportant — Finder will park it
+            -- somewhere sensible on whatever screen the user has.
+            set the bounds of container window to {200, 120, 840, 520}
+
+            set viewOpts to the icon view options of container window
+            set arrangement of viewOpts to not arranged
+            set icon size of viewOpts to 96
+            set text size of viewOpts to 12
+            set label position of viewOpts to bottom
+            set shows item info of viewOpts to false
+            set shows icon preview of viewOpts to false
+            set background picture of viewOpts to file ".background:background.tiff"
+
+            -- Icon positions, in window coordinates relative to the
+            -- top-left of the content area. (160, 200) and (480, 200)
+            -- both sit on the 200px horizontal centreline of the
+            -- background, with 320px between them — enough room for
+            -- 96px icons + their text labels and for the chevron hint
+            -- to read between them.
+            set position of item "QuMesh.app" of container window to {160, 200}
+            set position of item "Applications" of container window to {480, 200}
+
+            -- Force Finder to flush the layout to the .DS_Store. The
+            -- update + delay is the standard incantation; without it
+            -- the freshly-written .DS_Store sometimes loses the
+            -- background-picture binding before hdiutil seals the
+            -- volume.
+            close
+            open
+            update without registering applications
+            delay 1
+        end tell
+    end tell
+
+    -- Drop the QuMesh-themed .VolumeIcon.icns onto the volume root
+    -- and flip the HasCustomIcon Finder flag so the OS picks it up
+    -- (themes the mount-window title bar, the sidebar entry, and any
+    -- Get-Info pane). CPack's DragNDrop generator copies our install
+    -- tree into the writable DMG but skips dotfiles other than
+    -- `.background/` and `.DS_Store`, so install(FILES … RENAME
+    -- .VolumeIcon.icns) doesn't survive — we copy here from the
+    -- build-time path that CMake baked in via configure_file.
+    --
+    -- This block runs *after* the Finder layout tell-block: doing it
+    -- before flips the volume's FinderInfo while Finder is mid-way
+    -- through configuring its container window, and Finder then
+    -- rejects `set current view ... to icon view` with -10006.
+    -- SetFile is part of Xcode Command Line Tools; if it's missing
+    -- for any reason we swallow the error so the rest of the layout
+    -- still gets applied (the volume just falls back to the generic
+    -- disk-image icon).
+    set iconSource to "@QUMESH_VOLUME_ICON_SOURCE@"
+    set volumeRoot to "/Volumes/" & volumeName
+    try
+        do shell script "/bin/cp " & quoted form of iconSource & " " & quoted form of (volumeRoot & "/.VolumeIcon.icns")
+        do shell script "/usr/bin/SetFile -a C " & quoted form of volumeRoot
+    on error errMsg number errNum
+        log "Volume-icon staging failed (" & errNum & "): " & errMsg & " — continuing without custom volume icon"
+    end try
+end run

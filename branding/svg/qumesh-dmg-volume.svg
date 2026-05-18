@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  QuMesh DMG volume icon. Rendered to qumesh-dmg.icns by
+  branding/build-icons.py and dropped at the .dmg root as
+  `.VolumeIcon.icns` — once the volume's HasCustomIcon flag is set
+  (via SetFile -a C in app/dmg-setup.applescript.in), Finder picks
+  this up instead of the generic mounted-disk glyph.
+
+  Visual: the same slate squircle as the app icon (qumesh-macos.svg)
+  so the brand reads at a glance, with a small "downward chevron into
+  a tray" badge in the lower-right corner that signals "this is an
+  installer / disk image" rather than the app itself. Apple's own
+  installers (Xcode CLT, Pages, Numbers, etc.) follow the same
+  pattern of "app mark + install affordance".
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>QuMesh — installer disk image</title>
+
+  <defs>
+    <!-- Subtle vertical sheen on the tile so it doesn't read flat
+         next to glossy native icons in the Finder sidebar. -->
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#243248"/>
+      <stop offset="1"   stop-color="#0f172a"/>
+    </linearGradient>
+
+    <!-- Slightly lighter tile for the install-badge chip. -->
+    <linearGradient id="badge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#38bdf8"/>
+      <stop offset="1"   stop-color="#0284c7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Slate squircle, same geometry as the app icon (824×824 inside
+       the 1024 canvas, ~185 px corner radius). -->
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185"
+        fill="url(#tile)"/>
+
+  <!-- QuMesh mark, scaled to occupy roughly the same area it does in
+       the app icon but nudged slightly up-left so the install badge
+       in the lower-right corner has room without crowding. -->
+  <g transform="translate(470, 470) scale(2.9)">
+    <circle cx="0" cy="0" r="50" fill="none" stroke="#ffffff" stroke-width="4"/>
+    <circle cx="-50" cy="0" r="5" fill="#ffffff"/>
+    <circle cx="50" cy="0" r="5" fill="#ffffff"/>
+    <circle cx="0" cy="-50" r="5" fill="#ffffff"/>
+    <circle cx="0" cy="50" r="5" fill="#ffffff"/>
+    <circle cx="-35.355" cy="-35.355" r="5" fill="#ffffff"/>
+    <circle cx="35.355" cy="-35.355" r="5" fill="#ffffff"/>
+    <circle cx="-35.355" cy="35.355" r="5" fill="#ffffff"/>
+    <circle cx="35.355" cy="35.355" r="5" fill="#ffffff"/>
+    <line x1="20" y1="20" x2="55" y2="55" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="55" cy="55" r="7" fill="#ffffff"/>
+  </g>
+
+  <!-- Install-badge: cyan disc in the lower-right with a down-into-tray
+       glyph. Tray = a rounded U; arrow = down-arrow landing in it.
+       The disc nudges off the squircle bottom-right corner by ~24 px
+       so it reads as overlaid rather than inset. Disc radius 130 picks
+       up the same diameter as the iOS unread-badge convention. -->
+  <g transform="translate(820, 820)">
+    <circle cx="0" cy="0" r="138" fill="#0f172a" opacity="0.85"/>
+    <circle cx="0" cy="0" r="120" fill="url(#badge)"/>
+
+    <g stroke="#ffffff" stroke-width="14" fill="none"
+       stroke-linecap="round" stroke-linejoin="round">
+      <!-- Down arrow shaft + head. -->
+      <line x1="0" y1="-58" x2="0" y2="22"/>
+      <polyline points="-30,-6 0,22 30,-6"/>
+      <!-- Tray (rounded U) that the arrow drops into. -->
+      <path d="M -56,30 L -56,58 L 56,58 L 56,30"/>
+    </g>
+  </g>
+</svg>
