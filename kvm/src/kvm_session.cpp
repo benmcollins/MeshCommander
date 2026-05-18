@@ -6,9 +6,25 @@
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
 
+#include <QByteArray>
+#include <QLoggingCategory>
 #include <QMetaObject>
 
+Q_LOGGING_CATEGORY(lcKvmSession, "qumesh.kvm.session")
+
 namespace qumesh::kvm {
+
+namespace {
+
+/// Read `QUMESH_KVM_COMPRESSION` and accept `1` / `true` / `on`
+/// (case-insensitive) as truthy. Hidden A/B knob — see issue #237.
+bool readCompressionEnv()
+{
+    const QByteArray raw = qgetenv("QUMESH_KVM_COMPRESSION").trimmed().toLower();
+    return raw == "1" || raw == "true" || raw == "on";
+}
+
+} // namespace
 
 using qumesh::redir::RedirectionClient;
 
@@ -32,6 +48,11 @@ void KvmSession::start()
     // The RLE inflate stream's sliding window must be empty at the
     // start of every session.
     m_inflate.reset();
+    m_compressionEnabled = readCompressionEnv();
+    qCInfo(lcKvmSession) << "KVM compression"
+                          << (m_compressionEnabled
+                                  ? "enabled (QUMESH_KVM_COMPRESSION=1)"
+                                  : "disabled (default)");
     setState(State::Version);
 }
 
@@ -116,13 +137,16 @@ bool KvmSession::stepHandshake()
         // framebuffer renders black or scrambled.
         writeFrame(buildSetPixelFormat());
         writeFrame(buildSetEncodings());
-        // Match the legacy default: tell AMT to disable zlib on RLE
-        // blocks so every block uses the uncompressed-marker path. The
-        // alternative is a shared deflate stream that's brittle against
-        // packet loss and that our decoder currently doesn't handle for
-        // real firmware payloads. Older AMT versions silently ignore
-        // the frame (it looks like a ClientCutText).
-        writeFrame(buildKvmExtCmd(4, 0));
+        // KvmExtCmd 4 toggles zlib on RLE blocks. The legacy default
+        // (and ours, for now) is to *disable* it so every block uses
+        // the uncompressed-marker path: that path is byte-for-byte
+        // verified against real firmware; the shared-deflate path is
+        // only synthetically tested. `QUMESH_KVM_COMPRESSION=1`
+        // flips this to (4, 1) so the decoder can be A/B-validated
+        // against real machines (issue #237). Older AMT versions
+        // silently ignore the frame either way — it looks like a
+        // ClientCutText.
+        writeFrame(buildKvmExtCmd(4, m_compressionEnabled ? 1 : 0));
         writeFrame(buildFramebufferUpdateRequest(false, 0, 0, m_width, m_height));
         setState(State::FrameLoop);
         return true;

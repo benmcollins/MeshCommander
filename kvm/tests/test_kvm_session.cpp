@@ -8,6 +8,7 @@
 
 #include <QElapsedTimer>
 #include <QHostAddress>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -214,6 +215,8 @@ class TestKvmSession : public QObject
 private slots:
     void handshakeThroughFrameLoopWithRawTile();
     void clientPinsRfb38EvenWhenServerOffers40();
+    void kvmExtCmdDisabledByDefault();
+    void kvmExtCmdEnabledWhenEnvVarSet();
 };
 
 void TestKvmSession::handshakeThroughFrameLoopWithRawTile()
@@ -323,6 +326,99 @@ void TestKvmSession::clientPinsRfb38EvenWhenServerOffers40()
     QVERIFY(waitFor(2000, [&]() {
         return server.received.startsWith("RFB 003.008\n");
     }));
+}
+
+namespace {
+
+/// Drive the redir → KVM handshake through ServerInit and return the
+/// bytes the client sent immediately afterwards (SetPixelFormat +
+/// SetEncodings + KvmExtCmd + FramebufferUpdateRequest = 67 bytes).
+/// Exposed for the compression-toggle tests below so they can inspect
+/// the KvmExtCmd payload without duplicating the handshake walk.
+QByteArray driveHandshakeAndCaptureSetup(MockServer &server,
+                                          RedirectionClient &client,
+                                          KvmSession &session)
+{
+    QObject::connect(&client, &RedirectionClient::authenticated,
+                     &session, &KvmSession::start);
+    client.connectTo(QStringLiteral("127.0.0.1"), server.port());
+
+    if (!waitFor(5000, [&]() {
+            return client.state() == RedirectionClient::State::Authenticated;
+        })) return {};
+
+    if (!waitFor(2000, [&]() { return server.received.startsWith("RFB 003.008\n"); }))
+        return {};
+    server.received.clear();
+
+    QByteArray sec(2, '\0');
+    sec[0] = 0x01;
+    sec[1] = 0x01;
+    server.m_socket->write(sec);
+
+    if (!waitFor(2000, [&]() { return server.received.size() >= 1; })) return {};
+    server.received.clear();
+
+    server.m_socket->write(be32(0));
+
+    if (!waitFor(2000, [&]() { return server.received.size() >= 1; })) return {};
+    server.received.clear();
+
+    server.m_socket->write(makeServerInit(320, 240, "AMT"));
+
+    // SetPixelFormat 20 + SetEncodings 16 + KvmExtCmd 21 + FBUR 10 = 67.
+    if (!waitFor(2000, [&]() { return server.received.size() >= 67; })) return {};
+    return server.received;
+}
+
+} // namespace
+
+void TestKvmSession::kvmExtCmdDisabledByDefault()
+{
+    // QUMESH_KVM_COMPRESSION unset — the session must send the
+    // compression-disable KvmExtCmd (4, 0). Tests #237 default.
+    qunsetenv("QUMESH_KVM_COMPRESSION");
+
+    MockServer server;
+    QVERIFY(server.listen());
+
+    RedirectionClient client;
+    client.setProtocol(qumesh::redir::Protocol::Kvm);
+    client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
+
+    KvmSession session(&client);
+    const QByteArray sent = driveHandshakeAndCaptureSetup(server, client, session);
+    QVERIFY(!sent.isEmpty());
+
+    QVERIFY2(sent.contains(buildKvmExtCmd(4, 0)),
+              "KvmExtCmd(4, 0) not found on wire");
+    QVERIFY2(!sent.contains(buildKvmExtCmd(4, 1)),
+              "KvmExtCmd(4, 1) unexpectedly present");
+}
+
+void TestKvmSession::kvmExtCmdEnabledWhenEnvVarSet()
+{
+    // QUMESH_KVM_COMPRESSION=1 flips the toggle — the session must
+    // send (4, 1) instead. Restore the env var on exit so other tests
+    // in the suite see a clean environment.
+    qputenv("QUMESH_KVM_COMPRESSION", "1");
+    auto cleanup = qScopeGuard([]() { qunsetenv("QUMESH_KVM_COMPRESSION"); });
+
+    MockServer server;
+    QVERIFY(server.listen());
+
+    RedirectionClient client;
+    client.setProtocol(qumesh::redir::Protocol::Kvm);
+    client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
+
+    KvmSession session(&client);
+    const QByteArray sent = driveHandshakeAndCaptureSetup(server, client, session);
+    QVERIFY(!sent.isEmpty());
+
+    QVERIFY2(sent.contains(buildKvmExtCmd(4, 1)),
+              "KvmExtCmd(4, 1) not found on wire");
+    QVERIFY2(!sent.contains(buildKvmExtCmd(4, 0)),
+              "KvmExtCmd(4, 0) unexpectedly present");
 }
 
 QTEST_MAIN(TestKvmSession)
