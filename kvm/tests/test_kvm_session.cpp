@@ -92,8 +92,15 @@ public:
     bool listen() { return m_server->listen(QHostAddress::LocalHost); }
     quint16 port() const { return m_server->serverPort(); }
 
+    /// Override the 12-byte ProtocolVersion banner the mock pushes
+    /// after auth completes. Lets the CSME 21 regression test (#176)
+    /// emulate a server announcing RFB 4.0 / 5.0 — the client must
+    /// still reply with 3.8.
+    void setBanner(const QByteArray &banner) { m_banner = banner; }
+
     QByteArray received; // bytes received after auth completes
     QPointer<QTcpSocket> m_socket;
+    QByteArray m_banner = QByteArrayLiteral("RFB 003.008\n");
 
 private:
     void handleData()
@@ -156,7 +163,7 @@ private:
                 QByteArray reply(8, '\0');
                 reply[0] = 0x41;
                 m_socket->write(reply);
-                m_socket->write(QByteArrayLiteral("RFB 003.008\n"));
+                m_socket->write(m_banner);
             } else {
                 received.append(m_inbox);
                 m_inbox.clear();
@@ -206,6 +213,7 @@ class TestKvmSession : public QObject
     Q_OBJECT
 private slots:
     void handshakeThroughFrameLoopWithRawTile();
+    void clientPinsRfb38EvenWhenServerOffers40();
 };
 
 void TestKvmSession::handshakeThroughFrameLoopWithRawTile()
@@ -284,6 +292,37 @@ void TestKvmSession::handshakeThroughFrameLoopWithRawTile()
     QCOMPARE(img.width(), 4);
     QCOMPARE(img.height(), 4);
     QCOMPARE(img.pixel(2, 2), QRgb(0xFFF80000));
+}
+
+void TestKvmSession::clientPinsRfb38EvenWhenServerOffers40()
+{
+    // CSME 21 regression guard (issue #176). Pre-CSME-21 AMT firmware
+    // tends to advertise the highest RFB version it speaks; CSME 21
+    // strips 4.0 from that menu. To guard against any future change
+    // that adapts the client to whatever the server announces, drive
+    // the mock with "RFB 004.000\n" and assert the client still
+    // writes back "RFB 003.008\n". The session-level test is the
+    // load-bearing one — buildVersionResponse() is stateless and
+    // takes no input, so it can't directly exercise this.
+    MockServer server;
+    server.setBanner(QByteArrayLiteral("RFB 004.000\n"));
+    QVERIFY(server.listen());
+
+    RedirectionClient client;
+    client.setProtocol(qumesh::redir::Protocol::Kvm);
+    client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
+
+    KvmSession session(&client);
+    QObject::connect(&client, &RedirectionClient::authenticated,
+                     &session, &KvmSession::start);
+    client.connectTo(QStringLiteral("127.0.0.1"), server.port());
+
+    QVERIFY(waitFor(5000, [&]() {
+        return client.state() == RedirectionClient::State::Authenticated;
+    }));
+    QVERIFY(waitFor(2000, [&]() {
+        return server.received.startsWith("RFB 003.008\n");
+    }));
 }
 
 QTEST_MAIN(TestKvmSession)
