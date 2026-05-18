@@ -1110,6 +1110,77 @@ struct WirelessResult
 void getWireless(WsmanClient *client,
                  std::function<void(WirelessResult)> callback);
 
+/// Input shape for `addWiFiSettingsPsk` / `updateWiFiSettingsPsk`. AMT
+/// distinguishes WPA2-PSK (`authenticationMethod=6`) and WPA3-PSK
+/// (`authenticationMethod=7`); the dialog picks. `priority` is the
+/// usual SSID-prioritisation knob (1 = top). PSK is the passphrase
+/// the operator types — AMT hashes it on the way in.
+struct WiFiPskProfile
+{
+    QString elementName;  ///< Identity key; required.
+    QString ssid;
+    int authenticationMethod = 6;  ///< 6 = WPA2-PSK, 7 = WPA3-PSK.
+    int encryptionMethod = 4;      ///< 3 = TKIP, 4 = CCMP.
+    int priority = 1;
+    /// Pre-Shared Key — operator's passphrase. Sent over the WSMAN
+    /// channel (TLS-protected) and never echoed back on Get.
+    QString psk;
+};
+
+/// Invoke `AMT_WiFiPortConfigurationService.AddWiFiSettings` with a PSK
+/// profile. Hand-rolls the envelope because the embedded
+/// `WiFiEndpointSettingsInput` element doesn't fit the flat parameter
+/// shape `buildInvokeEnvelope` supports. See #159.
+void addWiFiSettingsPsk(WsmanClient *client, const WiFiPskProfile &profile,
+                         std::function<void(InvokeResult)> callback);
+
+/// Invoke `AMT_WiFiPortConfigurationService.UpdateWiFiSettings` for an
+/// existing PSK profile, keyed by `WiFiEndpointSettings` ElementName.
+/// AMT replaces the entire row with the supplied values. See #159.
+void updateWiFiSettingsPsk(WsmanClient *client, const WiFiPskProfile &profile,
+                            std::function<void(InvokeResult)> callback);
+
+/// WS-Transfer Delete on a single `CIM_WiFiEndpointSettings`,
+/// identified by `InstanceID = "Intel(r) AMT:WiFi Endpoint Settings <ElementName>"`.
+/// AMT also accepts `{ ElementName }` directly on this class. See #159.
+void deleteWiFiProfile(WsmanClient *client, const QString &elementName,
+                        std::function<void(InvokeResult)> callback);
+
+/// Invoke `DeleteAllITProfiles` — wipes every WiFi profile the IT
+/// channel installed. Loud confirmation needed in the UI. See #159.
+void deleteAllITWiFiProfiles(WsmanClient *client,
+                              std::function<void(InvokeResult)> callback);
+
+/// Invoke `DeleteAllUserProfiles` — wipes every WiFi profile the OS-
+/// side user added via Local Profile Sync. See #159.
+void deleteAllUserWiFiProfiles(WsmanClient *client,
+                                std::function<void(InvokeResult)> callback);
+
+/// Invoke `CIM_WiFiPort.RequestStateChange(RequestedState)`. AMT uses
+/// `3` for Disabled and `32768` for "Enabled in S0" (the practical
+/// "on" value); `32769` is "Enabled in S0+Sx/AC". This helper picks
+/// 32768 for `enabled=true` and 3 for `enabled=false`. See #159.
+void setWiFiPortState(WsmanClient *client, bool enabled,
+                       std::function<void(InvokeResult)> callback);
+
+/// Put on `AMT_WiFiPortConfigurationService` with the
+/// `LocalProfileSynchronizationEnabled` and `UEFIWiFiProfileShareEnabled`
+/// fields updated. Other fields are not echoed — AMT preserves them
+/// on the Put. See #159.
+void setWiFiSyncSettings(WsmanClient *client,
+                          int localProfileSynchronization,
+                          int uefiWiFiProfileShare,
+                          std::function<void(InvokeResult)> callback);
+
+/// Put on `AMT_8021XProfile` for the wired enterprise profile. Sets
+/// `Enabled` + `AuthenticationProtocol` (CIM
+/// `CIM_IEEE8021xSettings.AuthenticationProtocol` codes: 0 = EAP-TLS,
+/// 1 = EAP-TTLS/MSCHAPv2, 2 = PEAPv0/MSCHAPv2, 3 = PEAPv1/GTC,
+/// 4 = EAP-FAST/MSCHAPv2, 5 = EAP-FAST/GTC). See #159.
+void setWired8021xProfile(WsmanClient *client, bool enabled,
+                           int authenticationProtocol,
+                           std::function<void(InvokeResult)> callback);
+
 /// Walk every page of `AMT_AuditLog.ReadRecords` and return the parsed
 /// records. Pages are 16-record chunks per the AMT contract. Faulted
 /// pages short-circuit and return the entries collected so far with

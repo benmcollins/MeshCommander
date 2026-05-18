@@ -72,6 +72,8 @@ qt_add_qml_module(qumesh
         qml/AddCertificateDialog.qml
         qml/TlsModeDialog.qml
         qml/CertDetailsDialog.qml
+        qml/WiFiProfileDialog.qml
+        qml/Wired8021xDialog.qml
         qml/MigrationBanner.qml
         qml/TitleBar.qml
         qml/StatusBar.qml

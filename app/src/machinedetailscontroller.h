@@ -424,6 +424,41 @@ public:
     Q_INVOKABLE void deleteHttpProxy(const QString &name);
 
     Q_INVOKABLE void refreshWireless();
+
+    /// Add a PSK WiFi profile (WPA2-PSK or WPA3-PSK). `fields` keys:
+    ///   elementName (string), ssid (string),
+    ///   authenticationMethod (int — 6 WPA2-PSK, 7 WPA3-PSK),
+    ///   encryptionMethod (int — 3 TKIP, 4 CCMP),
+    ///   priority (int), psk (cleartext passphrase).
+    /// EAP-TLS / PEAP profiles need cert binding and ship in a later
+    /// Phase C. See #159.
+    Q_INVOKABLE void addWiFiPskProfile(const QVariantMap &fields);
+
+    /// Update an existing PSK profile, keyed by `elementName`. Same
+    /// patch shape as `addWiFiPskProfile`. See #159.
+    Q_INVOKABLE void updateWiFiPskProfile(const QVariantMap &fields);
+
+    /// Delete a single WiFi profile by `elementName`. See #159.
+    Q_INVOKABLE void deleteWiFiProfile(const QString &elementName);
+
+    /// Bulk-delete all IT-channel WiFi profiles. Heavy hammer.
+    Q_INVOKABLE void deleteAllITWiFiProfiles();
+
+    /// Bulk-delete all OS-side (user) WiFi profiles.
+    Q_INVOKABLE void deleteAllUserWiFiProfiles();
+
+    /// Toggle the WiFi port at the AMT firmware level.
+    Q_INVOKABLE void setWifiPortEnabled(bool enabled);
+
+    /// Update both sync toggles in one call. -1 leaves a field
+    /// untouched (the controller re-reads the current value).
+    Q_INVOKABLE void setWifiSyncSettings(int localProfileSynchronization,
+                                          int uefiWiFiProfileShare);
+
+    /// Wired enterprise (`AMT_8021XProfile`) edit. `authenticationProtocol`
+    /// follows the CIM enum used elsewhere.
+    Q_INVOKABLE void setWiredEnterpriseProfile(bool enabled,
+                                                int authenticationProtocol);
     /// Enumerate AMT_AgentPresenceWatchdog + read
     /// AMT_AgentPresenceCapabilities for the Watchdogs pane. See #164.
     Q_INVOKABLE void refreshAgentPresence();

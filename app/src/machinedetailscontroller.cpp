@@ -1044,6 +1044,239 @@ void MachineDetailsController::refreshWireless()
         });
 }
 
+namespace {
+
+qumesh::wsman::WiFiPskProfile pskProfileFromMap(const QVariantMap &fields)
+{
+    qumesh::wsman::WiFiPskProfile p;
+    p.elementName = fields.value(QStringLiteral("elementName")).toString();
+    p.ssid        = fields.value(QStringLiteral("ssid")).toString();
+    p.authenticationMethod =
+        fields.value(QStringLiteral("authenticationMethod"), 6).toInt();
+    p.encryptionMethod =
+        fields.value(QStringLiteral("encryptionMethod"), 4).toInt();
+    p.priority = fields.value(QStringLiteral("priority"), 1).toInt();
+    p.psk      = fields.value(QStringLiteral("psk")).toString();
+    return p;
+}
+
+} // namespace
+
+void MachineDetailsController::addWiFiPskProfile(const QVariantMap &fields)
+{
+    setLastError({});
+    const auto profile = pskProfileFromMap(fields);
+    if (profile.elementName.trimmed().isEmpty()) {
+        setLastError(QStringLiteral("Add WiFi: profile name is empty."));
+        return;
+    }
+    if (profile.ssid.trimmed().isEmpty()) {
+        setLastError(QStringLiteral("Add WiFi: SSID is empty."));
+        return;
+    }
+    if (profile.psk.length() < 8) {
+        // WPA2/WPA3 PSK is at least 8 chars. Fail fast rather than
+        // letting AMT round-trip a vague fault.
+        setLastError(QStringLiteral(
+            "Add WiFi: PSK must be at least 8 characters."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Add WiFi: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::addWiFiSettingsPsk(m_client, profile,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Add WiFi: failed.")
+                    : QStringLiteral("Add WiFi: %1").arg(r.error));
+                return;
+            }
+            refreshWireless();
+        });
+}
+
+void MachineDetailsController::updateWiFiPskProfile(const QVariantMap &fields)
+{
+    setLastError({});
+    const auto profile = pskProfileFromMap(fields);
+    if (profile.elementName.trimmed().isEmpty()) {
+        setLastError(QStringLiteral("Update WiFi: profile name is empty."));
+        return;
+    }
+    if (profile.psk.length() > 0 && profile.psk.length() < 8) {
+        setLastError(QStringLiteral(
+            "Update WiFi: PSK must be at least 8 characters."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Update WiFi: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::updateWiFiSettingsPsk(m_client, profile,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Update WiFi: failed.")
+                    : QStringLiteral("Update WiFi: %1").arg(r.error));
+                return;
+            }
+            refreshWireless();
+        });
+}
+
+void MachineDetailsController::deleteWiFiProfile(const QString &elementName)
+{
+    setLastError({});
+    if (elementName.isEmpty()) {
+        setLastError(QStringLiteral("Delete WiFi: missing profile name."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Delete WiFi: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteWiFiProfile(m_client, elementName,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete WiFi: failed.")
+                    : QStringLiteral("Delete WiFi: %1").arg(r.error));
+                return;
+            }
+            refreshWireless();
+        });
+}
+
+void MachineDetailsController::deleteAllITWiFiProfiles()
+{
+    setLastError({});
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Bulk delete: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteAllITWiFiProfiles(m_client,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete IT profiles: failed.")
+                    : QStringLiteral("Delete IT profiles: %1").arg(r.error));
+                return;
+            }
+            refreshWireless();
+        });
+}
+
+void MachineDetailsController::deleteAllUserWiFiProfiles()
+{
+    setLastError({});
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Bulk delete: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteAllUserWiFiProfiles(m_client,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete user profiles: failed.")
+                    : QStringLiteral("Delete user profiles: %1").arg(r.error));
+                return;
+            }
+            refreshWireless();
+        });
+}
+
+void MachineDetailsController::setWifiPortEnabled(bool enabled)
+{
+    setLastError({});
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("WiFi port: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::setWiFiPortState(m_client, enabled,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("WiFi port: failed.")
+                    : QStringLiteral("WiFi port: %1").arg(r.error));
+                return;
+            }
+            refreshWireless();
+        });
+}
+
+void MachineDetailsController::setWifiSyncSettings(
+    int localProfileSynchronization, int uefiWiFiProfileShare)
+{
+    setLastError({});
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("WiFi sync: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::setWiFiSyncSettings(m_client,
+        localProfileSynchronization, uefiWiFiProfileShare,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("WiFi sync: failed.")
+                    : QStringLiteral("WiFi sync: %1").arg(r.error));
+                return;
+            }
+            refreshWireless();
+        });
+}
+
+void MachineDetailsController::setWiredEnterpriseProfile(
+    bool enabled, int authenticationProtocol)
+{
+    setLastError({});
+    if (authenticationProtocol < 0 || authenticationProtocol > 5) {
+        setLastError(QStringLiteral(
+            "Wired 802.1x: authentication protocol %1 is not in 0..5.")
+            .arg(authenticationProtocol));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Wired 802.1x: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::setWired8021xProfile(m_client, enabled, authenticationProtocol,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Wired 802.1x: failed.")
+                    : QStringLiteral("Wired 802.1x: %1").arg(r.error));
+                return;
+            }
+            refreshWireless();
+        });
+}
+
 void MachineDetailsController::refreshAgentPresence()
 {
     if (deferIfSshConnecting(PendingAgentPresence)) return;
