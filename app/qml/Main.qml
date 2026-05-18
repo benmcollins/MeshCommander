@@ -98,6 +98,7 @@ ApplicationWindow {
                 SplitView.minimumWidth: 280
                 onCurrentRowChanged: root.selectedRow = listView.currentRow
                 onAddRequested: statusPane.addRequested()
+                onScanRequested: scanDialog.openDialog()
                 onOpenDetailsRequested: function(row) { detailsLoader.launchFor(row) }
             }
 
@@ -122,6 +123,10 @@ ApplicationWindow {
             root.selectedRow = savedRow;
             listView.setCurrentRow(savedRow);
         }
+    }
+
+    ScanDialog {
+        id: scanDialog
     }
 
     Loader {
