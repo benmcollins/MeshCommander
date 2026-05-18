@@ -47,21 +47,6 @@ jobs:
         shell: bash
         run: echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
 
-      - name: Locate OpenSSL (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          # OpenSSL 3 is pre-installed on windows-latest via chocolatey.
-          if [ -d "/c/Program Files/OpenSSL-Win64" ]; then
-            echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
-          elif [ -d "/c/Program Files/OpenSSL" ]; then
-            echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL" >> $GITHUB_ENV
-          else
-            echo "Could not locate a pre-installed OpenSSL; installing via choco" >&2
-            choco install -y --no-progress openssl
-            echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
-          fi
-
       - name: Install libssh (macOS)
         if: runner.os == 'macOS'
         shell: bash
@@ -69,13 +54,38 @@ jobs:
           brew install libssh
           echo "CMAKE_PREFIX_PATH=$(brew --prefix libssh)${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
 
-      - name: Install libssh (Windows)
+      # Forward the GHA cache service URL + runtime token so vcpkg's
+      # `x-gha` binary-source provider can talk to it from the bash
+      # shell. These env vars are normally only exposed to JavaScript
+      # actions; github-script re-exports them via core.exportVariable
+      # so subsequent steps (incl. the vcpkg install below) inherit
+      # them. See #190.
+      - name: Export GHA cache env for vcpkg (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Install libssh + openssl via vcpkg (Windows)
         if: runner.os == 'Windows'
         shell: bash
+        env:
+          # `x-gha,readwrite` uploads built binaries to the GitHub
+          # Actions cache and pulls them back on subsequent runs keyed
+          # by abi-hash. First run after a vcpkg or registry bump
+          # populates the cache (~10 min); cache hits drop the install
+          # to seconds. See #190.
+          VCPKG_BINARY_SOURCES: 'clear;x-gha,readwrite'
         run: |
-          # vcpkg ships libssh; the windows-latest runner has vcpkg
-          # pre-installed at C:/vcpkg.
-          /c/vcpkg/vcpkg.exe install libssh:x64-windows
+          # Install OpenSSL through vcpkg alongside libssh — the
+          # alternative is the chocolatey-installed OpenSSL at
+          # C:/Program Files/OpenSSL-Win64, which lives in a different
+          # ABI from the OpenSSL vcpkg's libssh was built against.
+          # Unifying through vcpkg also lets the binary cache cover
+          # OpenSSL on top of libssh.
+          /c/vcpkg/vcpkg.exe install openssl:x64-windows libssh:x64-windows
           echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
           echo "VCPKG_TARGET_TRIPLET=x64-windows" >> $GITHUB_ENV
 

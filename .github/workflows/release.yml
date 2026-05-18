@@ -86,19 +86,6 @@ jobs:
         shell: bash
         run: echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
 
-      - name: Locate OpenSSL (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          if [ -d "/c/Program Files/OpenSSL-Win64" ]; then
-            echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
-          elif [ -d "/c/Program Files/OpenSSL" ]; then
-            echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL" >> $GITHUB_ENV
-          else
-            choco install -y --no-progress openssl
-            echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
-          fi
-
       - name: Install libssh (macOS)
         if: runner.os == 'macOS'
         shell: bash
@@ -142,11 +129,32 @@ jobs:
               "$KEYCHAIN_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
-      - name: Install libssh (Windows)
+      # Forward the GHA cache service URL + runtime token so vcpkg's
+      # `x-gha` binary-source provider can talk to it from the bash
+      # shell. See #190.
+      - name: Export GHA cache env for vcpkg (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Install libssh + openssl via vcpkg (Windows)
         if: runner.os == 'Windows'
         shell: bash
+        env:
+          # See #190 — `x-gha,readwrite` lets vcpkg cache built
+          # binaries in the GitHub Actions cache across runs, keyed
+          # by abi-hash. Release runs share the cache populated by the
+          # CI workflow.
+          VCPKG_BINARY_SOURCES: 'clear;x-gha,readwrite'
         run: |
-          /c/vcpkg/vcpkg.exe install libssh:x64-windows
+          # Install OpenSSL through vcpkg alongside libssh so QuMesh
+          # and libssh.dll link the same ABI, and so the binary cache
+          # covers OpenSSL too. Replaces the chocolatey-OpenSSL +
+          # OPENSSL_ROOT_DIR pattern.
+          /c/vcpkg/vcpkg.exe install openssl:x64-windows libssh:x64-windows
           echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
           echo "VCPKG_TARGET_TRIPLET=x64-windows" >> $GITHUB_ENV
 
