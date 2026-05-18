@@ -381,6 +381,34 @@ public:
     Q_INVOKABLE void refreshHardware();
     Q_INVOKABLE void refreshAuditLog();
     Q_INVOKABLE void refreshDeviceCerts();
+
+    /// Install a certificate parsed from PEM-encoded `pem` into the
+    /// AMT device cert store. When `asTrustedRoot` is true the cert
+    /// is registered via `AddTrustedRootCertificate` (trust anchor);
+    /// otherwise via `AddCertificate` (intermediate / chain). Errors
+    /// land on `lastError`. See #157.
+    Q_INVOKABLE void addCertificateFromPem(const QString &pem,
+                                            bool asTrustedRoot);
+
+    /// WS-Transfer Delete on `AMT_PublicKeyCertificate` with the given
+    /// `instanceId`. The QML guards against deleting an ACTIVE cert.
+    /// See #157.
+    Q_INVOKABLE void deleteDeviceCertificate(const QString &instanceId);
+
+    /// WS-Transfer Delete on `AMT_PublicPrivateKeyPair`. Used to clean
+    /// up orphaned key pairs left when their matching cert was
+    /// imported elsewhere or rotated. See #157.
+    Q_INVOKABLE void deleteDeviceKeyPair(const QString &instanceId);
+
+    /// Put a new TLS mode + trusted-CN set on the
+    /// `AMT_TLSSettingData` row identified by `instanceId`. `trustedCn`
+    /// is only meaningful when `mutualAuth` is true. See #157.
+    Q_INVOKABLE void setTlsSettingsForInstance(const QString &instanceId,
+                                                bool enabled,
+                                                bool mutualAuth,
+                                                bool acceptNonSecureConnections,
+                                                const QVariantList &trustedCn);
+
     Q_INVOKABLE void refreshRemoteAccess();
 
     /// Invoke `IPS_HTTPProxyService.AddProxyAccessPoint` and re-read

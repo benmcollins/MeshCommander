@@ -69,6 +69,9 @@ qt_add_qml_module(qumesh
         qml/UserAccountDialog.qml
         qml/AdminPasswordDialog.qml
         qml/ConfirmDialog.qml
+        qml/AddCertificateDialog.qml
+        qml/TlsModeDialog.qml
+        qml/CertDetailsDialog.qml
         qml/MigrationBanner.qml
         qml/TitleBar.qml
         qml/StatusBar.qml

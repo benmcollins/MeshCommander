@@ -919,6 +919,42 @@ struct DeviceCertResult
 void getDeviceCertStore(WsmanClient *client,
                         std::function<void(DeviceCertResult)> callback);
 
+/// Invoke `AMT_PublicKeyManagementService.AddTrustedRootCertificate`.
+/// `certB64` is the cert's DER encoding, base64-encoded. AMT installs
+/// it under the trusted-root list and returns a new
+/// `AMT_PublicKeyCertificate` instance the caller can locate on the
+/// next re-enumeration. See #157.
+void addTrustedRootCertificate(WsmanClient *client, const QString &certB64,
+                                std::function<void(InvokeResult)> callback);
+
+/// Invoke `AMT_PublicKeyManagementService.AddCertificate`. Same shape
+/// as the trusted-root variant but the cert is added to the
+/// chain / intermediate-CA list rather than marked as a trust anchor.
+/// See #157.
+void addCertificate(WsmanClient *client, const QString &certB64,
+                    std::function<void(InvokeResult)> callback);
+
+/// WS-Transfer Delete on `AMT_PublicKeyCertificate` with the
+/// `InstanceID` selector. The caller must guard against deleting an
+/// ACTIVE cert — AMT will fault otherwise, but the QML side prompts
+/// first. See #157.
+void deleteDeviceCertificate(WsmanClient *client, const QString &instanceId,
+                              std::function<void(InvokeResult)> callback);
+
+/// WS-Transfer Delete on `AMT_PublicPrivateKeyPair`. Typically used to
+/// clean up orphan key pairs (no matching cert). See #157.
+void deleteDeviceKeyPair(WsmanClient *client, const QString &instanceId,
+                          std::function<void(InvokeResult)> callback);
+
+/// Put on `AMT_TLSSettingData` with the InstanceID-targeted endpoint
+/// updated to the given state. `trustedCn` is sent only when
+/// `mutualAuth` is true (AMT ignores it otherwise). See #157.
+void setTlsSettings(WsmanClient *client, const QString &instanceId,
+                    bool enabled, bool mutualAuth,
+                    bool acceptNonSecureConnections,
+                    const QStringList &trustedCn,
+                    std::function<void(InvokeResult)> callback);
+
 /// One Management Presence Server — from `AMT_ManagementPresenceRemoteSAP`.
 struct MpsServer
 {

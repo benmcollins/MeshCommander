@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QTimer>
 
+#include "certs/cert_parser.h"
 #include "wsman/operations.h"
 #include "wsman/wsman_client.h"
 
@@ -1318,6 +1319,140 @@ void MachineDetailsController::refreshSystemDefense()
             sd.insert(QStringLiteral("ipFilters"),  ipFilters);
             m_systemDefense = std::move(sd);
             emit systemDefenseChanged();
+        });
+}
+
+void MachineDetailsController::addCertificateFromPem(const QString &pem,
+                                                     bool asTrustedRoot)
+{
+    setLastError({});
+    if (pem.trimmed().isEmpty()) {
+        setLastError(QStringLiteral("Add certificate: PEM is empty."));
+        return;
+    }
+    QString parseErr;
+    const auto entry = qumesh::certs::CertParser::fromPem(pem.toUtf8(), &parseErr);
+    if (entry.certDer.isEmpty()) {
+        setLastError(QStringLiteral("Add certificate: %1").arg(
+            parseErr.isEmpty() ? QStringLiteral("no certificate block found")
+                               : parseErr));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Add certificate: host is empty."));
+        return;
+    }
+    const QString b64 = QString::fromLatin1(entry.certDer.toBase64());
+    auto cb = [this](qumesh::wsman::InvokeResult r) {
+        decInflight();
+        if (!r.ok) {
+            setLastError(r.error.isEmpty()
+                ? QStringLiteral("Add certificate: failed.")
+                : QStringLiteral("Add certificate: %1").arg(r.error));
+            return;
+        }
+        refreshDeviceCerts();
+    };
+    incInflight();
+    if (asTrustedRoot)
+        qumesh::wsman::addTrustedRootCertificate(m_client, b64, std::move(cb));
+    else
+        qumesh::wsman::addCertificate(m_client, b64, std::move(cb));
+}
+
+void MachineDetailsController::deleteDeviceCertificate(const QString &instanceId)
+{
+    setLastError({});
+    if (instanceId.isEmpty()) {
+        setLastError(QStringLiteral("Delete certificate: missing instance ID."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Delete certificate: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteDeviceCertificate(m_client, instanceId,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete certificate: failed.")
+                    : QStringLiteral("Delete certificate: %1").arg(r.error));
+                return;
+            }
+            refreshDeviceCerts();
+        });
+}
+
+void MachineDetailsController::deleteDeviceKeyPair(const QString &instanceId)
+{
+    setLastError({});
+    if (instanceId.isEmpty()) {
+        setLastError(QStringLiteral("Delete key pair: missing instance ID."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Delete key pair: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteDeviceKeyPair(m_client, instanceId,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete key pair: failed.")
+                    : QStringLiteral("Delete key pair: %1").arg(r.error));
+                return;
+            }
+            refreshDeviceCerts();
+        });
+}
+
+void MachineDetailsController::setTlsSettingsForInstance(
+    const QString &instanceId, bool enabled, bool mutualAuth,
+    bool acceptNonSecureConnections, const QVariantList &trustedCn)
+{
+    setLastError({});
+    if (instanceId.isEmpty()) {
+        setLastError(QStringLiteral("TLS settings: missing instance ID."));
+        return;
+    }
+    if (mutualAuth && trustedCn.isEmpty()) {
+        // The QML side should already block this, but a second
+        // defense at the controller boundary avoids bricking the
+        // endpoint if a future caller forgets the check.
+        setLastError(QStringLiteral(
+            "TLS settings: mutual-auth requires at least one trusted CN."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("TLS settings: host is empty."));
+        return;
+    }
+    QStringList cns;
+    cns.reserve(trustedCn.size());
+    for (const QVariant &v : trustedCn) {
+        const QString s = v.toString().trimmed();
+        if (!s.isEmpty()) cns.append(s);
+    }
+    incInflight();
+    qumesh::wsman::setTlsSettings(m_client, instanceId, enabled, mutualAuth,
+        acceptNonSecureConnections, cns,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("TLS settings: failed.")
+                    : QStringLiteral("TLS settings: %1").arg(r.error));
+                return;
+            }
+            refreshDeviceCerts();
         });
 }
 
