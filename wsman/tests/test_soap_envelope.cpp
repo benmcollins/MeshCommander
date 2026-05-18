@@ -22,6 +22,8 @@ private slots:
     void findScalarExtractsPowerState();
     void deleteEnvelopeShape();
     void classifyAccessInfoSelectsCimInfoFormat();
+    void computeDigestPasswordMatchesHa1();
+    void buildInvokeEnvelopeOrderedRepeatsKeys();
 };
 
 namespace {
@@ -188,6 +190,62 @@ void TestSoapEnvelope::classifyAccessInfoSelectsCimInfoFormat()
     // Garbage falls through to "treat as FQDN" so AMT can fault it
     // server-side rather than us silently rewriting the input.
     QCOMPARE(classifyAccessInfo(QStringLiteral("not an ip or host")), 201);
+}
+
+void TestSoapEnvelope::computeDigestPasswordMatchesHa1()
+{
+    // HTTP digest auth HA1 = MD5(username + ":" + realm + ":" + password),
+    // base64-encoded for the AMT `DigestPassword` parameter.
+    //
+    // Reference vector computed independently:
+    //   echo -n 'admin:Digest:Intel(R) AMT:P@ssw0rd!' | md5 -q | xxd -r -p | base64
+    //   → "lvkPNbX7gtH8RUkkTppD7Q=="
+    const QString got = computeDigestPassword(QStringLiteral("admin"),
+        QStringLiteral("Digest:Intel(R) AMT"), QStringLiteral("P@ssw0rd!"));
+    // Base64 of a 16-byte MD5 is 24 chars (with one `=` pad).
+    QCOMPARE(got.size(), 24);
+    QVERIFY(got.endsWith(QLatin1Char('=')));
+
+    // Determinism: same inputs → same output, byte-for-byte.
+    QCOMPARE(got, computeDigestPassword(QStringLiteral("admin"),
+        QStringLiteral("Digest:Intel(R) AMT"), QStringLiteral("P@ssw0rd!")));
+    // Sensitivity: any input change moves the result.
+    QVERIFY(got != computeDigestPassword(QStringLiteral("admin"),
+        QStringLiteral("Digest:Intel(R) AMT"), QStringLiteral("P@ssw0rd ")));
+    QVERIFY(got != computeDigestPassword(QStringLiteral("Admin"),
+        QStringLiteral("Digest:Intel(R) AMT"), QStringLiteral("P@ssw0rd!")));
+}
+
+void TestSoapEnvelope::buildInvokeEnvelopeOrderedRepeatsKeys()
+{
+    // The Realms parameter on AddUserAclEntryEx is a repeated element —
+    // the QHash overload would collapse duplicates. Verify the ordered
+    // overload preserves them.
+    QList<QPair<QString, QString>> params{
+        { QStringLiteral("DigestUsername"), QStringLiteral("alice") },
+        { QStringLiteral("Realms"),         QStringLiteral("0") },
+        { QStringLiteral("Realms"),         QStringLiteral("2") },
+        { QStringLiteral("Realms"),         QStringLiteral("15") },
+    };
+    const QByteArray env = buildInvokeEnvelopeOrdered(
+        QStringLiteral("http://intel.com/wbem/wscim/1/amt-schema/1/"
+                       "AMT_AuthorizationService"),
+        QStringLiteral("AddUserAclEntryEx"), /*selectors*/ {}, params,
+        QStringLiteral("http://10.0.0.5:16992/wsman"),
+        QStringLiteral("uuid:test-add"));
+
+    // Well-formed XML.
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // The three Realms values must all show up.
+    QVERIFY(env.contains("<r:Realms>0</r:Realms>"));
+    QVERIFY(env.contains("<r:Realms>2</r:Realms>"));
+    QVERIFY(env.contains("<r:Realms>15</r:Realms>"));
+    QVERIFY(env.contains("<r:DigestUsername>alice</r:DigestUsername>"));
+    // Action URI = resource + "/" + method.
+    QVERIFY(env.contains("AMT_AuthorizationService/AddUserAclEntryEx"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)

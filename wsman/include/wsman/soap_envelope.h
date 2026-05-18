@@ -89,6 +89,19 @@ struct PullChunk
                                               const QString &to,
                                               const QString &messageId);
 
+/// Ordered variant of `buildInvokeEnvelope`. Use when (a) the parameter
+/// order matters to the responder, or (b) the same key needs to appear
+/// multiple times — e.g. `AMT_AuthorizationService.AddUserAclEntryEx`
+/// emits one `<Realms>N</Realms>` element per realm-bit the new user
+/// is granted. The `QHash` overload collapses duplicate keys; this one
+/// preserves them.
+[[nodiscard]] QByteArray buildInvokeEnvelopeOrdered(const QString &resourceUri,
+                                                     const QString &methodName,
+                                                     const QHash<QString, QString> &selectors,
+                                                     const QList<QPair<QString, QString>> &parameters,
+                                                     const QString &to,
+                                                     const QString &messageId);
+
 /// Build a WS-Transfer `Put` envelope. `className` is the leaf XML tag
 /// (e.g. `AMT_BootSettingData`); `properties` becomes child elements in
 /// the resource namespace.

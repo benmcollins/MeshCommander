@@ -434,6 +434,41 @@ QByteArray buildInvokeEnvelope(const QString &resourceUri,
     return out;
 }
 
+QByteArray buildInvokeEnvelopeOrdered(const QString &resourceUri,
+                                       const QString &methodName,
+                                       const QHash<QString, QString> &selectors,
+                                       const QList<QPair<QString, QString>> &parameters,
+                                       const QString &to,
+                                       const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    const QString action = resourceUri + QLatin1Char('/') + methodName;
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap), QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman), QStringLiteral("w"));
+    w.writeNamespace(resourceUri, QStringLiteral("r"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    writeAddressingHeader(w, action, to, messageId, resourceUri, selectors);
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resourceUri, methodName + QStringLiteral("_INPUT"));
+    for (const auto &kv : parameters)
+        w.writeTextElement(resourceUri, kv.first, kv.second);
+    w.writeEndElement(); // <methodName>_INPUT
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
 SoapResponse parseResponse(const QByteArray &xml)
 {
     SoapResponse out;
