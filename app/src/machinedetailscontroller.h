@@ -423,6 +423,37 @@ public:
     /// and re-read the CIRA pane on success. See #177.
     Q_INVOKABLE void deleteHttpProxy(const QString &name);
 
+    /// Put `AMT_EnvironmentDetectionSettingData` with a new domain
+    /// list. The list controls AMT's "am I on the corporate network"
+    /// heuristic; empty means "always treat as off-network". See #158.
+    Q_INVOKABLE void setEnvironmentDetection(const QStringList &domains);
+
+    /// Invoke `AMT_UserInitiatedConnectionService.RequestStateChange`.
+    /// `enabledState` follows the same codes the read side exposes:
+    /// 32768 Disabled / 32769 BIOS / 32770 OS / 32771 BIOS+OS.
+    /// See #158.
+    Q_INVOKABLE void setUserInitiatedConnectionState(int enabledState);
+
+    /// Invoke `AMT_RemoteAccessService.AddMpServer`. `fields` keys:
+    ///   accessInfo (string), port (int), commonName (string),
+    ///   mpsType (int, 0=CIRA / 1=CILA),
+    ///   authMethod (int, 1=none / 2=digest),
+    ///   username (string, when authMethod != 1),
+    ///   password (string, when authMethod != 1).
+    /// `infoFormat` is derived from `accessInfo` automatically. See #158.
+    Q_INVOKABLE void addMpServer(const QVariantMap &fields);
+
+    /// Put on `AMT_ManagementPresenceRemoteSAP` to edit an existing
+    /// server's accessInfo / port / CN. Auth credentials are
+    /// untouched by this call. `fields` keys: accessInfo (string),
+    /// port (int), commonName (string). See #158.
+    Q_INVOKABLE void updateMpServer(const QString &name,
+                                     const QVariantMap &fields);
+
+    /// WS-Transfer Delete on `AMT_ManagementPresenceRemoteSAP`.
+    /// AMT cascades the linked MPSUsernamePassword row. See #158.
+    Q_INVOKABLE void removeMpServer(const QString &name);
+
     Q_INVOKABLE void refreshWireless();
 
     /// Add a PSK WiFi profile (WPA2-PSK or WPA3-PSK). `fields` keys:
