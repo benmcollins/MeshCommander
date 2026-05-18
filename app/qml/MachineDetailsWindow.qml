@@ -477,7 +477,14 @@ AppWindow {
                     model: root.sections
                     clip: true
                     currentIndex: root.currentSection
-                    interactive: false
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar {}
+
+                    // Keep the active row in view when the section
+                    // changes programmatically (e.g. host reload sets
+                    // currentSection back to 0 while the user has
+                    // scrolled further down).
+                    onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
 
                     delegate: Rectangle {
                         required property int index
@@ -491,10 +498,11 @@ AppWindow {
 
                         HoverHandler { id: hover }
                         TapHandler {
-                            onTapped: {
-                                root.currentSection = index;
-                                nav.currentIndex = index;
-                            }
+                            // currentIndex is bound to root.currentSection
+                            // above, so setting that alone keeps the binding
+                            // alive and lets programmatic section changes
+                            // (e.g. on host reload) keep moving the highlight.
+                            onTapped: root.currentSection = index
                         }
 
                         Rectangle {
