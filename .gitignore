@@ -1,7 +1,3 @@
-legacy/build/
-legacy/cache/
-legacy/node_modules/
-legacy/source/cache/
 .DS_Store
 /build/
 /build-*/

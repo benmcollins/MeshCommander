@@ -37,8 +37,6 @@ QuMesh manages Intel AMT (vPro) hardware over WSMAN and the Intel redirection pr
 - **In-app auto-update** — Sparkle on macOS, WinSparkle on Windows.
 - **Self-contained installers** — `.dmg` (macOS, drag-to-Applications) and NSIS `.exe` (Windows), Qt + OpenSSL bundled.
 
-See [`ROADMAP.md`](ROADMAP.md) for the phased plan and current status.
-
 ## Quick start
 
 ### Build from source
@@ -78,9 +76,7 @@ Grab the `.dmg` (macOS) or `.exe` (Windows) installer from the [Releases page](h
 ├── ssh/                 per-machine SSH tunnel
 ├── terminal/            VT100 terminal core (for SOL)
 ├── wsman/               AMT WSMAN client + CLI smoke tool
-├── branding/            logo SVGs, icon builder, social preview
-└── legacy/              archived NW.js MeshCommander — reference only,
-                         deleted progressively as features port over
+└── branding/            logo SVGs, icon builder, social preview
 ```
 
 ## Contributing

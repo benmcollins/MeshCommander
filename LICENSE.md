@@ -196,7 +196,8 @@ under the License.
 - `leveldb` (fetched at build time via CMake `FetchContent`) — Google's
   leveldb 1.23, licensed under the BSD-3-Clause license.
 
-The legacy NW.js implementation under the repository root (`source/`,
-`mkapp*`, `files/`) is Intel Corporation's MeshCommander, Apache-2.0; that
-portion of the repository is being removed progressively as the QuMesh
-rewrite reaches feature parity.
+This repository previously included Intel Corporation's MeshCommander
+(NW.js source, build scripts, packaging assets) under `legacy/`, Apache-2.0.
+It was removed once the Qt rewrite covered its in-use features; consult the
+git history before its removal for the reference implementation, or Intel's
+upstream at https://github.com/Ylianst/MeshCommander.
