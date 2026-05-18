@@ -8,12 +8,15 @@
 
 
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QHostAddress>
 #include <QObject>
+#include <QTimeZone>
 #include <QUuid>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
+#include <array>
 #include <memory>
 
 namespace qumesh::wsman {
@@ -96,9 +99,9 @@ constexpr char kBootCapabilitiesResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_BootCapabilities";
 
-constexpr char kEventLogEntryResource[] =
+constexpr char kMessageLogResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
-    "AMT_EventLogEntry";
+    "AMT_MessageLog";
 
 constexpr char kOptInServiceResource[] =
     "http://intel.com/wbem/wscim/1/ips-schema/1/"
@@ -2033,19 +2036,344 @@ void requestPowerStateChange(WsmanClient *client, int powerState,
         std::move(callback));
 }
 
+namespace {
+
+// Lookup tables ported from legacy MeshCommander
+// (`source/Commander.htm` ~line 4870, ported per CLAUDE.md guidance —
+// the legacy tree was deleted but its decoder is still the canonical
+// reference). Pipe-delimited there; flattened here for static linkage.
+
+constexpr const char *kSystemEntityTypes[] = {
+    "Unspecified", "Other", "Unknown", "Processor", "Disk", "Peripheral",
+    "System management module", "System board", "Memory module",
+    "Processor module", "Power supply", "Add in card", "Front panel board",
+    "Back panel board", "Power system board", "Drive backplane",
+    "System internal expansion board", "Other system board",
+    "Processor board", "Power unit", "Power module",
+    "Power management board", "Chassis back panel board", "System chassis",
+    "Sub chassis", "Other chassis board", "Disk drive bay",
+    "Peripheral bay", "Device bay", "Fan cooling", "Cooling unit",
+    "Cable interconnect", "Memory device", "System management software",
+    "BIOS", "Intel(r) ME", "System bus", "Group", "Intel(r) ME",
+    "External environment", "Battery", "Processing blade",
+    "Connectivity switch", "Processor/memory module", "I/O module",
+    "Processor I/O module", "Management controller firmware",
+    "IPMI channel", "PCI bus", "PCI express bus", "SCSI bus",
+    "SATA/SAS bus", "Processor front side bus",
+};
+
+constexpr const char *kSystemFirmwareError[] = {
+    "Unspecified.",
+    "No system memory is physically installed in the system.",
+    "No usable system memory, all installed memory has experienced an "
+        "unrecoverable failure.",
+    "Unrecoverable hard-disk/ATAPI/IDE device failure.",
+    "Unrecoverable system-board failure.",
+    "Unrecoverable diskette subsystem failure.",
+    "Unrecoverable hard-disk controller failure.",
+    "Unrecoverable PS/2 or USB keyboard failure.",
+    "Removable boot media not found.",
+    "Unrecoverable video controller failure.",
+    "No video device detected.",
+    "Firmware (BIOS) ROM corruption detected.",
+    "CPU voltage mismatch (processors that share same supply have "
+        "mismatched voltage requirements)",
+    "CPU speed matching failure",
+};
+
+constexpr const char *kSystemFirmwareProgress[] = {
+    "Unspecified.",
+    "Memory initialization.",
+    "Starting hard-disk initialization and test",
+    "Secondary processor(s) initialization",
+    "User authentication",
+    "Entering BIOS setup",
+    "USB resource configuration",
+    "PCI resource configuration",
+    "Option ROM initialization",
+    "Video initialization",
+    "Cache initialization",
+    "SM Bus initialization",
+    "Keyboard controller initialization",
+    "Embedded controller/management controller initialization",
+    "Docking station attachment",
+    "Enabling docking station",
+    "Docking station ejection",
+    "Disabling docking station",
+    "Calling operating system wake-up vector",
+    "Starting operating system boot process",
+    "Baseboard or motherboard initialization",
+    "reserved",
+    "Floppy initialization",
+    "Keyboard test",
+    "Pointing device test",
+    "Primary processor initialization",
+};
+
+constexpr const char *kOcrProgressEvents[] = {
+    "Boot parameters received from CSME",
+    "CSME Boot Option % added successfully",
+    "HTTPS URI name resolved",
+    "HTTPS connected successfully",
+    "HTTPSBoot download is completed",
+    "Attempt to boot",
+    "Exit boot services",
+};
+
+constexpr const char *kOcrErrorEvents[] = {
+    "",
+    "No network connection available",
+    "Name resolution of URI failed",
+    "Connect to URI failed",
+    "OEM app not found at local URI",
+    "HTTPS TLS Auth failed",
+    "HTTPS Digest Auth failed",
+    "Verified boot failed (bad image)",
+    "HTTPS Boot File not found",
+};
+
+QString eventWatchdogStateName(int code)
+{
+    // Mirrors `watchdogStateName` above but returns QString so we can
+    // fall through to `QString::number()` for unknown codes.
+    switch (code) {
+    case 1: return QStringLiteral("Not Started");
+    case 2: return QStringLiteral("Stopped");
+    case 4: return QStringLiteral("Running");
+    case 8: return QStringLiteral("Expired");
+    case 16: return QStringLiteral("Suspended");
+    default: return QString::number(code);
+    }
+}
+
+QString ocrSourceName(int code)
+{
+    switch (code) {
+    case 2: return QStringLiteral("HTTPS");
+    case 4: return QStringLiteral("Local PBA");
+    case 8: return QStringLiteral("WinRE");
+    default: return QString::number(code);
+    }
+}
+
+QString formatHex2(int v) { return QStringLiteral("%1").arg(v & 0xff, 2, 16, QLatin1Char('0')); }
+
+QString formatEventMessage(int sensorType, int offset, const std::array<int, 8> &d)
+{
+    if (sensorType == 15) {
+        if (d[0] == 235) return QStringLiteral("Invalid Data");
+        if (offset == 0) {
+            const int idx = d[1];
+            if (idx >= 0 && idx < int(std::size(kSystemFirmwareError)))
+                return QString::fromLatin1(kSystemFirmwareError[idx]);
+            return QStringLiteral("Unknown firmware error %1").arg(idx);
+        }
+        if (offset == 3) {
+            if (d[0] == 170 && d[1] == 48) {
+                const int e = d[2];
+                if (e >= 0 && e < int(std::size(kOcrErrorEvents)))
+                    return QStringLiteral("AMT One Click Recovery: %1")
+                        .arg(QLatin1String(kOcrErrorEvents[e]));
+            } else if (d[0] == 170 && d[1] == 64) {
+                if (d[2] == 1) return QStringLiteral("Got an error erasing Device SSD");
+                if (d[2] == 2) return QStringLiteral("Erasing Device TPM is not supported");
+                if (d[2] == 3) return QStringLiteral("Reached Max Counter");
+            }
+            return QStringLiteral("OEM Specific Firmware Error event");
+        }
+        if (offset == 5) {
+            if (d[0] == 170 && d[1] == 48) {
+                if (d[2] == 1) {
+                    return QStringLiteral("AMT One Click Recovery: CSME Boot Option %1:%2 "
+                                          "added successfully")
+                        .arg(d[3]).arg(ocrSourceName(d[3]));
+                } else if (d[2] < 7) {
+                    return QStringLiteral("AMT One Click Recovery: %1")
+                        .arg(QLatin1String(kOcrProgressEvents[d[2]]));
+                }
+                return QStringLiteral("AMT One Click Recovery: Unknown progress event %1")
+                    .arg(d[2]);
+            }
+            if (d[0] == 170 && d[1] == 64) {
+                if (d[2] == 1) {
+                    if (d[3] == 2) return QStringLiteral("Started erasing Device SSD");
+                    if (d[3] == 3) return QStringLiteral("Started erasing Device TPM");
+                    if (d[3] == 5)
+                        return QStringLiteral("Started erasing Device BIOS Reload of "
+                                              "Golden Config");
+                }
+                if (d[2] == 2) {
+                    if (d[3] == 2)
+                        return QStringLiteral("Erasing Device SSD ended successfully");
+                    if (d[3] == 3)
+                        return QStringLiteral("Erasing Device TPM ended successfully");
+                    if (d[3] == 5)
+                        return QStringLiteral("Erasing Device BIOS Reload of Golden "
+                                              "Config ended successfully");
+                }
+                if (d[2] == 3) return QStringLiteral("Beginning Platform Erase");
+                if (d[2] == 4) return QStringLiteral("Clear Reserved Parameters");
+                if (d[2] == 5) return QStringLiteral("All setting decremented");
+            }
+            return QStringLiteral("OEM Specific Firmware Progress event");
+        }
+        const int idx = d[1];
+        if (idx >= 0 && idx < int(std::size(kSystemFirmwareProgress)))
+            return QString::fromLatin1(kSystemFirmwareProgress[idx]);
+        return QStringLiteral("Unknown firmware progress %1").arg(idx);
+    }
+
+    if (sensorType == 18 && d[0] == 170) {
+        return QStringLiteral("Agent watchdog %1%2%3%4-%5%6-... changed to %7")
+            .arg(formatHex2(d[4]), formatHex2(d[3]), formatHex2(d[2]), formatHex2(d[1]),
+                 formatHex2(d[6]), formatHex2(d[5]), eventWatchdogStateName(d[7]));
+    }
+
+    if (sensorType == 5 && offset == 0)
+        return QStringLiteral("Case intrusion");
+
+    if (sensorType == 192 && offset == 0 && d[0] == 170 && d[1] == 48) {
+        if (d[2] == 0) return QStringLiteral("A remote Serial Over LAN session was established.");
+        if (d[2] == 1)
+            return QStringLiteral("Remote Serial Over LAN session finished. "
+                                  "User control was restored.");
+        if (d[2] == 2)
+            return QStringLiteral("A remote IDE-Redirection session was established.");
+        if (d[2] == 3)
+            return QStringLiteral("Remote IDE-Redirection session finished. "
+                                  "User control was restored.");
+    }
+
+    if (sensorType == 36) {
+        const quint32 handle = (quint32(d[1]) << 24) | (quint32(d[2]) << 16)
+                             | (quint32(d[3]) << 8)  |  quint32(d[4]);
+        const QString nic = (d[0] == 0xAA) ? QStringLiteral("wired")
+                                           : QStringLiteral("#%1").arg(d[0]);
+        if (handle == 0xFFFFFFFDu)
+            return QStringLiteral("All received packet filter was matched on %1 interface.")
+                .arg(nic);
+        if (handle == 0xFFFFFFFCu)
+            return QStringLiteral("All outbound packet filter was matched on %1 interface.")
+                .arg(nic);
+        if (handle == 0xFFFFFFFAu)
+            return QStringLiteral("Spoofed packet filter was matched on %1 interface.").arg(nic);
+        return QStringLiteral("Filter %1 was matched on %2 interface.").arg(handle).arg(nic);
+    }
+
+    if (sensorType == 192) {
+        if (d[2] == 0)
+            return QStringLiteral("Security policy invoked. Some or all network traffic (TX) "
+                                  "was stopped.");
+        if (d[2] == 2)
+            return QStringLiteral("Security policy invoked. Some or all network traffic (RX) "
+                                  "was stopped.");
+        return QStringLiteral("Security policy invoked.");
+    }
+
+    if (sensorType == 193) {
+        if (d[0] == 0xAA && d[1] == 0x30 && d[2] == 0x00 && d[3] == 0x00)
+            return QStringLiteral("User request for remote connection.");
+        if (d[0] == 0xAA && d[1] == 0x20 && d[2] == 0x03 && d[3] == 0x01)
+            return QStringLiteral("EAC error: attempt to get posture while NAC in Intel AMT "
+                                  "is disabled.");
+        if (d[0] == 0xAA && d[1] == 0x20 && d[2] == 0x04 && d[3] == 0x00)
+            return QStringLiteral("HWA Error: general error");
+    }
+
+    if (sensorType == 6)
+        return QStringLiteral("Authentication failed %1 times. The system may be under attack.")
+            .arg(d[1] | (d[2] << 8));
+    if (sensorType == 30) return QStringLiteral("No bootable media");
+    if (sensorType == 32) return QStringLiteral("Operating system lockup or power interrupt");
+    if (sensorType == 35) {
+        if (d[0] == 64) return QStringLiteral("BIOS POST (Power On Self-Test) Watchdog Timeout.");
+        return QStringLiteral("System boot failure");
+    }
+    if (sensorType == 37)
+        return QStringLiteral("System firmware started (at least one CPU is properly executing).");
+
+    return QStringLiteral("Unknown Sensor Type #%1").arg(sensorType);
+}
+
+QString entityLabel(int entity)
+{
+    if (entity >= 0 && entity < int(std::size(kSystemEntityTypes)))
+        return QString::fromLatin1(kSystemEntityTypes[entity]);
+    return {};
+}
+
+/// Walk the body of a GetRecords reply once, collecting every
+/// `<…:RecordArray>` element's text in order. `findScalar` only returns
+/// the first, so we need a multi-element walker here.
+QStringList collectRecordArray(const QByteArray &bodyXml)
+{
+    QStringList out;
+    QXmlStreamReader r(bodyXml);
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement() && r.name() == QStringLiteral("RecordArray"))
+            out.append(r.readElementText());
+    }
+    return out;
+}
+
+} // namespace
+
+EventLogEntry decodeEventRecord(const QByteArray &raw)
+{
+    // Each AMT event record is a fixed 21-byte struct:
+    //   [0..3]   timestamp (uint32 LE, seconds since epoch)
+    //   [4]      DeviceAddress
+    //   [5]      EventSensorType         (drives the message decoder)
+    //   [6]      EventType
+    //   [7]      EventOffset             (drives the message decoder)
+    //   [8]      EventSourceType         (currently unused at decode time)
+    //   [9]      EventSeverity           (CIM bucket, kept as string)
+    //   [10]     SensorNumber
+    //   [11]     Entity                  (used only for the label)
+    //   [12]     EntityInstance
+    //   [13..20] EventData[8]            (drives the message decoder)
+    constexpr int kEventRecordSize = 21;
+
+    EventLogEntry out;
+    if (raw.size() < kEventRecordSize) return out;
+
+    const auto b = reinterpret_cast<const quint8 *>(raw.constData());
+    const quint32 ts = quint32(b[0]) | (quint32(b[1]) << 8)
+                     | (quint32(b[2]) << 16) | (quint32(b[3]) << 24);
+    if (ts == 0 || ts == 0xFFFFFFFFu) return out;
+
+    // AMT stores the device's wall-clock seconds-since-epoch. Display
+    // the raw value (formatted in UTC) so it matches whatever clock the
+    // operator set on the box — legacy MeshCommander does the same
+    // trick via a `getTimezoneOffset()` shim.
+    const QDateTime when = QDateTime::fromSecsSinceEpoch(ts, QTimeZone::utc());
+    out.timestamp = when.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss"));
+
+    const int sensorType = b[5];
+    const int offset     = b[7];
+    const int severity   = b[9];
+    const int entity     = b[11];
+    std::array<int, 8> data{};
+    for (int i = 0; i < 8; ++i) data[i] = b[13 + i];
+
+    out.severity    = QString::number(severity);
+    out.message     = formatEventMessage(sensorType, offset, data);
+    out.entityLabel = entityLabel(entity);
+    // recordId is filled in by the enumerator with the running index;
+    // a decoder-only call leaves it empty.
+    return out;
+}
+
 void enumerateEventLog(WsmanClient *client,
                        std::function<void(EventLogResult)> callback)
 {
-    // Wrap the templated runner with a closure that fills the right
-    // result field. The runner template's generic `r.entries` line
-    // would clash with the User-accounts result that uses `accounts`,
-    // so we keep `done` as a thin shim.
     struct Acc { QList<EventLogEntry> items; };
     auto acc = std::make_shared<Acc>();
-    auto onDone = std::make_shared<std::function<void(QString)>>();
     auto cb = std::make_shared<std::function<void(EventLogResult)>>(std::move(callback));
+    auto done = std::make_shared<std::function<void(QString)>>();
 
-    *onDone = [acc, cb](QString error) {
+    *done = [acc, cb](QString error) {
         EventLogResult r;
         r.ok = error.isEmpty();
         r.error = std::move(error);
@@ -2053,61 +2381,90 @@ void enumerateEventLog(WsmanClient *client,
         (*cb)(std::move(r));
     };
 
-    auto pullStep = std::make_shared<std::function<void(const QString &)>>();
-    *pullStep = [client, acc, pullStep, onDone](const QString &context) mutable {
-        const QByteArray env = buildPullEnvelope(QString::fromLatin1(kEventLogEntryResource),
-                                                  context, 64,
-                                                  client->endpoint().toString(),
-                                                  newMessageId());
+    if (client == nullptr) { (*done)(QStringLiteral("client is null")); return; }
+
+    // Firmware caps the log at ~390 entries; the cap below is a
+    // belt-and-braces guard against a misbehaving box that never sets
+    // NoMoreRecords.
+    constexpr int kMaxRecords = 8000;
+    constexpr int kBatchSize  = 390;
+
+    const QString resource = QString::fromLatin1(kMessageLogResource);
+    const QString endpoint = client->endpoint().toString();
+
+    auto getRecordsStep = std::make_shared<std::function<void(const QString &)>>();
+    *getRecordsStep = [client, acc, getRecordsStep, done, resource, endpoint](
+                          const QString &iterId) mutable {
+        QHash<QString, QString> params;
+        params.insert(QStringLiteral("IterationIdentifier"), iterId);
+        params.insert(QStringLiteral("MaxReadRecords"), QString::number(kBatchSize));
+        const QByteArray env = buildInvokeEnvelope(resource, QStringLiteral("GetRecords"),
+                                                    {}, params, endpoint, newMessageId());
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
-            [reply, acc, pullStep, onDone]() mutable {
+            [reply, acc, getRecordsStep, done]() mutable {
                 const QByteArray body = reply->readAll();
                 const auto err = reply->hasError();
                 const auto errString = reply->errorString();
                 reply->deleteLater();
-                if (err) { (*onDone)(errString); return; }
+                if (err) { (*done)(errString); return; }
                 const SoapResponse soap = parseResponse(body);
-                if (soap.isFault()) { (*onDone)(soap.fault); return; }
-                const PullChunk chunk = parsePullResponse(soap.bodyXml);
-                for (const QByteArray &item : chunk.items) {
-                    EventLogEntry e;
-                    e.recordId  = findScalar(item, QStringLiteral("RecordID"));
-                    e.timestamp = findScalar(item, QStringLiteral("CreationTimeStamp"));
-                    e.severity  = findScalar(item, QStringLiteral("Severity"));
-                    // Message is split across several fields in the
-                    // schema; the most user-facing one is "Message"
-                    // (free text). Fall back to "Description" otherwise.
-                    e.message = findScalar(item, QStringLiteral("Message"));
-                    if (e.message.isEmpty())
-                        e.message = findScalar(item, QStringLiteral("Description"));
-                    acc->items.append(e);
-                }
-                if (chunk.endOfSequence || chunk.enumerationContext.isEmpty()) {
-                    (*onDone)({});
+                if (soap.isFault()) { (*done)(soap.fault); return; }
+                const QString rv = findScalar(soap.bodyXml, QStringLiteral("ReturnValue"));
+                if (rv != QStringLiteral("0")) {
+                    (*done)(QStringLiteral("GetRecords returned %1").arg(rv));
                     return;
                 }
-                (*pullStep)(chunk.enumerationContext);
+                const QStringList records = collectRecordArray(soap.bodyXml);
+                for (const QString &b64 : records) {
+                    const QByteArray raw = QByteArray::fromBase64(b64.toLatin1());
+                    EventLogEntry e = decodeEventRecord(raw);
+                    if (e.timestamp.isEmpty()) continue;
+                    e.recordId = QString::number(acc->items.size() + 1);
+                    acc->items.append(std::move(e));
+                    if (acc->items.size() >= kMaxRecords) {
+                        (*done)({});
+                        return;
+                    }
+                }
+                const QString noMore = findScalar(soap.bodyXml,
+                                                  QStringLiteral("NoMoreRecords"));
+                if (noMore.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0) {
+                    (*done)({});
+                    return;
+                }
+                const QString nextId = findScalar(soap.bodyXml,
+                                                  QStringLiteral("IterationIdentifier"));
+                if (nextId.isEmpty()) { (*done)({}); return; }
+                (*getRecordsStep)(nextId);
             });
     };
 
-    if (client == nullptr) { (*onDone)(QStringLiteral("client is null")); return; }
-    const QByteArray env = buildEnumerateEnvelope(QString::fromLatin1(kEventLogEntryResource),
-                                                   client->endpoint().toString(),
-                                                   newMessageId());
+    const QByteArray env = buildInvokeEnvelope(resource,
+                                                QStringLiteral("PositionToFirstRecord"),
+                                                {}, {}, endpoint, newMessageId());
     WsmanReply *reply = client->sendEnvelope(env);
     QObject::connect(reply, &WsmanReply::finished, client,
-        [reply, pullStep, onDone]() mutable {
+        [reply, getRecordsStep, done]() mutable {
             const QByteArray body = reply->readAll();
             const auto err = reply->hasError();
             const auto errString = reply->errorString();
             reply->deleteLater();
-            if (err) { (*onDone)(errString); return; }
+            if (err) { (*done)(errString); return; }
             const SoapResponse soap = parseResponse(body);
-            if (soap.isFault()) { (*onDone)(soap.fault); return; }
-            const QString ctx = parseEnumerateContext(soap.bodyXml);
-            if (ctx.isEmpty()) { (*onDone)({}); return; }
-            (*pullStep)(ctx);
+            if (soap.isFault()) { (*done)(soap.fault); return; }
+            const QString rv = findScalar(soap.bodyXml, QStringLiteral("ReturnValue"));
+            if (rv != QStringLiteral("0")) {
+                (*done)(QStringLiteral("PositionToFirstRecord returned %1").arg(rv));
+                return;
+            }
+            const QString iterId = findScalar(soap.bodyXml,
+                                              QStringLiteral("IterationIdentifier"));
+            if (iterId.isEmpty()) {
+                (*done)(QStringLiteral("PositionToFirstRecord had no IterationIdentifier"));
+                return;
+            }
+            (*getRecordsStep)(iterId);
         });
 }
 
