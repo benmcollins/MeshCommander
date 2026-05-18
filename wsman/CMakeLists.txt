@@ -5,9 +5,11 @@ qt_add_library(qumesh_wsman STATIC
     src/soap_envelope.cpp
     src/wsman_client.cpp
     src/operations.cpp
+    src/local_amt_probe.cpp
     include/wsman/soap_envelope.h
     include/wsman/wsman_client.h
     include/wsman/operations.h
+    include/wsman/local_amt_probe.h
 )
 
 target_include_directories(qumesh_wsman

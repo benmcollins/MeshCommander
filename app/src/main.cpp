@@ -14,6 +14,7 @@
 #include "solcontroller.h"
 #include "terminal/terminalscreen.h"
 #include "updater.h"
+#include "wsman/local_amt_probe.h"
 
 #include <QDir>
 #include <QLibraryInfo>
@@ -107,6 +108,14 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "Updater", &updater);
 
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "ComputerModel", &computerModel);
+
+    // LocalAmtProbe — sniffs 127.0.0.1:16992/:16993 to decide whether
+    // Intel LMS is exposing the local machine's AMT firmware on the
+    // loopback. Result lives behind a QML property; ComputerListView
+    // shows "This PC" when available.
+    qumesh::wsman::LocalAmtProbe localAmtProbe;
+    qmlRegisterSingletonInstance("QuMesh", 1, 0, "LocalAmtProbe", &localAmtProbe);
+    QTimer::singleShot(0, &app, [&localAmtProbe]() { localAmtProbe.start(); });
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "MigrationController",
                                  &migrationController);
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "CertModel", &certModel);

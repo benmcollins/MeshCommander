@@ -18,12 +18,75 @@ Rectangle {
     signal addRequested
     signal scanRequested
     signal openDetailsRequested(int row)
+    signal localAmtRequested
 
     color: Colors.bg
 
     ColumnLayout {
         spacing: 0
         anchors.fill: parent
+
+        // "This PC" affordance, surfaced when Intel LMS is proxying
+        // the loopback ports on this machine. Hidden silently on hosts
+        // without LMS (most macOS boxes, vPro-less hardware) so the
+        // sidebar stays clean. Clicking the row opens
+        // LocalAmtPromptDialog for credentials.
+        Rectangle {
+            visible: LocalAmtProbe.available
+            color: localHover.hovered ? Colors.elevated : "transparent"
+            Layout.fillWidth: true
+            implicitHeight: 44
+
+            Behavior on color { ColorAnimation { duration: Motion.fast } }
+
+            HoverHandler { id: localHover }
+            TapHandler { onTapped: root.localAmtRequested() }
+
+            Rectangle {
+                color: Colors.accent
+                implicitWidth: 2
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+            }
+
+            ColumnLayout {
+                spacing: 1
+                anchors.fill: parent
+                anchors.leftMargin: 16
+                anchors.rightMargin: 12
+                anchors.topMargin: 4
+                anchors.bottomMargin: 4
+
+                Text {
+                    text: qsTr("This PC")
+                    color: Colors.text
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeM
+                    font.weight: Font.Medium
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                Text {
+                    text: LocalAmtProbe.tlsAvailable
+                        ? qsTr("Intel AMT — local TLS")
+                        : qsTr("Intel AMT — local")
+                    color: Colors.textMuted
+                    font.family: Type.mono
+                    font.pixelSize: Type.sizeXs
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+            }
+
+            Rectangle {
+                color: Colors.border
+                height: 1
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+            }
+        }
 
         ListView {
             id: list
