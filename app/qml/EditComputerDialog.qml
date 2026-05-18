@@ -34,6 +34,7 @@ Dialog {
     property string draftSshPassword
     property string draftSshKeyPath
     property string draftSshKeyPassphrase
+    property bool draftSshCompression: false
     property bool revealSshPass: false
     property bool revealSshKeyPass: false
 
@@ -55,6 +56,7 @@ Dialog {
             draftSshPassword = ssh.password || "";
             draftSshKeyPath = ssh.keyPath || "";
             draftSshKeyPassphrase = ssh.keyPassphrase || "";
+            draftSshCompression = ssh.compression || false;
         } else {
             draftName = "";
             draftHost = "";
@@ -69,6 +71,7 @@ Dialog {
             draftSshPassword = "";
             draftSshKeyPath = "";
             draftSshKeyPassphrase = "";
+            draftSshCompression = false;
         }
         revealPass = false;
         revealSshPass = false;
@@ -426,6 +429,30 @@ Dialog {
                             onClicked: root.revealSshKeyPass = !root.revealSshKeyPass
                         }
                     }
+
+                    Text {
+                        text: qsTr("Compression")
+                        color: Colors.textMuted
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeS
+                        Layout.preferredWidth: 100
+                    }
+                    RowLayout {
+                        spacing: 10
+                        Layout.fillWidth: true
+                        Switch {
+                            checked: root.draftSshCompression
+                            onCheckedChanged: root.draftSshCompression = checked
+                        }
+                        Text {
+                            text: qsTr("Negotiate zlib on the SSH transport. Helps KVM/IDER over slow links; costs CPU on the jump host.")
+                            color: Colors.textMuted
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeXs
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
                 }
             }
         }
@@ -478,6 +505,7 @@ enabled: root.draftName.length > 0 && root.draftHost.length > 0
                         "password": root.draftSshPassword,
                         "keyPath": root.draftSshKeyPath,
                         "keyPassphrase": root.draftSshKeyPassphrase,
+                        "compression": root.draftSshCompression,
                     });
                     root.computerSaved(savedRow);
                     root.accept();

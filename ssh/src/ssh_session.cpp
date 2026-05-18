@@ -104,6 +104,20 @@ void SshSessionWorker::open(SshSession::Params p)
         return;
     }
 
+    // SSH transport-level compression. libssh defaults to "none"; when
+    // the user opts in, prefer the OpenSSH "delayed" variant (negotiated
+    // post-auth) and fall back to plain zlib then no-compression. The
+    // bandwidth win matters for KVM / IDER over slow uplinks; CPU cost
+    // is small for typical jump-host hardware.
+    if (m_params.compression) {
+        if (ssh_options_set(m_session, SSH_OPTIONS_COMPRESSION,
+                            "zlib@openssh.com,zlib,none") != SSH_OK) {
+            fail(sshErrorString(m_session,
+                    QStringLiteral("ssh_options_set(COMPRESSION) failed")));
+            return;
+        }
+    }
+
     if (ssh_connect(m_session) != SSH_OK) {
         fail(sshErrorString(m_session, QStringLiteral("ssh_connect failed")));
         return;

@@ -34,6 +34,7 @@ QJsonObject Computer::toJson() const
         {QStringLiteral("sshKeyPath"), sshKeyPath},
         {QStringLiteral("sshKeyPassphrase"), app::SecretCodec::encode(sshKeyPassphrase)},
         {QStringLiteral("sshTrustedHostKeyFingerprints"), sshFps},
+        {QStringLiteral("sshCompression"), sshCompression},
     };
 }
 
@@ -68,6 +69,7 @@ Computer Computer::fromJson(const QJsonObject &obj)
     for (const QJsonValue &v : sshFps) {
         if (v.isString()) c.sshTrustedHostKeyFingerprints.push_back(v.toString());
     }
+    c.sshCompression = obj.value(QStringLiteral("sshCompression")).toBool();
     return c;
 }
 
@@ -218,6 +220,7 @@ QVariantMap ComputerModel::sshConfigFor(int row) const
         {QStringLiteral("password"), c.sshPassword},
         {QStringLiteral("keyPath"), c.sshKeyPath},
         {QStringLiteral("keyPassphrase"), c.sshKeyPassphrase},
+        {QStringLiteral("compression"), c.sshCompression},
         {QStringLiteral("trustedHostKeyFingerprints"), fps},
     };
 }
@@ -239,6 +242,7 @@ bool ComputerModel::setSshConfig(int row, const QVariantMap &cfg)
     c.sshPassword = cfg.value(QStringLiteral("password")).toString();
     c.sshKeyPath = cfg.value(QStringLiteral("keyPath")).toString();
     c.sshKeyPassphrase = cfg.value(QStringLiteral("keyPassphrase")).toString();
+    c.sshCompression = cfg.value(QStringLiteral("compression")).toBool();
     // trustedHostKeyFingerprints is intentionally not overwritten by
     // the edit pane — it grows only via addTrustedSshHostKey (TOFU).
     if (!persist()) {
