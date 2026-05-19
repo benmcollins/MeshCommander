@@ -1106,6 +1106,71 @@ void updateMpServer(WsmanClient *client, const QString &name,
 void removeMpServer(WsmanClient *client, const QString &name,
                      std::function<void(InvokeResult)> callback);
 
+/// Input shape for `addRemoteAccessPolicyRule`. AMT exposes exactly
+/// three triggers (User Initiated, Alert, Periodic) and the firmware
+/// is idempotent on `Trigger` — calling Add for an existing trigger
+/// overwrites in place, so the same call path covers both add and
+/// edit. See #224.
+struct CiraPolicyInput
+{
+    /// CIM Trigger code: 0 = User Initiated, 1 = Alert, 2 = Periodic.
+    int trigger = 0;
+    /// `TunnelLifeTime` in seconds (0 = AMT default).
+    int tunnelLifeTime = 0;
+    /// Periodic-only — picks the `ExtendedData` shape.
+    /// When `trigger != 2 (Periodic)` both flags are ignored.
+    bool periodicInterval = false;   ///< true → encode interval branch.
+    int  periodicSeconds = 0;        ///< only used when `periodicInterval`.
+    bool periodicTimeOfDay = false;  ///< true → encode HH:MM branch.
+    int  periodicHour = 0;
+    int  periodicMinute = 0;
+    /// `MpsServer::name` values to bind to this policy, split by
+    /// `mpsType`: `mpsType == 0` → ciraMpsNames, `mpsType == 1`
+    /// → cilaMpsNames. AMT routes the two arrays to separate
+    /// parameters in `AddRemoteAccessPolicyRule`.
+    QStringList ciraMpsNames;
+    QStringList cilaMpsNames;
+};
+
+/// Encode the periodic-schedule fields of an `AMT_RemoteAccessPolicy`-
+/// Rule into the `ExtendedData` blob (base64 over 8 or 12 bytes).
+/// The decoder is `decodeExtendedData`; this is its symmetric writer.
+///
+///   [4 BE] type — 0 = interval, 1 = time-of-day
+///   if interval:    [4 BE] seconds
+///   if time-of-day: [4 BE] hour, [4 BE] minute
+///
+/// `intervalMode == true` → encode the interval branch using
+/// `intervalSeconds`. Otherwise → encode the time-of-day branch using
+/// `hour`/`minute`. Returns the base64 of the encoded bytes.
+[[nodiscard]] QString buildExtendedData(bool intervalMode, int intervalSeconds,
+                                        int hour, int minute);
+
+/// Decode `AMT_RemoteAccessPolicyRule.ExtendedData`. Wire format and
+/// usage are documented on `buildExtendedData`. The relevant fields
+/// of `p` (`periodicInterval` / `periodicSeconds` /
+/// `periodicTimeOfDay` / `periodicHour` / `periodicMinute`) are
+/// updated in place; `p` is otherwise left alone.
+void decodeExtendedData(const QString &b64, RemoteAccessPolicy &p);
+
+/// Invoke `AMT_RemoteAccessService.AddRemoteAccessPolicyRule`. The
+/// firmware is idempotent on `Trigger` — calling Add for an existing
+/// trigger overwrites in place, so this is also the edit path. The
+/// envelope is hand-rolled because `CIRAServers[]` and `CILAServers[]`
+/// are EPR-shaped and `buildInvokeEnvelope` doesn't handle EPRs. See
+/// #224.
+void addRemoteAccessPolicyRule(WsmanClient *client,
+                                const CiraPolicyInput &policy,
+                                std::function<void(InvokeResult)> callback);
+
+/// WS-Transfer Delete on `AMT_RemoteAccessPolicyRule` keyed by
+/// `PolicyRuleName`. AMT cascades the linked
+/// `AMT_RemoteAccessPolicyAppliesToMPS` rows, so the MPS-binding
+/// table doesn't need a separate cleanup pass. See #224.
+void removeRemoteAccessPolicyRule(WsmanClient *client,
+                                   const QString &policyRuleName,
+                                   std::function<void(InvokeResult)> callback);
+
 /// WiFi port-level state from `CIM_WiFiPort` + `CIM_WiFiEndpoint` +
 /// `AMT_WiFiPortConfigurationService`. Each field is independently
 /// populated; missing ones leave defaults so the QML can render
