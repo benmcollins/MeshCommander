@@ -19,6 +19,9 @@ jobs:
           - os: windows-latest
             qt_host: windows
             qt_arch: win64_msvc2022_64
+          - os: ubuntu-latest
+            qt_host: linux
+            qt_arch: linux_gcc_64
 
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +56,18 @@ jobs:
         run: |
           brew install libssh
           echo "CMAKE_PREFIX_PATH=$(brew --prefix libssh)${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
+
+      # libssh + OpenSSL from apt are recent enough on ubuntu-latest
+      # (libssh-dev ships the CMake config files find_package(libssh
+      # CONFIG REQUIRED) wants). install-qt-action handles the Qt
+      # runtime apt deps (libgl, libxcb, fontconfig, etc.) itself.
+      - name: Install libssh + OpenSSL (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libssh-dev libssl-dev
 
       # Fetch the prebuilt openssl + libssh tarball published by
       # `.github/workflows/build-windeps.yml` to a `windeps-vN`
@@ -106,6 +121,17 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         working-directory: build
+        run: ctest --output-on-failure --parallel
+
+      # The GH runner is headless; test_kvmcontroller uses
+      # QGuiApplication, so force the offscreen QPA. Other tests use
+      # QTEST_GUILESS_MAIN and don't care.
+      - name: Test (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: build
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: ctest --output-on-failure --parallel
 
       - name: Test (Windows)

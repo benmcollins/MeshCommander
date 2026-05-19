@@ -6,14 +6,14 @@
 
 <p align="center">
   <strong>A native Qt6 / QML console for Intel AMT (vPro) devices.</strong><br/>
-  Cross-platform (macOS · Windows), with a one-shot importer for configurations saved by the legacy NW.js MeshCommander.
+  Cross-platform (macOS · Windows · Linux), with a one-shot importer for configurations saved by the legacy NW.js MeshCommander.
 </p>
 
 <p align="center">
   <a href="https://github.com/benmcollins/QuMesh/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/benmcollins/QuMesh/actions/workflows/ci.yml/badge.svg?branch=main"/></a>
   <a href="https://github.com/benmcollins/QuMesh/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/benmcollins/QuMesh?include_prereleases&sort=semver"/></a>
   <a href="LICENSE.md"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"/></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-1e293b"/>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-1e293b"/>
   <img alt="Qt 6.6+" src="https://img.shields.io/badge/Qt-6.6%2B-41cd52?logo=qt&logoColor=white"/>
 </p>
 
@@ -53,11 +53,20 @@ ctest --test-dir build --output-on-failure
 Run it:
 
 ```bash
-./build/app/qumesh.app/Contents/MacOS/qumesh    # macOS
-build\app\qumesh.exe                            # Windows
+./build/app/QuMesh.app/Contents/MacOS/QuMesh    # macOS
+build\app\QuMesh.exe                            # Windows
+./build/app/qumesh                              # Linux
 ```
 
 Windows: install Qt 6.6+ (`win64_msvc2022_64`), OpenSSL 3, and libssh from vcpkg. Set `CMAKE_PREFIX_PATH` to the Qt install and pass `-DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake`. The [CI workflow](.github/workflows/ci.yml) is the canonical reference.
+
+Linux: install Qt 6.6+ from your distro (Ubuntu 24.10+, Debian 13+, Fedora 40+ all carry Qt 6.6) plus libssh/OpenSSL development headers. On Debian/Ubuntu:
+
+```bash
+sudo apt install qt6-base-dev qt6-base-dev-tools qt6-declarative-dev \
+                 qt6-tools-dev libqt6svg6-dev libssh-dev libssl-dev \
+                 cmake ninja-build
+```
 
 ### Download a release
 
