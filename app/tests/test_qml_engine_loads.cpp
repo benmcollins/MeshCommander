@@ -89,6 +89,26 @@ void captureMessage(QtMsgType type, const QMessageLogContext &ctx,
     sink.messages.append(where + msg);
 }
 
+// #262 diagnostic. Windows CI reports the test as failed in ~0.4 s
+// with zero captured stdout/stderr; QtTest's own failure output channel
+// isn't reaching ctest. Write structured progress + sink dumps to a
+// file colocated with the exe (`test_qml_engine_loads.diag.log`); the
+// Windows Test step prints it on failure. Drop this once #262 is fixed.
+void diag(const char *stage)
+{
+    if (FILE *f = std::fopen("test_qml_engine_loads.diag.log", "a")) {
+        std::fprintf(f, "[diag] %s\n", stage);
+        std::fclose(f);
+    }
+    std::fflush(stdout);
+    std::fflush(stderr);
+}
+
+void diagAtExit()
+{
+    diag("atexit fired (process is about to exit cleanly)");
+}
+
 } // namespace
 
 class TestQmlEngineLoads : public QObject
@@ -173,6 +193,20 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
         return QStringLiteral("Captured QtMsg output:\n  ")
             + sink.messages.join(QStringLiteral("\n  "));
     };
+    // #262: also mirror every captured warning into the diag log so
+    // we can see them on Windows where QtTest's own failure-output
+    // channel isn't reaching ctest. Drop with the rest of the diag
+    // scaffolding once the bug is understood.
+    auto mirrorSinkToDiag = [&]() {
+        auto &sink = warningSink();
+        QMutexLocker lock(&sink.mutex);
+        diag("--- begin captured QtMsgs ---");
+        for (const auto &m : sink.messages) {
+            const QByteArray utf8 = m.toUtf8();
+            diag(utf8.constData());
+        }
+        diag("--- end captured QtMsgs ---");
+    };
 
     QVERIFY2(!creationFailed.load(), qPrintable(dumpSink()));
     QCOMPARE(engine.rootObjects().size(), 1);
@@ -207,6 +241,11 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
                  .arg(dumpSink())));
     QVERIFY2(!creationFailed.load(), qPrintable(dumpSink()));
 
+    // Always mirror the captured warnings to the diag log (#262), even
+    // on success — gives us a baseline of what Windows produces vs the
+    // other platforms.
+    mirrorSinkToDiag();
+
     auto &sink = warningSink();
     QStringList captured;
     {
@@ -219,30 +258,6 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
             .arg(captured.size())
             .arg(captured.join(QStringLiteral("\n  ")))));
     }
-}
-
-// #262 diagnostic. Windows CI reports the test as failed in ~0.4 s
-// with zero captured stdout/stderr. The first diagnostic round
-// (file-based checkpoints) proved main() runs end-to-end, so the
-// non-zero exit must be coming from a shutdown destructor crash OR
-// QtTest output is buffered+lost somewhere ctest can't see. This
-// round dumps the QTest::qExec return code, force-flushes stdout +
-// stderr at every checkpoint, and installs an atexit() handler so
-// we can tell whether the process exits cleanly after main returns.
-// Drop this once the underlying bug is fixed.
-static void diag(const char *stage)
-{
-    if (FILE *f = std::fopen("test_qml_engine_loads.diag.log", "a")) {
-        std::fprintf(f, "[diag] %s\n", stage);
-        std::fclose(f);
-    }
-    std::fflush(stdout);
-    std::fflush(stderr);
-}
-
-static void diagAtExit()
-{
-    diag("atexit fired (process is about to exit cleanly)");
 }
 
 int main(int argc, char *argv[])
