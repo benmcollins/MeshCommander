@@ -4342,34 +4342,12 @@ void setTlsSettings(WsmanClient *client, const QString &instanceId,
         std::move(callback));
 }
 
-namespace {
+// `decodeExtendedData` / `buildExtendedData` are declared in
+// `wsman/include/wsman/operations.h` (public, so tests can call
+// either side directly) and implemented further down in the
+// `qumesh::wsman` namespace.
 
-/// Decode `AMT_RemoteAccessPolicyRule.ExtendedData` for Periodic
-/// triggers. The blob is base64 over 12 bytes:
-///   [4 BE] type — 0 = interval, 1 = time-of-day
-///   if interval: [4 BE] seconds
-///   if time-of-day: [4 BE] hour, [4 BE] minute
-void decodeExtendedData(const QString &b64, RemoteAccessPolicy &p)
-{
-    const QByteArray raw = QByteArray::fromBase64(b64.toLatin1());
-    if (raw.size() < 8) return;
-    const auto be32 = [](const QByteArray &b, int o) {
-        if (o + 3 >= b.size()) return quint32{0};
-        return (quint32(quint8(b[o]))     << 24)
-             | (quint32(quint8(b[o + 1])) << 16)
-             | (quint32(quint8(b[o + 2])) <<  8)
-             |  quint32(quint8(b[o + 3]));
-    };
-    const quint32 type = be32(raw, 0);
-    if (type == 0) {
-        p.periodicInterval = true;
-        p.periodicSeconds  = int(be32(raw, 4));
-    } else if (type == 1 && raw.size() >= 12) {
-        p.periodicTimeOfDay = true;
-        p.periodicHour   = int(be32(raw, 4));
-        p.periodicMinute = int(be32(raw, 8));
-    }
-}
+namespace {
 
 /// Walk a `AMT_RemoteAccessPolicyAppliesToMPS` item-XML and pull the
 /// two embedded EPRs out: the policy rule's `PolicyRuleName` and the
@@ -5405,6 +5383,192 @@ void removeMpServer(WsmanClient *client, const QString &name,
     selectors.insert(QStringLiteral("Name"), name);
     const QByteArray env = buildDeleteEnvelope(
         QString::fromLatin1(kManagementPresenceRemoteSapResource), selectors,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void decodeExtendedData(const QString &b64, RemoteAccessPolicy &p)
+{
+    const QByteArray raw = QByteArray::fromBase64(b64.toLatin1());
+    if (raw.size() < 8) return;
+    const auto be32 = [](const QByteArray &b, int o) {
+        if (o + 3 >= b.size()) return quint32{0};
+        return (quint32(quint8(b[o]))     << 24)
+             | (quint32(quint8(b[o + 1])) << 16)
+             | (quint32(quint8(b[o + 2])) <<  8)
+             |  quint32(quint8(b[o + 3]));
+    };
+    const quint32 type = be32(raw, 0);
+    if (type == 0) {
+        p.periodicInterval = true;
+        p.periodicSeconds  = int(be32(raw, 4));
+    } else if (type == 1 && raw.size() >= 12) {
+        p.periodicTimeOfDay = true;
+        p.periodicHour   = int(be32(raw, 4));
+        p.periodicMinute = int(be32(raw, 8));
+    }
+}
+
+QString buildExtendedData(bool intervalMode, int intervalSeconds,
+                          int hour, int minute)
+{
+    const auto append32 = [](QByteArray &b, quint32 v) {
+        b.append(char((v >> 24) & 0xFF));
+        b.append(char((v >> 16) & 0xFF));
+        b.append(char((v >>  8) & 0xFF));
+        b.append(char( v        & 0xFF));
+    };
+    QByteArray raw;
+    if (intervalMode) {
+        raw.reserve(8);
+        append32(raw, 0u);
+        // Clamp at uint32 — AMT's field is 32 bits and the editor's
+        // QML can't produce a negative seconds value anyway.
+        append32(raw, intervalSeconds < 0 ? 0u : quint32(intervalSeconds));
+    } else {
+        raw.reserve(12);
+        append32(raw, 1u);
+        append32(raw, hour   < 0 ? 0u : quint32(hour));
+        append32(raw, minute < 0 ? 0u : quint32(minute));
+    }
+    return QString::fromLatin1(raw.toBase64());
+}
+
+void addRemoteAccessPolicyRule(WsmanClient *client,
+                                const CiraPolicyInput &policy,
+                                std::function<void(InvokeResult)> callback)
+{
+    // Hand-rolled envelope. AMT's `AddRemoteAccessPolicyRule` carries
+    // two EPR-shaped array parameters (`CIRAServers[]`, `CILAServers[]`)
+    // pointing at `AMT_ManagementPresenceRemoteSAP` rows; the generic
+    // `buildInvokeEnvelope` helper handles flat string params only.
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    const QString resource =
+        QString::fromLatin1(kRemoteAccessServiceResource);
+    const QString action  = resource + QStringLiteral("/AddRemoteAccessPolicyRule");
+    const QString sapResource =
+        QString::fromLatin1(kManagementPresenceRemoteSapResource);
+    const QString to     = client ? client->endpoint().toString() : QString();
+    const QString msgId  = newMessageId();
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(resource,                            QStringLiteral("r"));
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), msgId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeEndElement(); // Header
+
+    // Body
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resource,
+                         QStringLiteral("AddRemoteAccessPolicyRule_INPUT"));
+
+    // AMT's XSD requires this exact ordering: Trigger → TunnelLifeTime
+    // → ExtendedData → MpServer[]. Reordering yields SchemaValidationError.
+    w.writeTextElement(resource, QStringLiteral("Trigger"),
+                        QString::number(policy.trigger));
+    w.writeTextElement(resource, QStringLiteral("TunnelLifeTime"),
+                        QString::number(policy.tunnelLifeTime));
+
+    // ExtendedData is only meaningful for the Periodic trigger; the
+    // other two ignore it but still require the element to be present.
+    QString extData;
+    if (policy.trigger == 2) {
+        if (policy.periodicInterval) {
+            extData = buildExtendedData(true, policy.periodicSeconds, 0, 0);
+        } else if (policy.periodicTimeOfDay) {
+            extData = buildExtendedData(false, 0,
+                                        policy.periodicHour,
+                                        policy.periodicMinute);
+        }
+    }
+    w.writeTextElement(resource, QStringLiteral("ExtendedData"), extData);
+
+    // CIRA / CILA servers go in two separately-named repeating EPR
+    // arrays. AMT keys the bucket off the element name: <MpServer>
+    // for CIRA, <InternalMpServer> for CILA. Each EPR points at an
+    // existing AMT_ManagementPresenceRemoteSAP row by Name selector.
+    const auto writeMpServerEpr = [&](const QString &tag, const QString &name) {
+        w.writeStartElement(resource, tag);
+        w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                            QStringLiteral("Address"),
+                            QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+        w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                            QStringLiteral("ReferenceParameters"));
+        w.writeTextElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("ResourceURI"), sapResource);
+        w.writeStartElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("SelectorSet"));
+        w.writeStartElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("Selector"));
+        w.writeAttribute(QStringLiteral("Name"), QStringLiteral("Name"));
+        w.writeCharacters(name);
+        w.writeEndElement(); // Selector
+        w.writeEndElement(); // SelectorSet
+        w.writeEndElement(); // ReferenceParameters
+        w.writeEndElement(); // <MpServer> / <InternalMpServer>
+    };
+    for (const QString &n : policy.ciraMpsNames)
+        writeMpServerEpr(QStringLiteral("MpServer"), n);
+    for (const QString &n : policy.cilaMpsNames)
+        writeMpServerEpr(QStringLiteral("InternalMpServer"), n);
+
+    w.writeEndElement(); // AddRemoteAccessPolicyRule_INPUT
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+
+    runRequest<InvokeResult>(client, out, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            r.returnValue = rv.toInt();
+            r.ok = (r.returnValue == 0);
+            if (!r.ok) {
+                r.error = QStringLiteral("AddRemoteAccessPolicyRule returned %1")
+                    .arg(rv.isEmpty() ? QStringLiteral("(no ReturnValue)") : rv);
+            }
+        },
+        std::move(callback));
+}
+
+void removeRemoteAccessPolicyRule(WsmanClient *client,
+                                   const QString &policyRuleName,
+                                   std::function<void(InvokeResult)> callback)
+{
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("PolicyRuleName"), policyRuleName);
+    const QByteArray env = buildDeleteEnvelope(
+        QString::fromLatin1(kRemoteAccessPolicyRuleResource), selectors,
         client ? client->endpoint().toString() : QString(), newMessageId());
     runRequest<InvokeResult>(client, env, {},
         [](const QByteArray & /*body*/, InvokeResult &r) {

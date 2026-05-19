@@ -122,6 +122,7 @@ qt_add_qml_module(qumesh_appcore
         qml/EnvDetectionDialog.qml
         qml/UserInitiatedDialog.qml
         qml/MpsServerDialog.qml
+        qml/CiraPolicyDialog.qml
         qml/LocalAmtPromptDialog.qml
         qml/MigrationBanner.qml
         qml/TitleBar.qml

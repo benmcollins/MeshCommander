@@ -175,6 +175,21 @@ AppWindow {
         }
     }
 
+    CiraPolicyDialog {
+        id: ciraPolicyDialog
+        controller: controller
+    }
+
+    ConfirmDialog {
+        id: ciraPolicyConfirmDialog
+        property string pendingName: ""
+        onProceed: {
+            if (pendingName.length > 0)
+                controller.removeCiraPolicyRule(pendingName);
+            pendingName = "";
+        }
+    }
+
     UserAccountDialog {
         id: userAccountDialog
         controller: controller
@@ -2313,8 +2328,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                         Section {
                             title: qsTr("CONNECTION POLICIES")
                             visible: !!(controller.remoteAccess
-                                         && controller.remoteAccess.policies
-                                         && controller.remoteAccess.policies.length > 0)
+                                         && controller.remoteAccess.ok)
                             Layout.fillWidth: true
                             Layout.leftMargin: 24
                             Layout.rightMargin: 24
@@ -2322,6 +2336,13 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 6
+                                Text {
+                                    visible: ((controller.remoteAccess && controller.remoteAccess.policies) || []).length === 0
+                                    text: qsTr("(no policies configured)")
+                                    color: Colors.textFaint
+                                    font.family: Type.sans
+                                    font.pixelSize: Type.sizeXs
+                                }
                                 Repeater {
                                     model: (controller.remoteAccess && controller.remoteAccess.policies) || []
                                     delegate: ColumnLayout {
@@ -2348,6 +2369,24 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                                 Layout.fillWidth: true
                                                 elide: Text.ElideRight
                                             }
+                                            FlatButton {
+                                                text: qsTr("Edit")
+                                                font.family: Type.sans
+                                                font.pixelSize: Type.sizeXs
+                                                onClicked: ciraPolicyDialog.openForEdit(modelData)
+                                            }
+                                            FlatButton {
+                                                text: qsTr("Delete")
+                                                font.family: Type.sans
+                                                font.pixelSize: Type.sizeXs
+                                                onClicked: {
+                                                    ciraPolicyConfirmDialog.ask(
+                                                        qsTr("Delete CIRA policy?"),
+                                                        qsTr("Removes the %1 policy. AMT cascades its MPS bindings.").arg(modelData.name),
+                                                        qsTr("Delete"), true);
+                                                    ciraPolicyConfirmDialog.pendingName = modelData.name;
+                                                }
+                                            }
                                         }
                                         Text {
                                             visible: (modelData.scheduleLabel || "").length > 0
@@ -2366,6 +2405,24 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                             font.family: Type.sans
                                             font.pixelSize: Type.sizeXs
                                         }
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: 6
+                                    spacing: 8
+                                    Item { Layout.fillWidth: true }
+                                    AccentButton {
+                                        text: qsTr("Add policy…")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        // No point letting the user open the
+                                        // dialog when there are no MPS rows
+                                        // to bind — AMT requires at least one.
+                                        enabled: ((controller.remoteAccess
+                                                    && controller.remoteAccess.servers) || []).length > 0
+                                        onClicked: ciraPolicyDialog.openForAdd()
                                     }
                                 }
                             }

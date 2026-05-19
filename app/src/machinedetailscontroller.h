@@ -464,6 +464,26 @@ public:
     /// AMT cascades the linked MPSUsernamePassword row. See #158.
     Q_INVOKABLE void removeMpServer(const QString &name);
 
+    /// Invoke `AMT_RemoteAccessService.AddRemoteAccessPolicyRule`.
+    /// The firmware is idempotent on `trigger`, so this is also the
+    /// edit path. `fields` keys:
+    ///   trigger (int, 0=User Initiated / 1=Alert / 2=Periodic),
+    ///   tunnelLifeTime (int, seconds),
+    ///   periodicMode (string, "interval" or "timeOfDay") — only
+    ///                meaningful when trigger == 2,
+    ///   periodicSeconds (int) — required when mode == "interval",
+    ///   periodicHour (int) / periodicMinute (int) — required when
+    ///                 mode == "timeOfDay",
+    ///   ciraMpsNames (QStringList) — `MpsServer.name` for mpsType=0,
+    ///   cilaMpsNames (QStringList) — `MpsServer.name` for mpsType=1.
+    /// See #224.
+    Q_INVOKABLE void addCiraPolicyRule(const QVariantMap &fields);
+
+    /// WS-Transfer Delete on `AMT_RemoteAccessPolicyRule` keyed by
+    /// `PolicyRuleName`. AMT cascades the linked AppliesToMPS rows.
+    /// See #224.
+    Q_INVOKABLE void removeCiraPolicyRule(const QString &policyName);
+
     Q_INVOKABLE void refreshWireless();
 
     /// Add a PSK WiFi profile (WPA2-PSK or WPA3-PSK). `fields` keys:

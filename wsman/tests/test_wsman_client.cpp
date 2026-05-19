@@ -45,6 +45,8 @@ private slots:
     void getSystemDefenseEnumeratesAllFourFilterClasses();
     void setKvmSettingsRoundTripsPartialPatch();
     void setKvmRedirectionEnabledSendsCorrectRequestedState();
+    void buildExtendedDataRoundTripsBothPeriodicBranches();
+    void addRemoteAccessPolicyRuleEncodesPeriodicEnvelope();
 
 private:
     QUrl endpointFor(quint16 port) const;
@@ -2634,6 +2636,139 @@ void TestWsmanClient::setKvmRedirectionEnabledSendsCorrectRequestedState()
 
     QVERIFY(result.ok);
     QVERIFY2(captured.contains(">2<"), captured.constData());
+}
+
+void TestWsmanClient::buildExtendedDataRoundTripsBothPeriodicBranches()
+{
+    // Interval branch: type=0 + 4-byte seconds → 8 bytes total.
+    const QString b64Interval = buildExtendedData(true, 300, 0, 0);
+    const QByteArray rawInterval = QByteArray::fromBase64(b64Interval.toLatin1());
+    QCOMPARE(rawInterval.size(), 8);
+    // type 0
+    QCOMPARE(quint8(rawInterval[0]), quint8(0));
+    QCOMPARE(quint8(rawInterval[1]), quint8(0));
+    QCOMPARE(quint8(rawInterval[2]), quint8(0));
+    QCOMPARE(quint8(rawInterval[3]), quint8(0));
+    // 300 = 0x0000012C
+    QCOMPARE(quint8(rawInterval[4]), quint8(0x00));
+    QCOMPARE(quint8(rawInterval[5]), quint8(0x00));
+    QCOMPARE(quint8(rawInterval[6]), quint8(0x01));
+    QCOMPARE(quint8(rawInterval[7]), quint8(0x2C));
+
+    RemoteAccessPolicy decodedInterval;
+    decodeExtendedData(b64Interval, decodedInterval);
+    QVERIFY(decodedInterval.periodicInterval);
+    QCOMPARE(decodedInterval.periodicSeconds, 300);
+    QVERIFY(!decodedInterval.periodicTimeOfDay);
+
+    // Time-of-day branch: type=1 + 4-byte hour + 4-byte minute → 12 bytes.
+    const QString b64Tod = buildExtendedData(false, 0, 14, 30);
+    const QByteArray rawTod = QByteArray::fromBase64(b64Tod.toLatin1());
+    QCOMPARE(rawTod.size(), 12);
+    // type 1
+    QCOMPARE(quint8(rawTod[3]), quint8(1));
+    // hour 14
+    QCOMPARE(quint8(rawTod[7]), quint8(14));
+    // minute 30
+    QCOMPARE(quint8(rawTod[11]), quint8(30));
+
+    RemoteAccessPolicy decodedTod;
+    decodeExtendedData(b64Tod, decodedTod);
+    QVERIFY(!decodedTod.periodicInterval);
+    QVERIFY(decodedTod.periodicTimeOfDay);
+    QCOMPARE(decodedTod.periodicHour, 14);
+    QCOMPARE(decodedTod.periodicMinute, 30);
+}
+
+void TestWsmanClient::addRemoteAccessPolicyRuleEncodesPeriodicEnvelope()
+{
+    // Capture the POST body to verify the hand-rolled envelope carries
+    // every load-bearing field: Trigger, TunnelLifeTime, ExtendedData
+    // (base64), a <MpServer> EPR for each CIRA name, and an
+    // <InternalMpServer> EPR for each CILA name.
+    QByteArray captured;
+    QHttpServer server;
+    server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
+                 [&](const QHttpServerRequest &req) {
+                     captured = req.body();
+                     constexpr const char *resp =
+                         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                         "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
+                         " xmlns:r=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_RemoteAccessService\">"
+                         "<s:Header/><s:Body>"
+                         "<r:AddRemoteAccessPolicyRule_OUTPUT>"
+                         "<r:ReturnValue>0</r:ReturnValue>"
+                         "</r:AddRemoteAccessPolicyRule_OUTPUT>"
+                         "</s:Body></s:Envelope>";
+                     return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
+                                                QByteArray(resp));
+                 });
+
+    auto tcp = std::make_unique<QTcpServer>();
+    QVERIFY(tcp->listen(QHostAddress::LocalHost));
+    const quint16 port = tcp->serverPort();
+    QVERIFY(server.bind(tcp.get()));
+    tcp.release();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+
+    CiraPolicyInput in;
+    in.trigger = 2;                 // Periodic
+    in.tunnelLifeTime = 1200;
+    in.periodicInterval = true;
+    in.periodicSeconds = 300;
+    in.ciraMpsNames << QStringLiteral("MpsExternal1");
+    in.cilaMpsNames << QStringLiteral("MpsInternal1");
+
+    InvokeResult result;
+    QEventLoop loop;
+    addRemoteAccessPolicyRule(&client, in,
+        [&](InvokeResult r) { result = r; loop.quit(); });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.returnValue, 0);
+
+    // SOAPAction header has to target AddRemoteAccessPolicyRule —
+    // the action URI lives in the body's WS-Addressing <Action>.
+    QVERIFY2(captured.contains("AddRemoteAccessPolicyRule"), captured.constData());
+
+    // Trigger=2 must land on the wire.
+    QVERIFY2(captured.contains("<r:Trigger>2</r:Trigger>"),
+             captured.constData());
+    // TunnelLifeTime
+    QVERIFY2(captured.contains("<r:TunnelLifeTime>1200</r:TunnelLifeTime>"),
+             captured.constData());
+    // ExtendedData must be base64 of 8 bytes: 00 00 00 00 00 00 01 2C.
+    // QByteArray::toBase64 emits "AAAAAAAAASw=" for that sequence.
+    QVERIFY2(captured.contains("<r:ExtendedData>AAAAAAAAASw=</r:ExtendedData>"),
+             captured.constData());
+
+    // CIRA bucket → <MpServer> with the SAP resource URI + Name selector.
+    QVERIFY2(captured.contains("<r:MpServer>"), captured.constData());
+    QVERIFY2(captured.contains("AMT_ManagementPresenceRemoteSAP"),
+             captured.constData());
+    QVERIFY2(captured.contains(">MpsExternal1<"), captured.constData());
+    // CILA bucket → <InternalMpServer>.
+    QVERIFY2(captured.contains("<r:InternalMpServer>"),
+             captured.constData());
+    QVERIFY2(captured.contains(">MpsInternal1<"), captured.constData());
+
+    // XSD requires Trigger → TunnelLifeTime → ExtendedData → MpServer
+    // → InternalMpServer in this order; shuffling fails server-side.
+    const int iTrigger      = captured.indexOf("<r:Trigger>");
+    const int iTunnel       = captured.indexOf("<r:TunnelLifeTime>");
+    const int iExt          = captured.indexOf("<r:ExtendedData>");
+    const int iMpServer     = captured.indexOf("<r:MpServer>");
+    const int iInternalMps  = captured.indexOf("<r:InternalMpServer>");
+    QVERIFY2(iTrigger < iTunnel && iTunnel < iExt
+              && iExt < iMpServer && iMpServer < iInternalMps,
+             qPrintable(QStringLiteral(
+                 "Body element order wrong: %1/%2/%3/%4/%5")
+                 .arg(iTrigger).arg(iTunnel).arg(iExt)
+                 .arg(iMpServer).arg(iInternalMps)));
 }
 
 QTEST_GUILESS_MAIN(TestWsmanClient)

@@ -1729,6 +1729,14 @@ void MachineDetailsController::refreshRemoteAccess()
                 m.insert(QStringLiteral("tunnelLifeTime"), p.tunnelLifeTime);
                 m.insert(QStringLiteral("mpsNames"),       p.mpsNames);
                 m.insert(QStringLiteral("mpsNamesLabel"),  p.mpsNames.join(", "));
+                // Surface the structured periodic fields so the edit
+                // dialog can recover them without string-parsing the
+                // user-facing scheduleLabel.
+                m.insert(QStringLiteral("periodicInterval"),   p.periodicInterval);
+                m.insert(QStringLiteral("periodicSeconds"),    p.periodicSeconds);
+                m.insert(QStringLiteral("periodicTimeOfDay"),  p.periodicTimeOfDay);
+                m.insert(QStringLiteral("periodicHour"),       p.periodicHour);
+                m.insert(QStringLiteral("periodicMinute"),     p.periodicMinute);
                 if (p.periodicInterval) {
                     m.insert(QStringLiteral("scheduleLabel"),
                              QStringLiteral("Every %1 s").arg(p.periodicSeconds));
@@ -2020,6 +2028,111 @@ void MachineDetailsController::removeMpServer(const QString &name)
                 setLastError(r.error.isEmpty()
                     ? QStringLiteral("Remove MPS: failed.")
                     : QStringLiteral("Remove MPS: %1").arg(r.error));
+                return;
+            }
+            refreshRemoteAccess();
+        });
+}
+
+void MachineDetailsController::addCiraPolicyRule(const QVariantMap &fields)
+{
+    setLastError({});
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("CIRA policy: host is empty."));
+        return;
+    }
+
+    qumesh::wsman::CiraPolicyInput in;
+    in.trigger        = fields.value(QStringLiteral("trigger"), 0).toInt();
+    in.tunnelLifeTime = fields.value(QStringLiteral("tunnelLifeTime"), 0).toInt();
+    if (in.trigger < 0 || in.trigger > 2) {
+        setLastError(QStringLiteral("CIRA policy: trigger %1 out of range (0..2).")
+            .arg(in.trigger));
+        return;
+    }
+    if (in.tunnelLifeTime < 0) {
+        setLastError(QStringLiteral("CIRA policy: tunnel lifetime must be >= 0."));
+        return;
+    }
+    if (in.trigger == 2) {
+        const QString mode = fields.value(QStringLiteral("periodicMode")).toString();
+        if (mode == QStringLiteral("interval")) {
+            in.periodicInterval = true;
+            in.periodicSeconds  = fields.value(QStringLiteral("periodicSeconds"), 0).toInt();
+            if (in.periodicSeconds <= 0) {
+                setLastError(QStringLiteral("CIRA policy: periodic interval must be > 0."));
+                return;
+            }
+        } else if (mode == QStringLiteral("timeOfDay")) {
+            in.periodicTimeOfDay = true;
+            in.periodicHour   = fields.value(QStringLiteral("periodicHour"), 0).toInt();
+            in.periodicMinute = fields.value(QStringLiteral("periodicMinute"), 0).toInt();
+            if (in.periodicHour < 0 || in.periodicHour > 23
+                || in.periodicMinute < 0 || in.periodicMinute > 59) {
+                setLastError(QStringLiteral("CIRA policy: hour 0–23, minute 0–59."));
+                return;
+            }
+        } else {
+            setLastError(QStringLiteral(
+                "CIRA policy: periodic mode must be 'interval' or 'timeOfDay'."));
+            return;
+        }
+    }
+
+    const auto toList = [&](const QString &key) {
+        QStringList out;
+        const QVariant v = fields.value(key);
+        if (v.canConvert<QStringList>()) {
+            out = v.toStringList();
+        } else {
+            for (const QVariant &item : v.toList())
+                out.append(item.toString());
+        }
+        return out;
+    };
+    in.ciraMpsNames = toList(QStringLiteral("ciraMpsNames"));
+    in.cilaMpsNames = toList(QStringLiteral("cilaMpsNames"));
+    if (in.ciraMpsNames.isEmpty() && in.cilaMpsNames.isEmpty()) {
+        setLastError(QStringLiteral(
+            "CIRA policy: at least one MPS server must be bound."));
+        return;
+    }
+
+    incInflight();
+    qumesh::wsman::addRemoteAccessPolicyRule(m_client, in,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("CIRA policy: AddRemoteAccessPolicyRule failed.")
+                    : QStringLiteral("CIRA policy: %1").arg(r.error));
+                return;
+            }
+            refreshRemoteAccess();
+        });
+}
+
+void MachineDetailsController::removeCiraPolicyRule(const QString &policyName)
+{
+    setLastError({});
+    if (policyName.isEmpty()) {
+        setLastError(QStringLiteral("Remove CIRA policy: missing identity."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Remove CIRA policy: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::removeRemoteAccessPolicyRule(m_client, policyName,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Remove CIRA policy: failed.")
+                    : QStringLiteral("Remove CIRA policy: %1").arg(r.error));
                 return;
             }
             refreshRemoteAccess();
