@@ -29,6 +29,9 @@ private slots:
     void generateKeyPairEnvelopeShape();
     void parseGenerateKeyPairInstanceIdFromBody();
     void getPublicPrivateKeyPairEnvelopeShape();
+    void wifiPskEnvelopeOmitsEapBlock();
+    void wifiEapTlsEnvelopeIncludesClientAndCaCredential();
+    void wifiPeapEnvelopeIncludesUsernameAndServerCertGuard();
 };
 
 namespace {
@@ -392,6 +395,108 @@ void TestSoapEnvelope::getPublicPrivateKeyPairEnvelopeShape()
     QVERIFY(env.contains("AMT_PublicPrivateKeyPair"));
     QVERIFY(env.contains("Intel(r) AMT Key: Handle: 7"));
     QVERIFY(env.contains("uuid:gppkp-1"));
+}
+
+void TestSoapEnvelope::wifiPskEnvelopeOmitsEapBlock()
+{
+    // Phase B shape: enterpriseEnabled = false → no EAP block, no
+    // credential EPRs land in the body. Locks the existing on-wire
+    // bytes against accidental regression from Phase C work.
+    WiFiPskProfile p;
+    p.elementName = QStringLiteral("CorpNet");
+    p.ssid = QStringLiteral("Corp WiFi");
+    p.authenticationMethod = 6;
+    p.encryptionMethod = 4;
+    p.priority = 1;
+    p.psk = QStringLiteral("hunter2!2");
+    // Defaults: enterpriseEnabled = false.
+
+    const QByteArray env = buildWiFiSettingsEnvelopeForTesting(
+        QStringLiteral("AddWiFiSettings"), p);
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    QVERIFY(env.contains("WiFiEndpointSettingsInput"));
+    QVERIFY(env.contains(">hunter2!2<"));
+    QVERIFY(!env.contains("IEEE8021xSettingsInput"));
+    QVERIFY(!env.contains("ClientCredential"));
+    QVERIFY(!env.contains("CACredential"));
+}
+
+void TestSoapEnvelope::wifiEapTlsEnvelopeIncludesClientAndCaCredential()
+{
+    WiFiPskProfile p;
+    p.elementName = QStringLiteral("CorpNet");
+    p.ssid = QStringLiteral("Corp WiFi");
+    p.authenticationMethod = 5; // WPA2-Enterprise
+    p.encryptionMethod = 4;
+    p.priority = 1;
+    p.psk.clear(); // ignored for EAP
+    p.enterpriseEnabled = true;
+    p.authenticationProtocol = 0; // EAP-TLS
+    p.clientCertificateInstanceId =
+        QStringLiteral("Intel(r) AMT Certificate: Handle: 3");
+    p.caCertificateInstanceId =
+        QStringLiteral("Intel(r) AMT Certificate: Handle: 7");
+
+    const QByteArray env = buildWiFiSettingsEnvelopeForTesting(
+        QStringLiteral("AddWiFiSettings"), p);
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    QVERIFY(env.contains("IEEE8021xSettingsInput"));
+    QVERIFY(env.contains(">0</")); // AuthenticationProtocol = 0
+    QVERIFY(env.contains("ClientCredential"));
+    QVERIFY(env.contains("Intel(r) AMT Certificate: Handle: 3"));
+    QVERIFY(env.contains("CACredential"));
+    QVERIFY(env.contains("Intel(r) AMT Certificate: Handle: 7"));
+    // EAP-TLS uses the device key pair; no username/password should
+    // appear unless the operator explicitly typed one.
+    QVERIFY(!env.contains("<r:Username>"));
+    QVERIFY(!env.contains("<r:Password>"));
+}
+
+void TestSoapEnvelope::wifiPeapEnvelopeIncludesUsernameAndServerCertGuard()
+{
+    WiFiPskProfile p;
+    p.elementName = QStringLiteral("CorpNet");
+    p.ssid = QStringLiteral("Corp WiFi");
+    p.authenticationMethod = 5;
+    p.encryptionMethod = 4;
+    p.priority = 1;
+    p.enterpriseEnabled = true;
+    p.authenticationProtocol = 2; // PEAPv0/MSCHAPv2
+    p.eapUsername = QStringLiteral("alice");
+    p.eapPassword = QStringLiteral("s3cret-secret");
+    p.eapServerCertificateName = QStringLiteral("radius.corp.example");
+    p.eapServerCertificateNameComparison = 2; // DomainSuffix
+    p.caCertificateInstanceId =
+        QStringLiteral("Intel(r) AMT Certificate: Handle: 9");
+    // No clientCertificateInstanceId for PEAP.
+
+    const QByteArray env = buildWiFiSettingsEnvelopeForTesting(
+        QStringLiteral("AddWiFiSettings"), p);
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    QVERIFY(env.contains("IEEE8021xSettingsInput"));
+    QVERIFY(env.contains(">2</")); // AuthenticationProtocol = 2
+    QVERIFY(env.contains(">alice<"));
+    QVERIFY(env.contains(">s3cret-secret<"));
+    QVERIFY(env.contains(">radius.corp.example<"));
+    QVERIFY(env.contains("ServerCertificateNameComparison"));
+    // PEAP doesn't use a client cert.
+    QVERIFY(!env.contains("ClientCredential"));
+    // But CACredential is set so AMT can validate the RADIUS server's
+    // certificate against a trusted root.
+    QVERIFY(env.contains("CACredential"));
+    QVERIFY(env.contains("Intel(r) AMT Certificate: Handle: 9"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)
