@@ -5578,4 +5578,58 @@ void removeRemoteAccessPolicyRule(WsmanClient *client,
         std::move(callback));
 }
 
+namespace {
+
+// Shared parser for a "ClearLog" reply. AMT's ClearLog methods are
+// parameterless and return a single `ReturnValue` element — 0 means
+// the firmware accepted the clear. The parsed result fills the same
+// `InvokeResult` shape as every other invoke op so the batch runner
+// can treat them uniformly.
+void parseClearLogReply(const QByteArray &body, InvokeResult &r,
+                        const QString &methodLabel)
+{
+    const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+    if (rv.isEmpty()) {
+        r.error = QStringLiteral("response had no ReturnValue");
+        return;
+    }
+    bool conv = false;
+    r.returnValue = rv.toInt(&conv);
+    r.ok = conv && r.returnValue == 0;
+    if (!r.ok && r.error.isEmpty())
+        r.error = QStringLiteral("%1 returned %2").arg(methodLabel, rv);
+}
+
+} // namespace
+
+void clearAuditLog(WsmanClient *client,
+                   std::function<void(InvokeResult)> callback)
+{
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kAuditLogResource),
+        QStringLiteral("ClearLog"), {}, {},
+        client ? client->endpoint().toString() : QString(),
+        newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            parseClearLogReply(body, r, QStringLiteral("AMT_AuditLog.ClearLog"));
+        },
+        std::move(callback));
+}
+
+void clearEventLog(WsmanClient *client,
+                   std::function<void(InvokeResult)> callback)
+{
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kMessageLogResource),
+        QStringLiteral("ClearLog"), {}, {},
+        client ? client->endpoint().toString() : QString(),
+        newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            parseClearLogReply(body, r, QStringLiteral("AMT_MessageLog.ClearLog"));
+        },
+        std::move(callback));
+}
+
 } // namespace qumesh::wsman

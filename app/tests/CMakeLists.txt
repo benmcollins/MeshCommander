@@ -190,3 +190,20 @@ target_link_libraries(test_solcontroller PRIVATE
     qumesh_wsman
 )
 add_test(NAME test_solcontroller COMMAND test_solcontroller)
+
+# BatchRunner unit test: drives the runner with a stub dispatcher so
+# the WSMAN path is out of scope. Lives outside the qumesh_app_test
+# helper because it only needs BatchRunner — no ConfigStore / model /
+# migration plumbing.
+qt_add_executable(test_batchrunner
+    test_batchrunner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/batchrunner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/batchrunner.h
+)
+target_include_directories(test_batchrunner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_batchrunner PRIVATE
+    Qt6::Core
+    Qt6::Test
+    qumesh_wsman
+)
+add_test(NAME test_batchrunner COMMAND test_batchrunner)

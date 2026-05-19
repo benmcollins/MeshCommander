@@ -12,13 +12,44 @@ Rectangle {
     id: root
 
     readonly property int currentRow: list.currentIndex
+    // Multi-select state for batch actions (#202). When `selectMode`
+    // is true, each row shows a checkbox before its content and the
+    // single-click handler toggles selection instead of changing
+    // `currentRow`. `selectedRows` is exposed as a read-only list of
+    // row indices the parent (Main.qml) hands to BatchController.start.
+    property bool selectMode: false
+    readonly property var selectedRows: Array.from(_selectedSet.values())
+    readonly property int selectedCount: _selectedSet.size
+
+    // Backing set for `selectedRows`. Stored as a JS Set so toggle
+    // is O(1) and we can derive `selectedCount` without a re-walk.
+    property var _selectedSet: new Set()
 
     function setCurrentRow(row) { list.currentIndex = row; }
+
+    function toggleSelectMode() {
+        selectMode = !selectMode;
+        if (!selectMode) clearSelection();
+    }
+
+    function clearSelection() {
+        _selectedSet = new Set();
+        _selectedSetChanged();
+    }
+
+    function toggleSelected(row) {
+        const s = new Set(_selectedSet);
+        if (s.has(row)) s.delete(row); else s.add(row);
+        _selectedSet = s;
+    }
 
     signal addRequested
     signal scanRequested
     signal openDetailsRequested(int row)
     signal localAmtRequested
+    /// Emitted when the user picks a batch action from the menu while
+    /// in `selectMode`. `action` is a `BatchAction` enum int from C++.
+    signal batchActionRequested(int action, var rows)
 
     color: Colors.bg
 
@@ -131,33 +162,60 @@ Rectangle {
                 required property string name
                 required property string host
 
+                readonly property bool isSelected: root._selectedSet.has(rowItem.index)
+
                 width: list.width
                 height: 48
                 color: list.currentIndex === rowItem.index
                        ? Colors.accentSoft
-                       : (hoverHandler.hovered ? Colors.elevated : "transparent")
+                       : (rowItem.isSelected
+                           ? Colors.accentSoft
+                           : (hoverHandler.hovered ? Colors.elevated : "transparent"))
 
                 Behavior on color { ColorAnimation { duration: Motion.fast } }
 
                 HoverHandler { id: hoverHandler }
                 TapHandler {
-                    onTapped: list.currentIndex = rowItem.index
-                    onDoubleTapped: root.openDetailsRequested(rowItem.index)
+                    onTapped: {
+                        if (root.selectMode) {
+                            root.toggleSelected(rowItem.index);
+                        } else {
+                            list.currentIndex = rowItem.index;
+                        }
+                    }
+                    onDoubleTapped: {
+                        if (!root.selectMode) root.openDetailsRequested(rowItem.index);
+                    }
                 }
 
                 Rectangle {
                     color: Colors.accent
                     implicitWidth: 2
-                    visible: list.currentIndex === rowItem.index
+                    visible: list.currentIndex === rowItem.index && !root.selectMode
                     anchors.left: parent.left
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                 }
 
+                // Selection checkbox. Visible only in multi-select mode;
+                // visually anchored at the row's left edge so the
+                // ColumnLayout content shifts right when select-mode
+                // engages.
+                CheckBox {
+                    id: selectCheck
+                    visible: root.selectMode
+                    checked: rowItem.isSelected
+                    anchors.left: parent.left
+                    anchors.leftMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 22
+                    onToggled: root.toggleSelected(rowItem.index)
+                }
+
                 ColumnLayout {
                     spacing: 1
                     anchors.fill: parent
-                    anchors.leftMargin: 16
+                    anchors.leftMargin: root.selectMode ? 38 : 16
                     anchors.rightMargin: 12
                     anchors.topMargin: 6
                     anchors.bottomMargin: 6
@@ -249,9 +307,96 @@ Rectangle {
                 onClicked: root.scanRequested()
             }
 
+            // Multi-select toggle (#202). Off by default; flips to
+            // "Done" while engaged so the affordance to leave the mode
+            // is obvious. Acts as the carrier for the Actions menu —
+            // we don't surface that menu at all outside select mode.
+            Button {
+                id: selectBtn
+                checkable: true
+                checked: root.selectMode
+                text: root.selectMode ? qsTr("Done") : qsTr("Select")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeXs
+                implicitHeight: 28
+                ToolTip.text: qsTr("Pick multiple machines to act on at once")
+                ToolTip.visible: hovered
+                onClicked: root.toggleSelectMode()
+            }
+
+            Button {
+                id: actionsBtn
+                visible: root.selectMode
+                enabled: root.selectedCount > 0
+                text: qsTr("Actions ▾")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeXs
+                implicitHeight: 28
+                ToolTip.text: root.selectedCount === 0
+                    ? qsTr("Tick at least one row")
+                    : qsTr("Run an action on %1 selected").arg(root.selectedCount)
+                ToolTip.visible: hovered
+                onClicked: actionsMenu.open()
+
+                Menu {
+                    id: actionsMenu
+                    y: -actionsMenu.height
+                    Menu {
+                        title: qsTr("Power")
+                        MenuItem {
+                            text: qsTr("Power on")
+                            // BatchAction enum values from batchrunner.h:
+                            //   PowerOn=1, PowerOffSoft=2, PowerOffHard=3,
+                            //   PowerReset=4, PowerCycle=5, SyncClock=6,
+                            //   ClearAuditLog=7, ClearEventLog=8.
+                            onTriggered: root.batchActionRequested(1, root.selectedRows)
+                        }
+                        MenuItem {
+                            text: qsTr("Power off (soft)")
+                            onTriggered: root.batchActionRequested(2, root.selectedRows)
+                        }
+                        MenuItem {
+                            text: qsTr("Power off (hard)")
+                            onTriggered: root.batchActionRequested(3, root.selectedRows)
+                        }
+                        MenuItem {
+                            text: qsTr("Reset")
+                            onTriggered: root.batchActionRequested(4, root.selectedRows)
+                        }
+                        MenuItem {
+                            text: qsTr("Power cycle")
+                            onTriggered: root.batchActionRequested(5, root.selectedRows)
+                        }
+                    }
+                    MenuItem {
+                        text: qsTr("Sync clock")
+                        onTriggered: root.batchActionRequested(6, root.selectedRows)
+                    }
+                    MenuItem {
+                        text: qsTr("Clear audit log")
+                        onTriggered: root.batchActionRequested(7, root.selectedRows)
+                    }
+                    MenuItem {
+                        text: qsTr("Clear event log")
+                        onTriggered: root.batchActionRequested(8, root.selectedRows)
+                    }
+                }
+            }
+
             Item { Layout.fillWidth: true }
 
             Text {
+                visible: root.selectMode
+                text: root.selectedCount === 1
+                      ? qsTr("1 selected")
+                      : qsTr("%1 selected").arg(root.selectedCount)
+                color: Colors.textMuted
+                font.family: Type.mono
+                font.pixelSize: Type.sizeXs
+            }
+
+            Text {
+                visible: !root.selectMode
                 text: list.count === 1
                       ? qsTr("1 machine")
                       : qsTr("%1 machines").arg(list.count)
