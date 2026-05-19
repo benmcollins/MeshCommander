@@ -100,9 +100,13 @@ Dialog {
                     readOnly: true
                     wrapMode: TextEdit.Wrap
                     selectByMouse: true
+                    // LICENSE.md is Markdown — render it with headings,
+                    // emphasis, and paragraph breaks instead of dumping
+                    // raw `#` and `*` characters at the user.
+                    textFormat: TextEdit.MarkdownText
                     text: AppInfo.licenseText
                     color: Colors.text
-                    font.family: Type.mono
+                    font.family: Type.sans
                     font.pixelSize: Type.sizeXs
                     background: null
                 }
