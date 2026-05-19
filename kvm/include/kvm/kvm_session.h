@@ -93,6 +93,12 @@ private:
     quint16 m_height = 0;
     int m_pendingRects = 0;
     InflateStream m_inflate;     ///< Persists across all RLE blocks.
+
+    /// Cached at `start()`. Compression is on by default;
+    /// `QUMESH_KVM_COMPRESSION=0` is the kill switch. When `true` the
+    /// handshake emits `KvmExtCmd(4, 1)` and AMT may send
+    /// zlib-compressed RLE blocks (decoded via `m_inflate`).
+    bool m_compressionEnabled = true;
 };
 
 } // namespace qumesh::kvm

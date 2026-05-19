@@ -6,9 +6,29 @@
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
 
+#include <QByteArray>
+#include <QLoggingCategory>
 #include <QMetaObject>
 
+Q_LOGGING_CATEGORY(lcKvmSession, "qumesh.kvm.session")
+
 namespace qumesh::kvm {
+
+namespace {
+
+/// Compression is on by default; `QUMESH_KVM_COMPRESSION` is a kill
+/// switch. Returns `false` only when the env var is explicitly set to
+/// `0` / `false` / `off` (case-insensitive). Anything else — including
+/// unset — leaves compression enabled. The variable will retire once
+/// the default has been stable across a release or two.
+bool readCompressionEnabled()
+{
+    if (!qEnvironmentVariableIsSet("QUMESH_KVM_COMPRESSION")) return true;
+    const QByteArray raw = qgetenv("QUMESH_KVM_COMPRESSION").trimmed().toLower();
+    return !(raw == "0" || raw == "false" || raw == "off");
+}
+
+} // namespace
 
 using qumesh::redir::RedirectionClient;
 
@@ -32,6 +52,11 @@ void KvmSession::start()
     // The RLE inflate stream's sliding window must be empty at the
     // start of every session.
     m_inflate.reset();
+    m_compressionEnabled = readCompressionEnabled();
+    qCInfo(lcKvmSession) << "KVM compression"
+                          << (m_compressionEnabled
+                                  ? "enabled (default)"
+                                  : "disabled via QUMESH_KVM_COMPRESSION=0");
     setState(State::Version);
 }
 
@@ -116,13 +141,15 @@ bool KvmSession::stepHandshake()
         // framebuffer renders black or scrambled.
         writeFrame(buildSetPixelFormat());
         writeFrame(buildSetEncodings());
-        // Match the legacy default: tell AMT to disable zlib on RLE
-        // blocks so every block uses the uncompressed-marker path. The
-        // alternative is a shared deflate stream that's brittle against
-        // packet loss and that our decoder currently doesn't handle for
-        // real firmware payloads. Older AMT versions silently ignore
-        // the frame (it looks like a ClientCutText).
-        writeFrame(buildKvmExtCmd(4, 0));
+        // KvmExtCmd 4 toggles zlib on RLE blocks. We enable it by
+        // default — the compressed path has been validated against
+        // real firmware and the bandwidth win on slow links is
+        // significant. `QUMESH_KVM_COMPRESSION=0` is a kill switch
+        // for any future hardware that misbehaves with compression
+        // on; the variable is intended to retire after a release or
+        // two. Older AMT versions silently ignore the frame either
+        // way — it looks like a ClientCutText.
+        writeFrame(buildKvmExtCmd(4, m_compressionEnabled ? 1 : 0));
         writeFrame(buildFramebufferUpdateRequest(false, 0, 0, m_width, m_height));
         setState(State::FrameLoop);
         return true;
