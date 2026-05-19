@@ -35,21 +35,29 @@ void SshTunnelHost::setConfig(const QVariantMap &cfg)
     }
 
     m_enabled = true;
+    m_jumpHost = cfg.value(QStringLiteral("host")).toString();
     if (m_session == nullptr) {
         m_session = new qumesh::ssh::SshSession(this);
         QObject::connect(m_session, &qumesh::ssh::SshSession::stateChanged, this,
                 [this](qumesh::ssh::SshSession::State s) {
+            // Status strings carry the jump host name when known so the
+            // UI can show "via jump.example.com" rather than a bare
+            // "via SSH" badge. Issue #245.
+            const QString h = m_jumpHost.isEmpty()
+                ? QStringLiteral("SSH")
+                : m_jumpHost;
             switch (s) {
             case qumesh::ssh::SshSession::Connecting:
-                m_status = QStringLiteral("Connecting…"); break;
+                m_status = QStringLiteral("Connecting to %1…").arg(h); break;
             case qumesh::ssh::SshSession::Authenticating:
-                m_status = QStringLiteral("Authenticating…"); break;
+                m_status = QStringLiteral("Authenticating to %1…").arg(h); break;
             case qumesh::ssh::SshSession::NeedsHostKeyTrust:
                 m_status = QStringLiteral("Awaiting host-key trust"); break;
             case qumesh::ssh::SshSession::Connected:
-                m_status = QStringLiteral("via SSH"); break;
+                m_status = QStringLiteral("via %1").arg(h); break;
             case qumesh::ssh::SshSession::Failed:
-                m_status = QStringLiteral("SSH failed: %1").arg(m_session->lastError());
+                m_status = QStringLiteral("SSH (%1) failed: %2")
+                               .arg(h, m_session->lastError());
                 break;
             case qumesh::ssh::SshSession::Disconnected:
                 m_status.clear(); break;
