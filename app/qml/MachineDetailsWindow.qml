@@ -329,25 +329,25 @@ AppWindow {
     // Sidebar items. The `id` keys must match the value used by each
     // Loader/StackLayout currentIndex below.
     readonly property var sections: [
-        { key: "overview",  label: qsTr("Overview"),       icon: "■" },
-        { key: "hardware",  label: qsTr("Hardware"),       icon: "▦" },
-        { key: "power",     label: qsTr("Power"),          icon: "⏻" },
-        { key: "network",   label: qsTr("Network"),        icon: "≋" },
-        { key: "wireless",  label: qsTr("Wireless"),       icon: "📶" },
-        { key: "time",      label: qsTr("Time"),           icon: "◷" },
-        { key: "remote",    label: qsTr("Remote access"),  icon: "▶" },
-        { key: "cira",      label: qsTr("CIRA"),           icon: "⤴" },
-        { key: "certs",     label: qsTr("Pinned trust"),   icon: "🔒" },
-        { key: "devcerts",  label: qsTr("Device certs"),   icon: "✦" },
-        { key: "events",    label: qsTr("Event log"),      icon: "≡" },
-        { key: "audit",     label: qsTr("Audit log"),      icon: "✓" },
-        { key: "users",     label: qsTr("User accounts"),  icon: "⌥" },
-        { key: "watchdogs", label: qsTr("Watchdogs"),      icon: "🐕" },
-        { key: "subs",      label: qsTr("Subscriptions"),  icon: "🔔" },
-        { key: "alarms",    label: qsTr("Wake alarms"),    icon: "⏰" },
-        { key: "wsman",     label: qsTr("WSMAN"),          icon: "⌬" },
-        { key: "sysdef",    label: qsTr("System Defense"), icon: "🛡" },
-        { key: "sessions",  label: qsTr("Sessions"),       icon: "⇄" },
+        { key: "overview",  label: qsTr("Overview"),       icon: "layout-dashboard" },
+        { key: "hardware",  label: qsTr("Hardware"),       icon: "cpu" },
+        { key: "power",     label: qsTr("Power"),          icon: "power" },
+        { key: "network",   label: qsTr("Network"),        icon: "network" },
+        { key: "wireless",  label: qsTr("Wireless"),       icon: "wifi" },
+        { key: "time",      label: qsTr("Time"),           icon: "clock" },
+        { key: "remote",    label: qsTr("Remote access"),  icon: "monitor" },
+        { key: "cira",      label: qsTr("CIRA"),           icon: "cloud-cog" },
+        { key: "certs",     label: qsTr("Pinned trust"),   icon: "lock" },
+        { key: "devcerts",  label: qsTr("Device certs"),   icon: "badge-check" },
+        { key: "events",    label: qsTr("Event log"),      icon: "scroll-text" },
+        { key: "audit",     label: qsTr("Audit log"),      icon: "clipboard-list" },
+        { key: "users",     label: qsTr("User accounts"),  icon: "users" },
+        { key: "watchdogs", label: qsTr("Watchdogs"),      icon: "dog" },
+        { key: "subs",      label: qsTr("Subscriptions"),  icon: "bell" },
+        { key: "alarms",    label: qsTr("Wake alarms"),    icon: "alarm-clock" },
+        { key: "wsman",     label: qsTr("WSMAN"),          icon: "terminal" },
+        { key: "sysdef",    label: qsTr("System Defense"), icon: "shield" },
+        { key: "sessions",  label: qsTr("Sessions"),       icon: "arrow-left-right" },
     ]
     property int currentSection: 0
 
@@ -536,11 +536,11 @@ AppWindow {
                             anchors.rightMargin: 14
                             spacing: 12
 
-                            Text {
-                                text: parent.parent.modelData.icon
-                                color: Colors.textMuted
-                                font.pixelSize: Type.sizeS
-                                Layout.preferredWidth: 14
+                            Icon {
+                                name: parent.parent.modelData.icon
+                                size: 16
+                                Layout.preferredWidth: 16
+                                Layout.preferredHeight: 16
                             }
                             Text {
                                 text: parent.parent.modelData.label

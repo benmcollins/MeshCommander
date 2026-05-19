@@ -38,10 +38,11 @@ Rectangle {
         anchors.centerIn: parent
         spacing: 6
 
-        Text {
-            text: "🔒"
-            color: Colors.on
-            font.pixelSize: Type.sizeS
+        Icon {
+            name: "lock"
+            size: 14
+            Layout.preferredWidth: 14
+            Layout.preferredHeight: 14
         }
         Text {
             text: qsTr("Pinned certificate verified")
