@@ -26,7 +26,6 @@
 #include <QtTest>
 
 #include <atomic>
-#include <cstdio>
 
 namespace {
 
@@ -74,6 +73,13 @@ void captureMessage(QtMsgType type, const QMessageLogContext &ctx,
         // resolution, not image-codec coverage.
         QRegularExpression(QStringLiteral(
             "Error decoding: qrc:/icons/.*\\.svg: Unsupported image format")),
+        // Windows + offscreen QPA looks for fonts at
+        // `<prefix>/lib/fonts/` at QGuiApplication construction. When
+        // we run from the build tree (not an installed Qt), the dir
+        // doesn't exist and QFontDatabase logs a one-shot warning.
+        // Doesn't affect anything the smoke test cares about. See #262.
+        QRegularExpression(QStringLiteral(
+            "QFontDatabase: Cannot find font directory")),
     };
 
     for (const auto &re : kAllowList) {
@@ -87,26 +93,6 @@ void captureMessage(QtMsgType type, const QMessageLogContext &ctx,
     auto &sink = warningSink();
     QMutexLocker lock(&sink.mutex);
     sink.messages.append(where + msg);
-}
-
-// #262 diagnostic. Windows CI reports the test as failed in ~0.4 s
-// with zero captured stdout/stderr; QtTest's own failure output channel
-// isn't reaching ctest. Write structured progress + sink dumps to a
-// file colocated with the exe (`test_qml_engine_loads.diag.log`); the
-// Windows Test step prints it on failure. Drop this once #262 is fixed.
-void diag(const char *stage)
-{
-    if (FILE *f = std::fopen("test_qml_engine_loads.diag.log", "a")) {
-        std::fprintf(f, "[diag] %s\n", stage);
-        std::fclose(f);
-    }
-    std::fflush(stdout);
-    std::fflush(stderr);
-}
-
-void diagAtExit()
-{
-    diag("atexit fired (process is about to exit cleanly)");
 }
 
 } // namespace
@@ -193,21 +179,6 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
         return QStringLiteral("Captured QtMsg output:\n  ")
             + sink.messages.join(QStringLiteral("\n  "));
     };
-    // #262: also mirror every captured warning into the diag log so
-    // we can see them on Windows where QtTest's own failure-output
-    // channel isn't reaching ctest. Drop with the rest of the diag
-    // scaffolding once the bug is understood.
-    auto mirrorSinkToDiag = [&]() {
-        auto &sink = warningSink();
-        QMutexLocker lock(&sink.mutex);
-        diag("--- begin captured QtMsgs ---");
-        for (const auto &m : sink.messages) {
-            const QByteArray utf8 = m.toUtf8();
-            diag(utf8.constData());
-        }
-        diag("--- end captured QtMsgs ---");
-    };
-
     QVERIFY2(!creationFailed.load(), qPrintable(dumpSink()));
     QCOMPARE(engine.rootObjects().size(), 1);
 
@@ -241,11 +212,6 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
                  .arg(dumpSink())));
     QVERIFY2(!creationFailed.load(), qPrintable(dumpSink()));
 
-    // Always mirror the captured warnings to the diag log (#262), even
-    // on success — gives us a baseline of what Windows produces vs the
-    // other platforms.
-    mirrorSinkToDiag();
-
     auto &sink = warningSink();
     QStringList captured;
     {
@@ -262,8 +228,6 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
 
 int main(int argc, char *argv[])
 {
-    std::atexit(&diagAtExit);
-    diag("entered main()");
     // Run headless on every platform regardless of whether the CI lane
     // sets QT_QPA_PLATFORM itself. Must happen before QGuiApplication.
     qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -271,9 +235,7 @@ int main(int argc, char *argv[])
     // surface — sometimes needed under offscreen, and never harmful
     // for a load-only smoke test.
     qputenv("QT_QUICK_BACKEND", "software");
-    diag("about to construct QGuiApplication");
     QGuiApplication app(argc, argv);
-    diag("QGuiApplication constructed");
     // Mirror main.cpp's QCoreApplication setup. Without these the QML
     // `Settings { category: "theme" }` in Main.qml fails to initialise
     // its underlying QSettings ("Failed to initialize QSettings
@@ -283,16 +245,8 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("Insynergy"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("insynergy.com"));
     QCoreApplication::setApplicationName(QStringLiteral("QuMesh"));
-    diag("about to QTest::qExec");
     TestQmlEngineLoads tc;
-    const int rc = QTest::qExec(&tc, argc, argv);
-    {
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "QTest::qExec returned rc=%d", rc);
-        diag(buf);
-    }
-    diag("returning from main()");
-    return rc;
+    return QTest::qExec(&tc, argc, argv);
 }
 
 #include "test_qml_engine_loads.moc"
