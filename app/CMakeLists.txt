@@ -93,6 +93,7 @@ qt_add_qml_module(qumesh
         qml/AdminPasswordDialog.qml
         qml/ConfirmDialog.qml
         qml/AboutDialog.qml
+        qml/LinuxUpdateDialog.qml
         qml/AddCertificateDialog.qml
         qml/TlsModeDialog.qml
         qml/CertDetailsDialog.qml
@@ -385,6 +386,16 @@ elseif(WIN32 AND QUMESH_AUTOUPDATE)
         @ONLY
     )
     target_include_directories(qumesh PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+elseif(UNIX AND QUMESH_AUTOUPDATE)
+    # Linux: appcast-reader-only — apt is the installer, so the
+    # backend just parses the same feed Sparkle/WinSparkle consume,
+    # compares versions, and emits signals for QML to render
+    # LinuxUpdateDialog. The feed URL is baked in as a macro so the
+    # same QUMESH_APPCAST_FEED_URL CACHE variable that drives Sparkle
+    # also drives this — no duplication.
+    target_sources(qumesh PRIVATE src/updater_linux.cpp)
+    target_compile_definitions(qumesh PRIVATE
+        QUMESH_APPCAST_FEED_URL=\"${QUMESH_APPCAST_FEED_URL}\")
 else()
     # Stub implementation; declares Updater as available()==false so QML
     # can `import` it unconditionally and hide its UI.

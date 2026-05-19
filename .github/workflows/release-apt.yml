@@ -1,0 +1,264 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+#
+# Publishes the .deb artifacts attached to the latest GitHub Release into
+# a static APT repo on the `gh-pages` branch. The repo layout follows the
+# debian archive convention so `apt update` parses it without any special
+# configuration on the client side:
+#
+#   /                        (GitHub Pages root, https://<owner>.github.io/<repo>/)
+#   ├── apt-pub.asc          (ASCII-armored GPG public key — users curl this)
+#   ├── pool/main/q/qumesh/  (the .deb files themselves)
+#   └── dists/stable/        (per-suite metadata)
+#       ├── InRelease        (clearsigned Release file — primary)
+#       ├── Release          (raw Release file)
+#       ├── Release.gpg      (detached signature — legacy fallback)
+#       └── main/binary-amd64/
+#           ├── Packages
+#           └── Packages.gz
+#
+# Triggered after the Release workflow completes successfully on a tag.
+# Skips silently if the APT_SIGNING_KEY secret isn't configured — keeps
+# tag releases working before the maintainer has finished the one-time
+# GPG-key setup documented in PACKAGING.md.
+
+name: APT repo publish
+
+on:
+  workflow_run:
+    workflows: ['Release']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish APT repo to gh-pages
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Skip when signing key not provisioned
+        id: gate
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          if [ -z "${APT_SIGNING_KEY:-}" ]; then
+            echo "::notice::APT_SIGNING_KEY secret is not set; skipping APT publish. See PACKAGING.md for the one-time setup."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install repo tools
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            apt-utils gnupg dpkg-dev curl
+
+      # Default-branch checkout to read branding/apt-pub.asc into the
+      # site root. We push to gh-pages later, separately.
+      - name: Checkout default branch (for apt-pub.asc)
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Checkout gh-pages branch (or seed an empty one)
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: pages
+        continue-on-error: true
+
+      - name: Seed gh-pages if missing
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -eux
+          if [ ! -d pages/.git ]; then
+            rm -rf pages
+            mkdir pages
+            cd pages
+            git init -b gh-pages
+            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          fi
+
+      - name: Determine release tag
+        id: rel
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eux
+          # workflow_dispatch: target the latest release.
+          # workflow_run on Release: use the tag the release was cut from.
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            TAG="${{ github.event.workflow_run.head_branch }}"
+          else
+            TAG=$(gh release view --repo "${{ github.repository }}" --json tagName --jq .tagName)
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download .deb assets from release
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eux
+          mkdir -p incoming
+          gh release download "${{ steps.rel.outputs.tag }}" \
+              --repo "${{ github.repository }}" \
+              --pattern '*.deb' \
+              --dir incoming
+          ls -la incoming/
+
+      - name: Import GPG signing key
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          set -eu
+          # The secret is a base64-encoded armored private key. Decode
+          # to a file (mktemp), pipe into `gpg --import`, then wipe.
+          KEY_FILE=$(mktemp)
+          printf '%s' "$APT_SIGNING_KEY" | base64 -d > "$KEY_FILE"
+          gpg --batch --import "$KEY_FILE"
+          rm -f "$KEY_FILE"
+          # Capture the long key id for later `--default-key` use.
+          KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
+          echo "GPG_KEYID=$KEYID" >> "$GITHUB_ENV"
+
+      - name: Stage incoming .debs into pool/
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -eux
+          mkdir -p pages/pool/main/q/qumesh
+          # Move (not copy) so re-running the workflow on the same tag
+          # doesn't double-add. Files with the same name overwrite,
+          # which is correct: a regenerated release with the same tag
+          # supersedes its prior asset.
+          cp incoming/*.deb pages/pool/main/q/qumesh/
+          ls -la pages/pool/main/q/qumesh/
+
+      - name: Generate Packages + Packages.gz
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: pages
+        run: |
+          set -eux
+          mkdir -p dists/stable/main/binary-amd64
+          # `apt-ftparchive packages` walks the pool, hashes each .deb,
+          # and emits a Packages file. Run from repo root so the paths
+          # inside Packages stay relative (which is what apt expects).
+          apt-ftparchive packages pool/main/q/qumesh > dists/stable/main/binary-amd64/Packages
+          gzip -kf9 dists/stable/main/binary-amd64/Packages
+          cat dists/stable/main/binary-amd64/Packages
+
+      - name: Generate Release + InRelease + Release.gpg
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: pages
+        run: |
+          set -eux
+          # apt-ftparchive needs an ad-hoc config to fill in the
+          # Origin/Suite/Codename/Components/Architectures headers it
+          # otherwise leaves blank. Pin the suite to `stable` (single
+          # moving target — see issue #254 discussion) and component to
+          # `main`, matching the standard third-party-repo convention.
+          cat > /tmp/apt-release.conf <<'CFG'
+          APT::FTPArchive::Release {
+            Origin "QuMesh";
+            Label "QuMesh";
+            Suite "stable";
+            Codename "stable";
+            Components "main";
+            Architectures "amd64";
+            Description "QuMesh APT repository (Debian / Ubuntu)";
+          };
+          CFG
+          apt-ftparchive -c /tmp/apt-release.conf release dists/stable \
+              > dists/stable/Release
+
+          # InRelease = clearsigned (inline signature) — apt's preferred
+          # form since stretch. Release.gpg = detached, kept for any
+          # client that still wants it. `--default-key` is the long
+          # key id we captured at import.
+          gpg --batch --yes --default-key "$GPG_KEYID" \
+              --clearsign --output dists/stable/InRelease \
+              dists/stable/Release
+          gpg --batch --yes --default-key "$GPG_KEYID" \
+              --armor --detach-sign --output dists/stable/Release.gpg \
+              dists/stable/Release
+
+      - name: Copy public key + index page into site root
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -eux
+          # apt-pub.asc lives in the repo (branding/apt-pub.asc) and is
+          # committed. Copy verbatim to the Pages root so users can
+          # `curl https://<owner>.github.io/<repo>/apt-pub.asc`.
+          cp src/branding/apt-pub.asc pages/apt-pub.asc
+
+          # A minimal index.html so the bare URL doesn't 404. Mirrors
+          # the install snippet from the release body / README so users
+          # who land here from a search engine have copy-paste at hand.
+          REPO_OWNER="${{ github.repository_owner }}"
+          REPO_NAME=$(basename "${{ github.repository }}")
+          cat > pages/index.html <<HTML
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>QuMesh APT repository</title>
+            <style>
+              body { font-family: system-ui, sans-serif; max-width: 720px;
+                     margin: 3rem auto; padding: 0 1rem; color: #1e293b; }
+              code, pre { font-family: ui-monospace, monospace;
+                          background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; }
+              pre { padding: 1rem; overflow-x: auto; }
+              a { color: #38bdf8; }
+            </style>
+          </head>
+          <body>
+            <h1>QuMesh APT repository</h1>
+            <p>Static APT repo for <a href="https://github.com/${{ github.repository }}">QuMesh</a>,
+               covering Debian 13 and Ubuntu 26.04 (amd64).</p>
+            <h2>Add the repository</h2>
+            <pre>curl -fsSL https://${REPO_OWNER}.github.io/${REPO_NAME}/apt-pub.asc | \\
+            sudo tee /etc/apt/keyrings/qumesh.asc > /dev/null
+          echo "deb [signed-by=/etc/apt/keyrings/qumesh.asc] \\
+            https://${REPO_OWNER}.github.io/${REPO_NAME} stable main" | \\
+            sudo tee /etc/apt/sources.list.d/qumesh.list
+          sudo apt update
+          sudo apt install qumesh</pre>
+            <p>The signing key fingerprint is published <a href="apt-pub.asc">here</a>;
+               metadata lives under <a href="dists/stable/">dists/stable/</a> and the
+               .deb pool under <a href="pool/main/q/qumesh/">pool/main/q/qumesh/</a>.</p>
+          </body>
+          </html>
+          HTML
+
+      - name: Commit and push to gh-pages
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: pages
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          set -eux
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # First-run case: no remote ref to push against. Push
+          # unconditionally and let the first commit create the branch.
+          if git remote get-url origin > /dev/null 2>&1; then
+            :
+          else
+            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          fi
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+            exit 0
+          fi
+          git commit -m "APT repo: publish $TAG"
+          git push -u "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:gh-pages

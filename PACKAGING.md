@@ -1,9 +1,17 @@
 # Packaging QuMesh
 
-QuMesh ships as a `.dmg` for macOS and an NSIS-based `.exe` installer for
-Windows. Both bundles are self-contained — Qt, the QML modules, and
-OpenSSL are inlined so the app runs on a fresh OS install without
-needing developer tooling.
+QuMesh ships as:
+
+- a `.dmg` on macOS,
+- an NSIS-based `.exe` installer on Windows,
+- a `.deb` for Debian 13 and Ubuntu 26.04, distributed both as a
+  release asset and through a signed APT repo on GitHub Pages.
+
+The macOS and Windows bundles are self-contained — Qt, the QML modules,
+and OpenSSL are inlined so the app runs on a fresh OS install without
+needing developer tooling. The Linux `.deb` instead `Depends:` on the
+distro-provided Qt 6 + libssh + OpenSSL, which keeps the package small
+and lets apt handle Qt-side upgrades for free.
 
 ## Cutting a release
 
@@ -25,12 +33,19 @@ cmake --build build
 cd build
 cpack -G DragNDrop      # macOS
 cpack -G NSIS           # Windows
+cpack -G DEB            # Linux
 ```
 
 The output lands in `build/`. Note: Homebrew Qt installs everything
 as symlinks back into `/opt/homebrew/Cellar`, so a locally built DMG
 will reference those paths and won't run on another machine. Use the
 CI artifact for actual distribution.
+
+On Linux the `.deb` is built against whatever Qt/libssh/libssl are
+installed in the local prefix — `dpkg-shlibdeps` resolves them at
+packaging time. To ship a Debian-13-compatible .deb, build inside a
+`debian:13` container (which is what CI does); building on Ubuntu
+26.04 produces a Ubuntu-26.04-compatible .deb.
 
 ## Signing and notarization
 
@@ -138,11 +153,76 @@ launch but the installer still works, and WinSparkle's *update*
 signature check is independent of Authenticode anyway. Wire this up
 later when a cert is acquired.
 
+### Linux side (appcast reader, no installer)
+
+The Linux build has no in-app installer — apt owns upgrades there. The
+"Updates" button still works: `app/src/updater_linux.cpp` fetches the
+same `appcast.xml`, parses it, and pops a small dialog
+(`qml/LinuxUpdateDialog.qml`) when a newer release is found. The
+dialog shows the release notes and offers two actions:
+
+- **Open Release Page** — Qt.openUrlExternally to the matching
+  `releases/tag/v...` URL.
+- **Copy `sudo apt update && sudo apt upgrade qumesh`** — the
+  one-liner that works when the user has the QuMesh APT repo added.
+
+No new keypair or signature work is needed here: TLS to github.com
+gates the appcast fetch, and apt's own GPG check (against `apt-pub.asc`)
+gates the actual upgrade. The Linux updater never installs anything.
+
 ### Disabling auto-update for a build
 
 Pass `-DQUMESH_AUTOUPDATE=OFF` at configure time. The Updater QML
 singleton then reports `available() === false`, so the in-app "Updates"
 button hides itself.
+
+## Linux APT repository (one-time setup)
+
+The release-apt.yml workflow publishes a signed APT repo to the
+`gh-pages` branch each time the `Release` workflow ships new `.deb`s.
+Before it can sign anything the maintainer has to provision a GPG
+keypair and a few repo settings:
+
+1. **Generate the signing keypair** (one time, on a trusted box):
+
+   ```
+   gpg --batch --quick-generate-key \
+       'QuMesh APT <ben@ironrocketsmc.org>' ed25519 sign 0
+   gpg --list-keys
+   ```
+
+2. **Export the public key into the repo:**
+
+   ```
+   gpg --armor --export <fingerprint> > branding/apt-pub.asc
+   ```
+
+   Commit it (overwriting the placeholder); users `curl` it from the
+   Pages site to populate `/etc/apt/keyrings/qumesh.asc`.
+
+3. **Export the private key and stash it as a secret:**
+
+   ```
+   gpg --armor --export-secret-keys <fingerprint> | base64 -w0
+   ```
+
+   Paste the output into the repo's **Settings → Secrets and variables
+   → Actions** → new secret named `APT_SIGNING_KEY`. The workflow
+   base64-decodes and imports it into an ephemeral GPG home for the
+   signing step, then exits.
+
+4. **Enable GitHub Pages** — Settings → Pages → Source: `Deploy from
+   a branch`, branch: `gh-pages`, folder: `/ (root)`. The first run
+   of the apt workflow seeds an empty `gh-pages` branch if it
+   doesn't exist yet.
+
+Until step 3 is done the apt workflow is a no-op — it logs a
+`::notice::` and skips. Releases continue to ship `.deb` assets on the
+Release page either way; only the apt-update-via-repo path is gated
+on the key. Replacing the keypair later requires bumping the
+`apt-pub.asc` users have already added, which means they'll see a
+`NO_PUBKEY` warning on the next `apt update` — pick a key length and
+identity you're happy to commit to.
 
 ## Translations
 
@@ -171,18 +251,25 @@ To add a new language:
 
 ## What the bundle contains
 
-- `QuMesh.app/Contents/MacOS/QuMesh` (or `QuMesh.exe`).
+- `QuMesh.app/Contents/MacOS/QuMesh` (macOS), `QuMesh.exe` (Windows),
+  or `/usr/bin/QuMesh-app` + a `/usr/bin/qumesh` symlink (Linux).
 - The Qt frameworks linked at build time, copied by `macdeployqt` /
-  `windeployqt` from the Qt install the build used.
+  `windeployqt` from the Qt install the build used. On Linux the
+  `.deb` instead `Depends:` on the system Qt — no inlining.
 - The QML modules QuMesh imports (`QtQuick`, `QtQuick.Controls.Basic`,
   `QtQuick.Layouts`, `QtQuick.Dialogs`, etc.), discovered via
-  `qmlimportscanner`.
+  `qmlimportscanner`. (Linux: pulled in via Qt 6 declarative-dev.)
 - `libcrypto-3-x64.dll` on Windows (Qt's deploy tool doesn't follow
   non-Qt DLL dependencies).
 - The bundled fonts (IBM Plex Sans, JetBrains Mono).
 - `LICENSE.rtf` — Apache 2.0 license text, rendered from the
   repo-root `LICENSE.md`. Lives at `QuMesh.app/Contents/Resources/`
-  inside the bundle and at the `.dmg` root next to the app.
+  inside the bundle and at the `.dmg` root next to the app. On
+  Linux the same source ships as `/usr/share/doc/qumesh/copyright`
+  per Debian policy.
+- Linux also installs `qumesh.desktop` (apps menu) and
+  `com.insynergy.QuMesh.metainfo.xml` (AppStream catalogue entry)
+  plus the hicolor icon set at 16/24/32/48/64/96/128/256/512 px.
 
 ## DMG mount-window layout (macOS)
 
