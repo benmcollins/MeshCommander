@@ -14,6 +14,7 @@
 #include "machinedetailscontroller.h"
 #include "migrationcontroller.h"
 #include "scannercontroller.h"
+#include "setupbincontroller.h"
 #include "solcontroller.h"
 #include "terminal/terminalscreen.h"
 #include "updater.h"
@@ -43,6 +44,7 @@ void registerQumeshQmlTypes(const QmlSingletonContext &ctx)
     qmlRegisterType<MachineDetailsController>(
         "QuMesh", 1, 0, "MachineDetailsController");
     qmlRegisterType<ScannerController>("QuMesh", 1, 0, "ScannerController");
+    qmlRegisterType<SetupBinController>("QuMesh", 1, 0, "SetupBinController");
 
     qmlRegisterUncreatableType<qumesh::terminal::TerminalScreen>(
         "QuMesh", 1, 0, "TerminalScreen",

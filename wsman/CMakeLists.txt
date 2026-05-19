@@ -6,10 +6,12 @@ qt_add_library(qumesh_wsman STATIC
     src/wsman_client.cpp
     src/operations.cpp
     src/local_amt_probe.cpp
+    src/setupbin.cpp
     include/wsman/soap_envelope.h
     include/wsman/wsman_client.h
     include/wsman/operations.h
     include/wsman/local_amt_probe.h
+    include/wsman/setupbin.h
 )
 
 target_include_directories(qumesh_wsman

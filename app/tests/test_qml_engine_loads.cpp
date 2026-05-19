@@ -212,6 +212,28 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
                  .arg(dumpSink())));
     QVERIFY2(!creationFailed.load(), qPrintable(dumpSink()));
 
+    // Same trick for the Setup.bin editor window: it's only constructed
+    // when the title-bar button is clicked, so the up-front pass doesn't
+    // exercise its delegate Components or controller bindings. Force it.
+    QObject *setupBinLoader =
+        root->findChild<QObject*>(QStringLiteral("setupBinLoader"));
+    QVERIFY2(setupBinLoader,
+             "Main.qml is expected to expose its Setup.bin editor Loader "
+             "as `objectName: \"setupBinLoader\"`. If the loader was "
+             "renamed or removed, update this test to drive whatever "
+             "replaces it — otherwise the smoke can no longer catch "
+             "SetupBinWindow regressions.");
+    setupBinLoader->setProperty("asynchronous", false);
+    setupBinLoader->setProperty("active", true);
+    QCoreApplication::processEvents();
+    const int setupBinStatus = setupBinLoader->property("status").toInt();
+    QVERIFY2(setupBinStatus == 1,
+             qPrintable(QStringLiteral(
+                 "setupBinLoader.status expected Ready (1), got %1. %2")
+                 .arg(setupBinStatus)
+                 .arg(dumpSink())));
+    QVERIFY2(!creationFailed.load(), qPrintable(dumpSink()));
+
     auto &sink = warningSink();
     QStringList captured;
     {
