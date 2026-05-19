@@ -46,6 +46,8 @@ qt_add_library(qumesh_appcore STATIC
     src/certmodel.h
     src/scannercontroller.cpp
     src/scannercontroller.h
+    src/setupbincontroller.cpp
+    src/setupbincontroller.h
     src/qml_registration.cpp
     src/qml_registration.h
 )
@@ -137,6 +139,7 @@ qt_add_qml_module(qumesh_appcore
         qml/MachineDetailsWindow.qml
         qml/CertificatesWindow.qml
         qml/CertTrustDialog.qml
+        qml/SetupBinWindow.qml
         qml/AccentButton.qml
         qml/AppMark.qml
         qml/AppWindow.qml

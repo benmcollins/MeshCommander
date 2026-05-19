@@ -12,6 +12,7 @@ Rectangle {
     id: root
 
     signal openCertificates()
+    signal openSetupBin()
     signal toggleTheme()
     signal openAbout()
 
@@ -90,6 +91,16 @@ Rectangle {
             font.pixelSize: Type.sizeXs
             font.letterSpacing: 1
             onClicked: root.openCertificates()
+        }
+
+        FlatButton {
+            text: qsTr("Setup.bin")
+            font.family: Type.sans
+            font.pixelSize: Type.sizeXs
+            font.letterSpacing: 1
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("USB-key provisioning file editor")
+            onClicked: root.openSetupBin()
         }
 
         // Hidden when no auto-update backend is wired in (non-Apple

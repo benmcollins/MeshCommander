@@ -64,6 +64,7 @@ ApplicationWindow {
         TitleBar {
             Layout.fillWidth: true
             onOpenCertificates: certificatesLoader.launch()
+            onOpenSetupBin: setupBinLoader.launch()
             onToggleTheme: {
                 Colors.dark = !Colors.dark;
                 themeSettings.dark = Colors.dark;
@@ -213,6 +214,29 @@ ApplicationWindow {
 
         sourceComponent: CertificatesWindow {
             onClosing: certificatesLoader.active = false
+        }
+    }
+
+    Loader {
+        id: setupBinLoader
+        // Exposed by name so `test_qml_engine_loads` can flip `active`
+        // to force SetupBinWindow to construct under the smoke test —
+        // the type-aware editor Components inside its delegates only
+        // load when their owning row exists, so we want that path
+        // exercised at build time.
+        objectName: "setupBinLoader"
+        active: false
+        asynchronous: true
+
+        function launch() {
+            active = false;
+            active = true;
+        }
+
+        onStatusChanged: if (status === Loader.Ready && item !== null) item.visible = true
+
+        sourceComponent: SetupBinWindow {
+            onClosing: setupBinLoader.active = false
         }
     }
 
