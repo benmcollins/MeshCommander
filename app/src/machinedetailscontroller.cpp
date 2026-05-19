@@ -496,6 +496,8 @@ void MachineDetailsController::refreshOverview()
                 m_capPlatformErase      = r.platformErase;
                 m_capPlatformEraseMask  = r.platformEraseMask;
                 m_capForceUefiHttpsBoot = r.forceUefiHttpsBoot;
+                m_capForceWinReBoot      = r.forceWinReBoot;
+                m_capForceUefiLocalPbaBoot = r.forceUefiLocalPbaBoot;
 
                 // Keyed snapshot for the read-only Boot Capabilities
                 // pane (#172). The QML iterates the map directly so the
@@ -3221,6 +3223,230 @@ void MachineDetailsController::changePowerState(int code)
             // Give the firmware ~1 s to settle before re-reading the
             // current state. Keeping it synchronous (no QTimer) — the
             // user can hit Refresh if they want sooner.
+            refreshPower();
+        });
+}
+
+namespace {
+
+// Strip the "Intel(r) AMT: " prefix from a boot-source InstanceID so
+// it slots into `BootActionParams::amtBootSource`, which the chain's
+// `buildChangeBootOrderEnvelope` re-prepends.
+QString trimAmtPrefix(const QString &instanceId)
+{
+    constexpr QLatin1String kPrefix("Intel(r) AMT: ");
+    if (instanceId.startsWith(kPrefix))
+        return instanceId.mid(kPrefix.size());
+    return instanceId;
+}
+
+} // namespace
+
+void MachineDetailsController::bootToWinRE(bool reset)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    setLastError({});
+    const int code = reset ? 10 : 2;
+    emit powerChangeRequested(code);
+    incInflight();
+
+    // Phase 1: enumerate CIM_BootSourceSetting and locate the row
+    // whose BIOSBootString contains "WinRe" — that's the firmware-
+    // registered Windows Recovery boot option. Matches Intel MPS's
+    // `getWinReBootSource` heuristic. If the BIOS hasn't registered
+    // one, we surface an error rather than silently picking a wrong
+    // row.
+    qumesh::wsman::enumerateBootSourceSettings(m_client,
+        [this, code](qumesh::wsman::BootSourceSettingsResult res) {
+            if (!res.ok) {
+                decInflight();
+                setLastError(QStringLiteral(
+                    "Boot to WinRE: enumerate boot sources: %1").arg(res.error));
+                emit powerChangeCompleted(code, false, lastError());
+                return;
+            }
+            const qumesh::wsman::BootSourceSetting *winre = nullptr;
+            for (const auto &s : res.sources) {
+                if (s.biosBootString.contains(
+                        QStringLiteral("WinRe"), Qt::CaseInsensitive)
+                    && s.instanceId.startsWith(QStringLiteral(
+                        "Intel(r) AMT: Force OCR UEFI Boot Option"))) {
+                    winre = &s;
+                    break;
+                }
+            }
+            if (winre == nullptr) {
+                decInflight();
+                setLastError(QStringLiteral(
+                    "Boot to WinRE: BIOS hasn't registered a Windows Recovery boot option."));
+                emit powerChangeCompleted(code, false, lastError());
+                return;
+            }
+
+            int tlvCount = 0;
+            const QByteArray tlv = qumesh::wsman::buildOcrPbaBootTlv(
+                winre->bootString, &tlvCount);
+
+            qumesh::wsman::BootActionParams p;
+            p.targetPowerState = code;
+            p.amtBootSource = trimAmtPrefix(winre->instanceId);
+            p.oneClickRecovery = true;
+            p.ocrTlvBase64 = QString::fromLatin1(tlv.toBase64());
+            p.ocrTlvCount = tlvCount;
+
+            qumesh::wsman::performBootAction(m_client, p,
+                [this, code](qumesh::wsman::InvokeResult r) {
+                    decInflight();
+                    if (!r.ok) {
+                        setLastError(QStringLiteral("Boot to WinRE: %1").arg(r.error));
+                        emit powerChangeCompleted(code, false, r.error);
+                        return;
+                    }
+                    emit powerChangeCompleted(code, true, QString());
+                    refreshPower();
+                });
+        });
+}
+
+void MachineDetailsController::bootToLocalPBA(bool reset, int pbaIndex)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    if (pbaIndex < 1 || pbaIndex > 10) {
+        setLastError(QStringLiteral("Boot to PBA: pbaIndex must be 1..10."));
+        emit powerChangeCompleted(0, false, lastError());
+        return;
+    }
+    setLastError({});
+    const int code = reset ? 10 : 2;
+    emit powerChangeRequested(code);
+    incInflight();
+
+    qumesh::wsman::enumerateBootSourceSettings(m_client,
+        [this, code, pbaIndex](qumesh::wsman::BootSourceSettingsResult res) {
+            if (!res.ok) {
+                decInflight();
+                setLastError(QStringLiteral(
+                    "Boot to PBA: enumerate boot sources: %1").arg(res.error));
+                emit powerChangeCompleted(code, false, lastError());
+                return;
+            }
+            // Collect every Force OCR UEFI Boot Option row in
+            // InstanceID order. The Nth match is the operator's
+            // "PBA #N" pick — same indexing convention Intel's MPS
+            // uses via bootPath strings.
+            QList<const qumesh::wsman::BootSourceSetting *> pbas;
+            for (const auto &s : res.sources) {
+                if (s.instanceId.startsWith(QStringLiteral(
+                        "Intel(r) AMT: Force OCR UEFI Boot Option"))) {
+                    pbas.append(&s);
+                }
+            }
+            std::sort(pbas.begin(), pbas.end(),
+                      [](const qumesh::wsman::BootSourceSetting *a,
+                         const qumesh::wsman::BootSourceSetting *b) {
+                          return a->instanceId < b->instanceId;
+                      });
+            if (pbaIndex > pbas.size()) {
+                decInflight();
+                setLastError(QStringLiteral(
+                    "Boot to PBA: only %1 PBA boot options registered.")
+                    .arg(pbas.size()));
+                emit powerChangeCompleted(code, false, lastError());
+                return;
+            }
+            const auto *pba = pbas.at(pbaIndex - 1);
+
+            int tlvCount = 0;
+            const QByteArray tlv = qumesh::wsman::buildOcrPbaBootTlv(
+                pba->bootString, &tlvCount);
+
+            qumesh::wsman::BootActionParams p;
+            p.targetPowerState = code;
+            p.amtBootSource = trimAmtPrefix(pba->instanceId);
+            p.oneClickRecovery = true;
+            p.ocrTlvBase64 = QString::fromLatin1(tlv.toBase64());
+            p.ocrTlvCount = tlvCount;
+
+            qumesh::wsman::performBootAction(m_client, p,
+                [this, code](qumesh::wsman::InvokeResult r) {
+                    decInflight();
+                    if (!r.ok) {
+                        setLastError(QStringLiteral("Boot to PBA: %1").arg(r.error));
+                        emit powerChangeCompleted(code, false, r.error);
+                        return;
+                    }
+                    emit powerChangeCompleted(code, true, QString());
+                    refreshPower();
+                });
+        });
+}
+
+void MachineDetailsController::bootToOcrHttpsUrl(bool reset,
+                                                 const QString &url,
+                                                 const QString &hashAlg,
+                                                 const QString &hashHex,
+                                                 const QString &pinnedServerCertHashAlg,
+                                                 const QString &pinnedServerCertHashHex,
+                                                 const QString &username,
+                                                 const QString &password)
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        emit powerChangeCompleted(0, false, QStringLiteral("Host is empty"));
+        return;
+    }
+    if (!url.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive)) {
+        setLastError(QStringLiteral("Boot to OCR HTTPS: URL must start with https://"));
+        emit powerChangeCompleted(0, false, lastError());
+        return;
+    }
+    setLastError({});
+    const int code = reset ? 10 : 2;
+    emit powerChangeRequested(code);
+    incInflight();
+
+    // Decode the hex digests. `QByteArray::fromHex` is tolerant of
+    // whitespace + colon separators so operators can paste any
+    // standard digest format. Empty input → empty output, which the
+    // TLV builder treats as "skip this entry".
+    const QByteArray imageHash = QByteArray::fromHex(hashHex.toLatin1());
+    const QByteArray pinnedCertHash =
+        QByteArray::fromHex(pinnedServerCertHashHex.toLatin1());
+
+    int tlvCount = 0;
+    const QByteArray tlv = qumesh::wsman::buildOcrHttpsBootPinnedTlv(
+        url, hashAlg, imageHash,
+        pinnedServerCertHashAlg, pinnedCertHash,
+        username, password, &tlvCount);
+
+    qumesh::wsman::BootActionParams p;
+    p.targetPowerState = code;
+    // Same boot source InstanceID as the existing UEFI HTTPS Boot —
+    // the OCR-vs-plain HTTPS Boot distinction is encoded in the TLV
+    // payload (image-hash pinning, server-cert pinning), not the
+    // boot source name.
+    p.amtBootSource = QStringLiteral("Force OCR UEFI HTTPS Boot");
+    p.oneClickRecovery = true;
+    p.ocrTlvBase64 = QString::fromLatin1(tlv.toBase64());
+    p.ocrTlvCount = tlvCount;
+
+    qumesh::wsman::performBootAction(m_client, p,
+        [this, code](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(QStringLiteral("Boot to OCR HTTPS: %1").arg(r.error));
+                emit powerChangeCompleted(code, false, r.error);
+                return;
+            }
+            emit powerChangeCompleted(code, true, QString());
             refreshPower();
         });
 }

@@ -130,6 +130,24 @@ AppWindow {
         }
     }
 
+    OcrPrompt {
+        id: ocrPrompt
+        canWinRE: controller.capForceWinReBoot
+        canLocalPBA: controller.capForceUefiLocalPbaBoot
+        canHttps: controller.capForceUefiHttpsBoot
+        onConfirmWinRE: function(reset) {
+            controller.bootToWinRE(reset);
+        }
+        onConfirmLocalPBA: function(reset, idx) {
+            controller.bootToLocalPBA(reset, idx);
+        }
+        onConfirmHttps: function(reset, url, hashAlg, hashHex,
+                                  pinAlg, pinHex, user, pass) {
+            controller.bootToOcrHttpsUrl(reset, url, hashAlg, hashHex,
+                                          pinAlg, pinHex, user, pass);
+        }
+    }
+
     PowerPolicyDialog {
         id: powerPolicyDialog
         controller: controller
@@ -1477,6 +1495,34 @@ AppWindow {
                                         height: visible ? implicitHeight : 0
                                         text: qsTr("Reset to HTTPS URL…")
                                         onTriggered: httpsBootPrompt.openFor(true)
+                                    }
+
+                                    // One-Click Recovery (#170). Single
+                                    // entry point — the prompt picks
+                                    // which of WinRE / Local PBA /
+                                    // HTTPS-with-pinning to fire based
+                                    // on the per-flavor capability bits.
+                                    MenuSeparator {
+                                        visible: controller.capForceWinReBoot
+                                              || controller.capForceUefiLocalPbaBoot
+                                              || controller.capForceUefiHttpsBoot
+                                        height: visible ? implicitHeight : 0
+                                    }
+                                    MenuItem {
+                                        visible: controller.capForceWinReBoot
+                                              || controller.capForceUefiLocalPbaBoot
+                                              || controller.capForceUefiHttpsBoot
+                                        height: visible ? implicitHeight : 0
+                                        text: qsTr("Power on to recovery…")
+                                        onTriggered: ocrPrompt.openFor(false)
+                                    }
+                                    MenuItem {
+                                        visible: controller.capForceWinReBoot
+                                              || controller.capForceUefiLocalPbaBoot
+                                              || controller.capForceUefiHttpsBoot
+                                        height: visible ? implicitHeight : 0
+                                        text: qsTr("Reset to recovery…")
+                                        onTriggered: ocrPrompt.openFor(true)
                                     }
                                 }
                             }

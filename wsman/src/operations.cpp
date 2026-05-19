@@ -99,6 +99,10 @@ constexpr char kBootCapabilitiesResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_BootCapabilities";
 
+constexpr char kCimBootSourceSettingResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/"
+    "CIM_BootSourceSetting";
+
 constexpr char kMessageLogResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_MessageLog";
@@ -611,6 +615,129 @@ QByteArray buildHttpsBootUrlTlv(const QString &url, int *tlvCount)
     return blob;
 }
 
+QByteArray buildOcrPbaBootTlv(const QString &bootString, int *tlvCount)
+{
+    constexpr quint16 kVendorIntel = 0x8086;
+    int count = 0;
+    QByteArray blob;
+
+    // Type 2: the firmware-registered BootString for the chosen PBA /
+    // WinRE row. Type 3: its byte length as a little-endian u16.
+    const QByteArray bs = bootString.toUtf8();
+    appendTlv(blob, kVendorIntel,
+              static_cast<quint16>(OcrTlvType::EfiFileDevicePath), bs);
+    ++count;
+
+    QByteArray lenBytes(2, '\0');
+    const quint16 len16 = static_cast<quint16>(bs.size());
+    lenBytes[0] = char(len16 & 0xFF);
+    lenBytes[1] = char((len16 >> 8) & 0xFF);
+    appendTlv(blob, kVendorIntel,
+              static_cast<quint16>(OcrTlvType::EfiDevicePathLen), lenBytes);
+    ++count;
+
+    if (tlvCount != nullptr) *tlvCount = count;
+    return blob;
+}
+
+namespace {
+
+// Map "sha256" / "sha384" / "sha512" to the matching OCR boot-image
+// TLV type. The HTTPS-pinned builder uses this twice — once for the
+// image hash, once for the server-cert hash (which is a different
+// type number but the same algorithm dispatch).
+quint16 ocrImageHashType(const QString &alg)
+{
+    const QString a = alg.toLower();
+    if (a == QStringLiteral("sha256"))
+        return static_cast<quint16>(OcrTlvType::BootImageHashSha256);
+    if (a == QStringLiteral("sha384"))
+        return static_cast<quint16>(OcrTlvType::BootImageHashSha384);
+    if (a == QStringLiteral("sha512"))
+        return static_cast<quint16>(OcrTlvType::BootImageHashSha512);
+    return 0;
+}
+
+quint16 ocrServerCertHashType(const QString &alg)
+{
+    const QString a = alg.toLower();
+    if (a == QStringLiteral("sha256"))
+        return static_cast<quint16>(OcrTlvType::HttpsServerCertHashSha256);
+    if (a == QStringLiteral("sha384"))
+        return static_cast<quint16>(OcrTlvType::HttpsServerCertHashSha384);
+    if (a == QStringLiteral("sha512"))
+        return static_cast<quint16>(OcrTlvType::HttpsServerCertHashSha512);
+    return 0;
+}
+
+} // namespace
+
+QByteArray buildOcrHttpsBootPinnedTlv(
+    const QString &url,
+    const QString &hashAlg,
+    const QByteArray &imageHash,
+    const QString &pinnedServerCertHashAlg,
+    const QByteArray &pinnedServerCertHash,
+    const QString &username,
+    const QString &password,
+    int *tlvCount)
+{
+    constexpr quint16 kVendorIntel = 0x8086;
+    int count = 0;
+    QByteArray blob;
+
+    appendTlv(blob, kVendorIntel,
+              static_cast<quint16>(OcrTlvType::EfiNetworkDevicePath),
+              url.toUtf8());
+    ++count;
+
+    // Boot image hash pin (optional). Maps the alg name onto type
+    // 4/5/6. Skip if alg is empty or unknown.
+    if (!hashAlg.isEmpty() && !imageHash.isEmpty()) {
+        const quint16 t = ocrImageHashType(hashAlg);
+        if (t != 0) {
+            appendTlv(blob, kVendorIntel, t, imageHash);
+            ++count;
+        }
+    }
+
+    // Sync Root CA flag. Always set to 1 — this matches the existing
+    // HTTPS-boot path and Intel's MPS reference, and lets AMT trust
+    // the server cert via its existing chain when no explicit pin is
+    // supplied.
+    QByteArray syncOne; syncOne.append(char(0x01));
+    appendTlv(blob, kVendorIntel,
+              static_cast<quint16>(OcrTlvType::HttpsCertSyncRootCa), syncOne);
+    ++count;
+
+    // Server cert hash pin (optional).
+    if (!pinnedServerCertHashAlg.isEmpty()
+        && !pinnedServerCertHash.isEmpty()) {
+        const quint16 t = ocrServerCertHashType(pinnedServerCertHashAlg);
+        if (t != 0) {
+            appendTlv(blob, kVendorIntel, t, pinnedServerCertHash);
+            ++count;
+        }
+    }
+
+    // HTTPS basic-auth credentials (optional).
+    if (!username.isEmpty()) {
+        appendTlv(blob, kVendorIntel,
+                  static_cast<quint16>(OcrTlvType::HttpsUserName),
+                  username.toUtf8());
+        ++count;
+    }
+    if (!password.isEmpty()) {
+        appendTlv(blob, kVendorIntel,
+                  static_cast<quint16>(OcrTlvType::HttpsPassword),
+                  password.toUtf8());
+        ++count;
+    }
+
+    if (tlvCount != nullptr) *tlvCount = count;
+    return blob;
+}
+
 QByteArray buildPlatformEraseTlv(quint32 flags, const QString &psid,
                                   const QString &ssdPassword, int *tlvCount)
 {
@@ -692,6 +819,44 @@ void getBootCapabilities(WsmanClient *client,
             r.ok = true;
         },
         std::move(callback));
+}
+
+void enumerateBootSourceSettings(WsmanClient *client,
+                                  std::function<void(BootSourceSettingsResult)> callback)
+{
+    auto cb = std::make_shared<std::function<void(BootSourceSettingsResult)>>(
+        std::move(callback));
+    if (client == nullptr) {
+        BootSourceSettingsResult r;
+        r.error = QStringLiteral("client is null");
+        (*cb)(std::move(r));
+        return;
+    }
+
+    enumerateAll(client, kCimBootSourceSettingResource,
+        [cb](QList<QByteArray> items, QString error) {
+            BootSourceSettingsResult res;
+            if (!error.isEmpty()) {
+                res.error = std::move(error);
+                (*cb)(std::move(res));
+                return;
+            }
+            res.sources.reserve(items.size());
+            for (const QByteArray &item : items) {
+                BootSourceSetting s;
+                // Pull the scalars by local name. `findScalar` walks
+                // any nested element, but the boot-source rows are flat
+                // so this is a direct lookup.
+                s.instanceId           = findScalar(item, QStringLiteral("InstanceID"));
+                s.elementName          = findScalar(item, QStringLiteral("ElementName"));
+                s.bootString           = findScalar(item, QStringLiteral("BootString"));
+                s.biosBootString       = findScalar(item, QStringLiteral("BIOSBootString"));
+                s.structuredBootString = findScalar(item, QStringLiteral("StructuredBootString"));
+                if (!s.instanceId.isEmpty()) res.sources.append(s);
+            }
+            res.ok = true;
+            (*cb)(std::move(res));
+        });
 }
 
 void getSetupAndConfiguration(WsmanClient *client,
@@ -1938,6 +2103,17 @@ void runPerformBootAction(WsmanClient *client, const BootActionParams &p,
                          QString::number(httpsTlvCount));
             // BootMediaIndex must be 0 for OCR — anything else makes
             // AMT prefer the legacy CD-ROM order over the URL boot.
+            props.insert(QStringLiteral("BootMediaIndex"), QStringLiteral("0"));
+        }
+
+        // One-Click Recovery (#170). The caller already built the TLV
+        // and set `amtBootSource` to the matching "Force OCR UEFI ..."
+        // row; we just attach the bytes to the Put. BootMediaIndex is
+        // 0 for the same reason as the HTTPS-Boot branch.
+        if (p.oneClickRecovery && !p.ocrTlvBase64.isEmpty()) {
+            props.insert(QStringLiteral("UefiBootParametersArray"), p.ocrTlvBase64);
+            props.insert(QStringLiteral("UefiBootNumberOfParams"),
+                         QString::number(p.ocrTlvCount));
             props.insert(QStringLiteral("BootMediaIndex"), QStringLiteral("0"));
         }
 
