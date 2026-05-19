@@ -1,0 +1,225 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+
+#include "appinfo.h"
+#include "certmodel.h"
+#include "computermodel.h"
+#include "configstore.h"
+#include "filename_formatter.h"
+#include "migrationcontroller.h"
+#include "qml_registration.h"
+#include "updater.h"
+#include "wsman/local_amt_probe.h"
+
+#include <QDir>
+#include <QGuiApplication>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QObject>
+#include <QQmlApplicationEngine>
+#include <QRegularExpression>
+#include <QScopeGuard>
+#include <QStandardPaths>
+#include <QString>
+#include <QStringList>
+#include <QTemporaryDir>
+#include <QtTest>
+
+#include <atomic>
+
+namespace {
+
+// Captured-warning sink driven by qInstallMessageHandler. Static so the
+// raw C callback can reach it. The test thread is the only writer (no
+// concurrent QML loading), so a plain QStringList behind a mutex is
+// fine.
+struct WarningSink
+{
+    QMutex mutex;
+    QStringList messages;
+};
+
+WarningSink &warningSink()
+{
+    static WarningSink s;
+    return s;
+}
+
+void captureMessage(QtMsgType type, const QMessageLogContext &ctx,
+                    const QString &msg)
+{
+    // Only treat the three escalating levels as failures. Qt's debug /
+    // info logs are routinely emitted by the engine on offscreen
+    // (font fallback, layout chatter) and aren't bug signals.
+    if (type != QtWarningMsg && type != QtCriticalMsg && type != QtFatalMsg)
+        return;
+
+    // Allow-list: regexes that match known-OK warnings the offscreen
+    // QPA / Qt's own QML modules emit even on a clean run. Add entries
+    // only when CI surfaces them, and document why each one is benign.
+    static const QList<QRegularExpression> kAllowList{
+        // Qt 6 emits a one-shot informational warning the first time
+        // QFontDatabase resolves an alias to a missing family ("Sans
+        // Serif"). The offscreen platform ships no system fonts, so
+        // this fires regardless of what our QML asks for. Not a bug
+        // signal from #251's perspective — drop it.
+        QRegularExpression(QStringLiteral(
+            "Populating font family aliases took.*\"Sans Serif\"")),
+    };
+
+    for (const auto &re : kAllowList) {
+        if (re.match(msg).hasMatch())
+            return;
+    }
+
+    QString where;
+    if (ctx.file)
+        where = QStringLiteral("%1:%2 ").arg(ctx.file).arg(ctx.line);
+    auto &sink = warningSink();
+    QMutexLocker lock(&sink.mutex);
+    sink.messages.append(where + msg);
+}
+
+} // namespace
+
+class TestQmlEngineLoads : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void initTestCase();
+    void mainQmlLoadsWithoutWarnings();
+};
+
+void TestQmlEngineLoads::initTestCase()
+{
+    // Make AppDataLocation point at a sandboxed sub-tree so the
+    // CertModel's `<configDir>/certificates.json` lookup in main() (and
+    // any QStandardPaths the QML touches at construction time) can't
+    // see or write the real user's QuMesh data.
+    QStandardPaths::setTestModeEnabled(true);
+}
+
+void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
+{
+    // Install the capture handler before constructing the engine so we
+    // catch parse / type-resolution / property-assignment messages from
+    // `engine.loadFromModule` itself.
+    QtMessageHandler previous = qInstallMessageHandler(&captureMessage);
+    auto restore = qScopeGuard([previous]{
+        qInstallMessageHandler(previous);
+    });
+
+    // Mirror `main.cpp`'s singleton wiring exactly. If main grows new
+    // singletons, the `QmlSingletonContext` struct gets a new field and
+    // this list updates in lock-step — no copy-paste table to drift.
+    qumesh::config::ConfigStore configStore;
+
+    qumesh::app::MigrationController migrationController;
+    migrationController.setStore(&configStore);
+    // Don't call checkAndMaybeMigrate(): it would scan the legacy
+    // localStorage on disk, which is exactly the kind of side effect
+    // setTestModeEnabled is here to neutralise.
+
+    qumesh::model::ComputerModel computerModel;
+    computerModel.setStore(&configStore);
+
+    qumesh::app::CertModel certModel;
+    QTemporaryDir certDir;
+    QVERIFY(certDir.isValid());
+    certModel.setStorePath(QDir(certDir.path())
+                           .filePath(QStringLiteral("certificates.json")));
+
+    qumesh::app::Updater updater; // stub linked into this test target
+    qumesh::wsman::LocalAmtProbe localAmtProbe; // not started — would open sockets
+    qumesh::app::FilenameFormatter filenameFormatter;
+    qumesh::app::AppInfo appInfo;
+
+    qumesh::app::registerQumeshQmlTypes({
+        .updater              = &updater,
+        .computerModel        = &computerModel,
+        .localAmtProbe        = &localAmtProbe,
+        .migrationController  = &migrationController,
+        .certModel            = &certModel,
+        .filenameFormatter    = &filenameFormatter,
+        .appInfo              = &appInfo,
+    });
+
+    std::atomic<bool> creationFailed{false};
+    QQmlApplicationEngine engine;
+    QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
+                     this, [&creationFailed](const QUrl &url) {
+        creationFailed.store(true);
+        qWarning() << "objectCreationFailed:" << url;
+    });
+
+    engine.loadFromModule("QuMesh", "Main");
+    QCoreApplication::processEvents();
+
+    auto dumpSink = [&]() -> QString {
+        auto &sink = warningSink();
+        QMutexLocker lock(&sink.mutex);
+        if (sink.messages.isEmpty())
+            return QStringLiteral("(no QtMsg output captured)");
+        return QStringLiteral("Captured QtMsg output:\n  ")
+            + sink.messages.join(QStringLiteral("\n  "));
+    };
+
+    QVERIFY2(!creationFailed.load(), qPrintable(dumpSink()));
+    QCOMPARE(engine.rootObjects().size(), 1);
+
+    // `MachineDetailsWindow` is reachable only through a Loader with
+    // `active: false` at startup (see `Main.qml`), so the up-front load
+    // pass above doesn't construct it. Force the Loader active so the
+    // smoke test exercises Icon, Section, the cert/wireless/CIRA edit
+    // dialogs, and everything else the per-machine window pulls in —
+    // which is where the implicitHeight regression behind #251 lived.
+    QObject *root = engine.rootObjects().first();
+    QObject *loader = root->findChild<QObject*>(QStringLiteral("detailsLoader"));
+    QVERIFY2(loader,
+             "Main.qml is expected to expose its per-machine details "
+             "Loader as `objectName: \"detailsLoader\"`. If the loader "
+             "was renamed or removed, update this test to drive whatever "
+             "replaces it — otherwise the smoke can no longer catch "
+             "MachineDetailsWindow regressions.");
+    // The production Loader uses `asynchronous: true` for UI snap, but
+    // that turns instantiation into an incremental main-thread job. Flip
+    // it sync for the test so a single processEvents drives the load to
+    // completion, instead of polling on Loader.status with a timeout.
+    loader->setProperty("asynchronous", false);
+    loader->setProperty("active", true);
+    QCoreApplication::processEvents();
+    // QML Loader status: Null=0, Ready=1, Loading=2, Error=3.
+    const int loaderStatus = loader->property("status").toInt();
+    QVERIFY2(loaderStatus == 1,
+             qPrintable(QStringLiteral(
+                 "detailsLoader.status expected Ready (1), got %1. %2")
+                 .arg(loaderStatus)
+                 .arg(dumpSink())));
+    QVERIFY2(!creationFailed.load(), qPrintable(dumpSink()));
+
+    auto &sink = warningSink();
+    QStringList captured;
+    {
+        QMutexLocker lock(&sink.mutex);
+        captured = sink.messages;
+    }
+    if (!captured.isEmpty()) {
+        QFAIL(qPrintable(QStringLiteral(
+            "Loading Main.qml produced %1 warning(s):\n  %2")
+            .arg(captured.size())
+            .arg(captured.join(QStringLiteral("\n  ")))));
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    // Run headless on every platform regardless of whether the CI lane
+    // sets QT_QPA_PLATFORM itself. Must happen before QGuiApplication.
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QGuiApplication app(argc, argv);
+    TestQmlEngineLoads tc;
+    return QTest::qExec(&tc, argc, argv);
+}
+
+#include "test_qml_engine_loads.moc"

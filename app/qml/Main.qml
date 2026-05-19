@@ -218,6 +218,11 @@ ApplicationWindow {
 
     Loader {
         id: detailsLoader
+        // Exposed by name so `test_qml_engine_loads` can flip `active`
+        // to force MachineDetailsWindow to construct under the smoke
+        // test — that's where the Icon-style regression class (#251)
+        // actually lives.
+        objectName: "detailsLoader"
         active: false
         asynchronous: true
         property int targetRow: -1

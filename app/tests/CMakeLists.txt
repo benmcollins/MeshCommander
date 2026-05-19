@@ -98,6 +98,41 @@ target_link_libraries(test_filename_formatter PRIVATE
 )
 add_test(NAME test_filename_formatter COMMAND test_filename_formatter)
 
+# QML engine smoke test (#251). Loads `Main.qml` headless and asserts
+# no warning/critical/fatal QtMsgs land during construction — catches
+# the class of runtime QML errors that compile clean and only blow up
+# at first launch (e.g. the `Icon.qml` `implicitHeight is a read-only
+# property` regression from PR #250). Links `qumesh_appcore` so the
+# QML module + every C++ type the production app registers is on hand
+# without re-declaring them. Brings its own no-op `Updater` impl
+# because `qumesh_appcore` deliberately omits Updater (each consumer
+# picks a platform-specific impl); the test wants the stub.
+qt_add_executable(test_qml_engine_loads
+    test_qml_engine_loads.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/updater.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/updater.h
+)
+target_link_libraries(test_qml_engine_loads PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::QuickControls2
+    Qt6::Svg
+    Qt6::Test
+    qumesh_appcore
+    qumesh_appcoreplugin
+    qumesh_appcoreplugin_init
+)
+add_test(NAME test_qml_engine_loads COMMAND test_qml_engine_loads)
+# Belt and braces: even though the test sets QT_QPA_PLATFORM via
+# qputenv before constructing QGuiApplication, surface the same hint
+# through the ctest environment so a runner inspecting `ctest -V`
+# output sees the offscreen mode clearly.
+set_tests_properties(test_qml_engine_loads PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 qt_add_executable(test_solcontroller
     test_solcontroller.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/asciicast_recorder.cpp
