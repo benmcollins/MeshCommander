@@ -29,8 +29,8 @@ qt_add_executable(qumesh
     src/kvmviewer.h
     src/asciicast_recorder.cpp
     src/asciicast_recorder.h
-    src/mjpeg_avi_recorder.cpp
-    src/mjpeg_avi_recorder.h
+    src/mjpeg_mov_recorder.cpp
+    src/mjpeg_mov_recorder.h
     src/certmodel.cpp
     src/certmodel.h
     src/scannercontroller.cpp

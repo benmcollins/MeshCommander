@@ -92,9 +92,9 @@ Item {
     FileDialog {
         id: recordDialog
         fileMode: FileDialog.SaveFile
-        defaultSuffix: "avi"
-        nameFilters: [qsTr("MJPEG AVI (*.avi)"), qsTr("All files (*)")]
-        title: qsTr("Record KVM session to AVI")
+        defaultSuffix: "mov"
+        nameFilters: [qsTr("QuickTime movie (*.mov)"), qsTr("All files (*)")]
+        title: qsTr("Record KVM session to MOV")
         onAccepted: {
             const path = Paths.urlToLocalFile(recordDialog.selectedFile);
             if (path.length > 0) controller.startRecording(path);

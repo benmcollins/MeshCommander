@@ -6,7 +6,7 @@
 #include "kvm/kvm_codec.h"
 #include "kvm/kvm_session.h"
 #include "kvmframebuffer.h"
-#include "mjpeg_avi_recorder.h"
+#include "mjpeg_mov_recorder.h"
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
 #include "ssh/ssh_session.h"
@@ -272,7 +272,7 @@ bool KvmController::startRecording(const QString &path, int fps)
     if (img.isNull() || img.width() == 0 || img.height() == 0) return false;
     if (fps <= 0 || fps > 60) fps = 5;
 
-    if (m_recorder == nullptr) m_recorder = new MjpegAviRecorder(this);
+    if (m_recorder == nullptr) m_recorder = new MjpegMovRecorder(this);
     if (!m_recorder->start(path, img.width(), img.height(), fps)) return false;
 
     // Seed the AVI with frame 0 so playback starts on real content
