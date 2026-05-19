@@ -33,11 +33,32 @@ qt_add_executable(qumesh
     src/mjpeg_mov_recorder.h
     src/filename_formatter.cpp
     src/filename_formatter.h
+    src/appinfo.cpp
+    src/appinfo.h
     src/certmodel.cpp
     src/certmodel.h
     src/scannercontroller.cpp
     src/scannercontroller.h
     src/updater.h
+)
+
+# Build-time configuration header carrying PROJECT_VERSION and the
+# ISO build date. Consumed by AppInfo for the "About" dialog (#246).
+string(TIMESTAMP QUMESH_BUILD_DATE "%Y-%m-%d" UTC)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/appinfo_config.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/appinfo_config.h"
+    @ONLY
+)
+target_include_directories(qumesh PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+
+# Embed LICENSE.md as a Qt resource so the About dialog can display
+# the full license without depending on a filesystem path that varies
+# between dev runs, macOS bundles, and the Windows installer layout.
+qt_add_resources(qumesh "qumesh_appdata"
+    PREFIX "/QuMesh"
+    BASE "${CMAKE_SOURCE_DIR}"
+    FILES "${CMAKE_SOURCE_DIR}/LICENSE.md"
 )
 
 set_source_files_properties(
@@ -71,6 +92,7 @@ qt_add_qml_module(qumesh
         qml/UserAccountDialog.qml
         qml/AdminPasswordDialog.qml
         qml/ConfirmDialog.qml
+        qml/AboutDialog.qml
         qml/AddCertificateDialog.qml
         qml/TlsModeDialog.qml
         qml/CertDetailsDialog.qml
