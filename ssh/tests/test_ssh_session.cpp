@@ -19,6 +19,7 @@ private slots:
     void openWithNonSshPortFails();
     void closeIsIdempotent();
     void aboutToDestroyFiresBeforeDestroyed();
+    void destructorReturnsPromptlyMidConnect();
 };
 
 void TestSshSession::constructDestructDoesNotCrash()
@@ -88,6 +89,56 @@ void TestSshSession::closeIsIdempotent()
     s.close();
     s.close();
     QCOMPARE(s.state(), SshSession::Disconnected);
+}
+
+void TestSshSession::destructorReturnsPromptlyMidConnect()
+{
+    // #233 regression guard. Closing a machine window (or otherwise
+    // destroying an SshSession) while libssh is mid-`ssh_connect` /
+    // `ssh_userauth_*` used to freeze the caller's thread for up to
+    // `connectTimeoutMs` (≤15s default), because the destructor
+    // synchronously joined the worker with a BlockingQueuedConnection
+    // that couldn't proceed until libssh's blocking call returned.
+    //
+    // Fix moved libssh to non-blocking + a poll loop that checks a
+    // cancellation atomic every ~50ms. This test pins that contract:
+    // open against a TCP server that accepts but never speaks SSH,
+    // give the worker a beat to enter `ssh_connect`, then destroy
+    // and assert the destructor returns well inside the would-be
+    // freeze window.
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    const quint16 port = server.serverPort();
+
+    SshSession::Params p;
+    p.host = QStringLiteral("127.0.0.1");
+    p.port = port;
+    p.user = QStringLiteral("nobody");
+    p.password = QStringLiteral("nope");
+    // Pick a timeout longer than the latency budget we're asserting,
+    // so a regressed destructor would actually demonstrate the freeze
+    // rather than being masked by libssh's own internal abort.
+    p.connectTimeoutMs = 15000;
+
+    auto s = std::make_unique<SshSession>();
+    QSignalSpy stateSpy(s.get(), &SshSession::stateChanged);
+    s->open(p);
+    // Wait for the worker to reach Connecting so we know it's actually
+    // in flight when we destroy it.
+    QVERIFY(stateSpy.wait(2000));
+    QCOMPARE(stateSpy.last().value(0).toInt(), int(SshSession::Connecting));
+
+    QElapsedTimer t;
+    t.start();
+    s.reset(); // ~SshSession
+    const qint64 elapsed = t.elapsed();
+    // 500 ms is comfortably above the 50 ms poll tick + Qt event-loop
+    // round-trip, and comfortably below the 15 000 ms freeze window
+    // we were seeing before #233's fix. Anything in between would
+    // indicate the destructor is still waiting on libssh.
+    QVERIFY2(elapsed < 500,
+             qPrintable(QStringLiteral(
+                 "~SshSession took %1 ms — expected <500 ms").arg(elapsed)));
 }
 
 void TestSshSession::aboutToDestroyFiresBeforeDestroyed()

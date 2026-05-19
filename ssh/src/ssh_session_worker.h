@@ -11,6 +11,9 @@
 
 #include <libssh/libssh.h>
 
+#include <atomic>
+#include <functional>
+
 namespace qumesh::ssh {
 
 /// Internal worker owned by `SshSession`. Lives on a private QThread so
@@ -25,6 +28,14 @@ public:
 
     ssh_session rawSession() const { return m_session; }
     QMutex &sessionMutex() { return m_sessionMutex; }
+
+    /// Cancel-flag for the non-blocking libssh poll loop. Safe to call
+    /// from any thread (it's a plain atomic). `~SshSession` flips this
+    /// before posting `close()` so any in-flight `ssh_connect` /
+    /// `ssh_userauth_*` / `ssh_channel_open_forward` exits at its next
+    /// poll tick (~50 ms cap) instead of running to libssh's full
+    /// timeout. See #233.
+    void requestStop() { m_stopRequested.store(true, std::memory_order_release); }
 
     /// Snapshot of pending host-key state for `SshSession`'s public API.
     QString pendingFingerprint() const;
@@ -51,12 +62,29 @@ private:
     bool verifyHostKey();
     void proceedWithAuth();
 
+    /// Drive a libssh non-blocking call until it returns something
+    /// other than `SSH_AGAIN` / `SSH_AUTH_AGAIN`, or until
+    /// `m_stopRequested` flips, or `timeoutMs` elapses. Polls the libssh
+    /// session fd in the direction(s) libssh requests
+    /// (`ssh_get_poll_flags`) with a 50 ms tick so cancellation latency
+    /// is bounded. `timeoutMs <= 0` falls back to
+    /// `m_params.connectTimeoutMs`. Returns the libssh rc, `SSH_ABORTED`
+    /// when cancellation won, or `SSH_ERROR` on timeout.
+    ///
+    /// We enforce our own deadline because libssh honours
+    /// `SSH_OPTIONS_TIMEOUT` only in blocking mode; non-blocking mode
+    /// (which `~SshSession` requires for cancellability — see #233)
+    /// leaves cancellation to the caller.
+    static constexpr int SSH_ABORTED = -100; // distinct from SSH_AGAIN(-2)/SSH_ERROR(-1)
+    int waitForLibssh(const std::function<int()> &call, int timeoutMs = 0);
+
     ssh_session m_session = nullptr;
     QMutex m_sessionMutex;
     SshSession::Params m_params;
     bool m_awaitingHostKeyTrust = false;
     QString m_pendingHostKeyFingerprint;
     QString m_pendingHostKeyType;
+    std::atomic<bool> m_stopRequested{false};
 };
 
 } // namespace qumesh::ssh
