@@ -51,6 +51,7 @@ private:
     qumesh::ssh::SshSession *m_session = nullptr;
     bool m_enabled = false;
     QString m_status;
+    QString m_jumpHost;  ///< Cached at setConfig() so status strings can name it.
 };
 
 } // namespace qumesh::app

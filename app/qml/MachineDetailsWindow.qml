@@ -438,6 +438,22 @@ AppWindow {
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
+                    // SSH tunnel info, directly under the IP so the link
+                    // between "this connection goes through X" is obvious
+                    // at a glance. Issue #245. Coloured by state: accent
+                    // when the tunnel is live, muted when configured but
+                    // not connected (e.g. authenticating, awaiting trust).
+                    Text {
+                        visible: controller.sshTunnelStatus.length > 0
+                        text: controller.sshTunnelStatus
+                        color: controller.sshTunnelActive
+                            ? Colors.accent
+                            : Colors.textMuted
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
                     Row {
                         spacing: 6
                         Layout.topMargin: 6
@@ -633,28 +649,9 @@ AppWindow {
                                 font.pixelSize: 24
                                 font.weight: Font.Medium
                             }
-
-                            Rectangle {
-                                visible: controller.sshTunnelStatus.length > 0
-                                Layout.topMargin: 6
-                                Layout.preferredHeight: tunnelBadgeText.implicitHeight + 6
-                                Layout.preferredWidth: tunnelBadgeText.implicitWidth + 16
-                                color: controller.sshTunnelActive
-                                    ? Colors.accent
-                                    : Colors.borderMuted
-                                radius: 4
-                                Text {
-                                    id: tunnelBadgeText
-                                    anchors.centerIn: parent
-                                    text: controller.sshTunnelStatus
-                                    color: controller.sshTunnelActive
-                                        ? Colors.surface
-                                        : Colors.textMuted
-                                    font.family: Type.sans
-                                    font.pixelSize: Type.sizeXs
-                                    font.weight: Font.Medium
-                                }
-                            }
+                            // The "via …" line that used to live here is
+                            // now rendered directly under the IP in the
+                            // header card — closer to what it qualifies.
                         }
 
                         Section {
