@@ -781,13 +781,18 @@ jobs:
           - **Windows** — run the .exe installer. SmartScreen will warn
             that the publisher is unverified; click "More info" →
             "Run anyway".
-          - **Linux (Debian 13 / Ubuntu 26.04)** — preferred path is the
-            APT repo so apt handles upgrades:
+          - **Linux (Debian 13 / Ubuntu 26.04, amd64 or arm64)** — preferred
+            path is the APT repo so apt handles upgrades. The snippet picks
+            the right suite (\`ubuntu26.04\` / \`debian13\`) from
+            \`/etc/os-release\`:
+
+                . /etc/os-release
+                SUITE="\${ID}\${VERSION_ID}"
 
                 curl -fsSL https://benmcollins.github.io/QuMesh/apt-pub.asc | \\
                     sudo tee /etc/apt/keyrings/qumesh.asc > /dev/null
                 echo "deb [signed-by=/etc/apt/keyrings/qumesh.asc] \\
-                    https://benmcollins.github.io/QuMesh stable main" | \\
+                    https://benmcollins.github.io/QuMesh \$SUITE main" | \\
                     sudo tee /etc/apt/sources.list.d/qumesh.list
                 sudo apt update && sudo apt install qumesh
 

@@ -2,31 +2,29 @@
 # Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 #
 # Publishes a signed APT repo to GitHub Pages each time the Release
-# workflow ships a new tag. The repo layout follows the debian archive
-# convention so `apt update` parses it without any special client-side
-# configuration:
+# workflow ships a new tag. The repo is split per Debian/Ubuntu
+# distribution because the same upstream version (e.g. 1.2.0) ships
+# four .debs — Ubuntu 26.04 amd64/arm64 and Debian 13 amd64/arm64 —
+# and apt would otherwise see them as duplicates inside a single
+# suite. Layout:
 #
-#   /                        (Pages root, https://<owner>.github.io/<repo>/)
-#   ├── apt-pub.asc          (ASCII-armored GPG public key — users curl this)
-#   ├── pool/main/q/qumesh/  (the .deb files for every arch)
-#   └── dists/stable/        (per-suite metadata)
-#       ├── InRelease        (clearsigned Release — preferred)
-#       ├── Release          (raw Release)
-#       ├── Release.gpg      (detached signature — legacy fallback)
-#       └── main/
-#           ├── binary-amd64/{Packages,Packages.gz}
-#           └── binary-arm64/{Packages,Packages.gz}
+#   /                              (Pages root, https://<owner>.github.io/<repo>/)
+#   ├── apt-pub.asc                (ASCII-armored GPG public key — users curl this)
+#   ├── index.html                 (install snippet)
+#   ├── pool/
+#   │   ├── ubuntu26.04/main/q/qumesh/qumesh_<ver>-ubuntu26.04_<arch>.deb
+#   │   └── debian13/main/q/qumesh/qumesh_<ver>-debian13_<arch>.deb
+#   └── dists/
+#       ├── ubuntu26.04/
+#       │   ├── InRelease   Release   Release.gpg
+#       │   └── main/binary-{amd64,arm64}/{Packages,Packages.gz}
+#       └── debian13/
+#           ├── InRelease   Release   Release.gpg
+#           └── main/binary-{amd64,arm64}/{Packages,Packages.gz}
 #
-# Pages is configured with Source: GitHub Actions, so each run uploads a
-# full site artifact and deploy-pages atomically replaces the previous
-# deploy. That's stateless by design — every run reconstructs the
-# cumulative .deb pool from scratch by listing every GitHub Release
-# tagged `v*` and downloading its .deb assets. GitHub Releases is the
-# single source of truth; this workflow just renders metadata over it.
-#
-# Triggered after Release completes successfully on a tag, or manually
-# via workflow_dispatch. Skips silently if APT_SIGNING_KEY isn't
-# provisioned (one-time setup documented in PACKAGING.md).
+# Triggered after Release completes successfully on a tag. Skips
+# silently if APT_SIGNING_KEY isn't provisioned (one-time maintainer
+# setup is documented in PACKAGING.md).
 
 name: APT repo publish
 
@@ -41,12 +39,15 @@ permissions:
   pages: write
   id-token: write
 
-# Pages requires this concurrency group; a queued deploy supersedes
-# any in-flight one for the same environment so a backed-up queue
-# doesn't ship a stale snapshot.
 concurrency:
   group: pages
   cancel-in-progress: false
+
+# Distros the repo serves. Adding a new one is: extend this list, add
+# a matching build entry to release.yml, push.
+env:
+  DISTROS: 'ubuntu26.04 debian13'
+  ARCHES: 'amd64 arm64'
 
 jobs:
   build:
@@ -85,15 +86,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eux
-          mkdir -p site/pool/main/q/qumesh
-          # Pages-via-Actions deploys are stateless; reconstruct the
-          # full pool every run from the source of truth (Releases).
-          # `gh release list --limit 100` covers any sane release
-          # cadence; bump if we ever ship >100 versions.
+          mkdir -p incoming
+          # Pages-via-Actions deploys are stateless; rebuild the full
+          # pool every run from the source of truth (GitHub Releases).
+          # 100-release cap matches any sane release cadence; bump if
+          # we ever blow past it.
           TAGS=$(gh release list \
               --repo "${{ github.repository }}" \
               --limit 100 \
-              --json tagName,isDraft,isPrerelease \
+              --json tagName,isDraft \
               --jq '.[] | select(.isDraft == false) | .tagName' \
               | grep -E '^v[0-9]' || true)
           if [ -z "$TAGS" ]; then
@@ -101,17 +102,50 @@ jobs:
           fi
           for TAG in $TAGS; do
             echo "::group::Fetching .debs from $TAG"
-            # download fails the workflow if no asset matches the
-            # pattern — older releases may not have any .deb yet.
-            # `|| true` keeps us moving past those.
             gh release download "$TAG" \
                 --repo "${{ github.repository }}" \
                 --pattern '*.deb' \
-                --dir site/pool/main/q/qumesh \
+                --dir incoming \
                 --skip-existing || true
             echo "::endgroup::"
           done
-          ls -la site/pool/main/q/qumesh/ || true
+          ls -la incoming/ || true
+
+      - name: Stage .debs into per-distro pools
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -eux
+          # Filenames carry the distro tag (qumesh_<ver>-<distro>_<arch>.deb),
+          # which is what routes each file to its pool. A .deb that
+          # doesn't match the convention (legacy or hand-built) gets
+          # logged and skipped — better than silently mis-shelving it.
+          for DISTRO in $DISTROS; do
+            mkdir -p "site/pool/${DISTRO}/main/q/qumesh"
+          done
+          UNROUTED=0
+          for DEB in incoming/*.deb; do
+            [ -f "$DEB" ] || continue
+            ROUTED=
+            for DISTRO in $DISTROS; do
+              case "$(basename "$DEB")" in
+                qumesh_*-${DISTRO}_*.deb)
+                  cp "$DEB" "site/pool/${DISTRO}/main/q/qumesh/"
+                  ROUTED=1
+                  break
+                  ;;
+              esac
+            done
+            if [ -z "$ROUTED" ]; then
+              echo "::warning::Skipping $DEB — filename doesn't match any '-<distro>_' tag we publish ($DISTROS)."
+              UNROUTED=$((UNROUTED + 1))
+            fi
+          done
+          echo "Unrouted .debs: $UNROUTED"
+          for DISTRO in $DISTROS; do
+            echo "::group::pool/${DISTRO}/main/q/qumesh/"
+            ls -la "site/pool/${DISTRO}/main/q/qumesh/" || true
+            echo "::endgroup::"
+          done
 
       - name: Import GPG signing key
         if: steps.gate.outputs.skip != 'true'
@@ -119,8 +153,6 @@ jobs:
           APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
         run: |
           set -eu
-          # The secret is a base64-encoded armored private key. Decode
-          # to a file, import, then wipe.
           KEY_FILE=$(mktemp)
           printf '%s' "$APT_SIGNING_KEY" | base64 -d > "$KEY_FILE"
           gpg --batch --import "$KEY_FILE"
@@ -128,72 +160,63 @@ jobs:
           KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
           echo "GPG_KEYID=$KEYID" >> "$GITHUB_ENV"
 
-      - name: Generate per-arch Packages + Packages.gz
+      - name: Build per-distro metadata
         if: steps.gate.outputs.skip != 'true'
         working-directory: site
         run: |
           set -eux
-          # `apt-ftparchive packages` walks the pool, hashes each .deb,
-          # and emits a Packages file. Run once per architecture with
-          # `--arch=` so each binary-<arch>/Packages only references
-          # debs matching that arch; apt clients then ignore packages
-          # built for foreign architectures. Run from the site root so
-          # the paths inside Packages stay relative — apt joins them
-          # to the source-list URL at update time.
-          for ARCH in amd64 arm64; do
-            mkdir -p "dists/stable/main/binary-${ARCH}"
-            apt-ftparchive --arch="${ARCH}" packages pool/main/q/qumesh \
-                > "dists/stable/main/binary-${ARCH}/Packages"
-            gzip -kf9 "dists/stable/main/binary-${ARCH}/Packages"
-            echo "::group::Packages (${ARCH})"
-            head -50 "dists/stable/main/binary-${ARCH}/Packages" || true
-            echo "::endgroup::"
-          done
+          for DISTRO in $DISTROS; do
+            for ARCH in $ARCHES; do
+              # Filename: in the Packages stanza is relative to the
+              # Pages root, so apt resolves it against the source-list
+              # URL at update time. Generate from the per-distro pool
+              # so each suite only references its own files.
+              DEST="dists/${DISTRO}/main/binary-${ARCH}"
+              mkdir -p "$DEST"
+              apt-ftparchive --arch="${ARCH}" packages \
+                  "pool/${DISTRO}/main/q/qumesh" \
+                  > "${DEST}/Packages"
+              gzip -kf9 "${DEST}/Packages"
+              echo "::group::Packages (${DISTRO}/${ARCH})"
+              head -50 "${DEST}/Packages" || true
+              echo "::endgroup::"
+            done
 
-      - name: Generate Release + InRelease + Release.gpg
-        if: steps.gate.outputs.skip != 'true'
-        working-directory: site
-        run: |
-          set -eux
-          # apt-ftparchive needs an ad-hoc config to fill in the
-          # Origin/Suite/Codename/Components/Architectures headers.
-          # Pin the suite to `stable` (single moving target — see
-          # issue #254 discussion) so we don't tie users to a specific
-          # Debian/Ubuntu codename.
-          cat > /tmp/apt-release.conf <<'CFG'
+            # Per-distro Release file. Codename matches the suite name
+            # users put in their sources.list line, so it's the same
+            # string everywhere.
+            cat > /tmp/apt-release.conf <<CFG
           APT::FTPArchive::Release {
             Origin "QuMesh";
             Label "QuMesh";
-            Suite "stable";
-            Codename "stable";
+            Suite "${DISTRO}";
+            Codename "${DISTRO}";
             Components "main";
             Architectures "amd64 arm64";
-            Description "QuMesh APT repository (Debian / Ubuntu)";
+            Description "QuMesh APT repository (${DISTRO})";
           };
           CFG
-          apt-ftparchive -c /tmp/apt-release.conf release dists/stable \
-              > dists/stable/Release
+            apt-ftparchive -c /tmp/apt-release.conf release \
+                "dists/${DISTRO}" > "dists/${DISTRO}/Release"
 
-          # InRelease = clearsigned (inline signature) — apt's preferred
-          # form. Release.gpg = detached signature, kept for any client
-          # that still wants it.
-          gpg --batch --yes --default-key "$GPG_KEYID" \
-              --clearsign --output dists/stable/InRelease \
-              dists/stable/Release
-          gpg --batch --yes --default-key "$GPG_KEYID" \
-              --armor --detach-sign --output dists/stable/Release.gpg \
-              dists/stable/Release
+            # InRelease = clearsigned (inline signature) — apt's
+            # preferred form. Release.gpg = detached, kept for any
+            # client that still wants it.
+            gpg --batch --yes --default-key "$GPG_KEYID" \
+                --clearsign --output "dists/${DISTRO}/InRelease" \
+                "dists/${DISTRO}/Release"
+            gpg --batch --yes --default-key "$GPG_KEYID" \
+                --armor --detach-sign \
+                --output "dists/${DISTRO}/Release.gpg" \
+                "dists/${DISTRO}/Release"
+          done
 
       - name: Drop public key + landing page at site root
         if: steps.gate.outputs.skip != 'true'
         run: |
           set -eux
-          # apt-pub.asc is committed at branding/apt-pub.asc; copy
-          # verbatim so users can `curl https://<owner>.github.io/<repo>/apt-pub.asc`.
           cp branding/apt-pub.asc site/apt-pub.asc
 
-          # Minimal index.html so the bare URL doesn't 404. Mirrors
-          # the install snippet from the release body and README.
           REPO_OWNER="${{ github.repository_owner }}"
           REPO_NAME="${GITHUB_REPOSITORY##*/}"
           cat > site/index.html <<HTML
@@ -203,7 +226,7 @@ jobs:
             <meta charset="utf-8">
             <title>QuMesh APT repository</title>
             <style>
-              body { font-family: system-ui, sans-serif; max-width: 720px;
+              body { font-family: system-ui, sans-serif; max-width: 760px;
                      margin: 3rem auto; padding: 0 1rem; color: #1e293b; }
               code, pre { font-family: ui-monospace, monospace;
                           background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; }
@@ -213,20 +236,28 @@ jobs:
           </head>
           <body>
             <h1>QuMesh APT repository</h1>
-            <p>Static APT repo for
+            <p>Signed APT repo for
               <a href="https://github.com/${{ github.repository }}">QuMesh</a>,
               covering Debian 13 and Ubuntu 26.04 on amd64 and arm64.</p>
             <h2>Add the repository</h2>
-            <pre>curl -fsSL https://${REPO_OWNER}.github.io/${REPO_NAME}/apt-pub.asc | \\
+            <p>The suite name matches your distro + version
+              (<code>ubuntu26.04</code> or <code>debian13</code>); the snippet
+              below picks the right one from <code>/etc/os-release</code> on
+              the host.</p>
+            <pre>. /etc/os-release   # sets ID + VERSION_ID
+          SUITE="\${ID}\${VERSION_ID}"
+
+          curl -fsSL https://${REPO_OWNER}.github.io/${REPO_NAME}/apt-pub.asc | \\
             sudo tee /etc/apt/keyrings/qumesh.asc > /dev/null
           echo "deb [signed-by=/etc/apt/keyrings/qumesh.asc] \\
-            https://${REPO_OWNER}.github.io/${REPO_NAME} stable main" | \\
+            https://${REPO_OWNER}.github.io/${REPO_NAME} \$SUITE main" | \\
             sudo tee /etc/apt/sources.list.d/qumesh.list
           sudo apt update
           sudo apt install qumesh</pre>
-            <p>Signing key: <a href="apt-pub.asc">apt-pub.asc</a>.
-               Metadata: <a href="dists/stable/">dists/stable/</a>.
-               Pool: <a href="pool/main/q/qumesh/">pool/main/q/qumesh/</a>.</p>
+            <p>Signing key: <a href="apt-pub.asc">apt-pub.asc</a>.</p>
+            <p>Direct browsing:
+              <a href="dists/">dists/</a> &middot;
+              <a href="pool/">pool/</a>.</p>
           </body>
           </html>
           HTML
