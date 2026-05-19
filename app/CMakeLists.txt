@@ -1,8 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
-qt_add_executable(qumesh
-    src/main.cpp
+# The app is built as a STATIC backing library plus a thin executable
+# that just owns main(). Splitting them out lets `app/tests/` link the
+# QML module directly (see `test_qml_engine_loads`) without standing
+# up a second `qt_add_qml_module` call that would silently drift from
+# the production wiring. Note: `Updater` is intentionally NOT in the
+# library — its implementation is platform-specific (Sparkle on macOS,
+# WinSparkle on Windows, appcast-reader on Linux, no-op stub elsewhere)
+# and each consumer of qumesh_appcore picks one at link time.
+qt_add_library(qumesh_appcore STATIC
     src/configstore.cpp
     src/configstore.h
     src/secret_codec.cpp
@@ -39,6 +46,19 @@ qt_add_executable(qumesh
     src/certmodel.h
     src/scannercontroller.cpp
     src/scannercontroller.h
+    src/qml_registration.cpp
+    src/qml_registration.h
+)
+
+# `src/updater.h` is intentionally NOT listed in qumesh_appcore: AUTOMOC
+# would generate Updater's moc data here AND in every consumer that adds
+# the matching impl (qumesh: updater.mm/_win.cpp/_linux.cpp,
+# test_qml_engine_loads: updater.cpp), producing duplicate-symbol link
+# errors. AUTOMOC matches the header to the .cpp/.mm in the same target's
+# source list, so each consumer gets the moc data exactly once.
+
+qt_add_executable(qumesh
+    src/main.cpp
     src/updater.h
 )
 
@@ -50,12 +70,12 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/appinfo_config.h"
     @ONLY
 )
-target_include_directories(qumesh PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_include_directories(qumesh_appcore PUBLIC "${CMAKE_CURRENT_BINARY_DIR}")
 
 # Embed LICENSE.md as a Qt resource so the About dialog can display
 # the full license without depending on a filesystem path that varies
 # between dev runs, macOS bundles, and the Windows installer layout.
-qt_add_resources(qumesh "qumesh_appdata"
+qt_add_resources(qumesh_appcore "qumesh_appdata"
     PREFIX "/QuMesh"
     BASE "${CMAKE_SOURCE_DIR}"
     FILES "${CMAKE_SOURCE_DIR}/LICENSE.md"
@@ -71,7 +91,7 @@ set_source_files_properties(
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
-qt_add_translations(qumesh
+qt_add_translations(qumesh_appcore
     TS_FILES
         translations/qumesh_en.ts
     QM_FILES_OUTPUT_VARIABLE qm_files
@@ -79,7 +99,7 @@ qt_add_translations(qumesh
         -no-obsolete
 )
 
-qt_add_qml_module(qumesh
+qt_add_qml_module(qumesh_appcore
     URI QuMesh
     VERSION 1.0
     QML_FILES
@@ -141,11 +161,11 @@ qt_add_qml_module(qumesh
         qml/fonts/JetBrainsMono-Regular.ttf
 )
 
-target_include_directories(qumesh PRIVATE
+target_include_directories(qumesh_appcore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(qumesh PRIVATE
+target_link_libraries(qumesh_appcore PUBLIC
     Qt6::Core
     Qt6::Gui
     Qt6::Quick
@@ -161,6 +181,22 @@ target_link_libraries(qumesh PRIVATE
     qumesh_wsman
     qumesh_rmcp
     qumesh_ssh
+)
+
+target_link_libraries(qumesh PRIVATE qumesh_appcore)
+
+# qumesh_appcore is a STATIC backing target for the `QuMesh` QML module.
+# qt_add_qml_module produces a static plugin (`qumesh_appcoreplugin`) and
+# an OBJECT initialiser (`qumesh_appcoreplugin_init`) that registers it at
+# startup via `Q_IMPORT_PLUGIN(QuMeshPlugin)`. qt_add_executable's
+# qmlimportscanner only auto-imports plugins whose `import` statements it
+# can find by scanning the executable's QML_FILES — `qumesh` has no QML
+# files (Main.qml lives in qumesh_appcore), so the scan finds nothing and
+# no plugin gets linked. The result is a build that succeeds but fails at
+# runtime with "No module named 'QuMesh' found". Link them explicitly.
+target_link_libraries(qumesh PRIVATE
+    qumesh_appcoreplugin
+    qumesh_appcoreplugin_init
 )
 
 # --- Branding -------------------------------------------------------
@@ -208,7 +244,7 @@ foreach(_svg_name IN LISTS _lucide_icons)
         "${_baked_icons_dir}/${_svg_name}-light.svg")
 endforeach()
 
-qt_add_resources(qumesh "qumesh_icons"
+qt_add_resources(qumesh_appcore "qumesh_icons"
     PREFIX "/icons"
     BASE   "${_baked_icons_dir}"
     FILES  ${_baked_icon_files}
@@ -218,7 +254,7 @@ qt_add_resources(qumesh "qumesh_icons"
 # icon — see main.cpp's QGuiApplication::setWindowIcon. Lives under
 # branding/svg/ rather than the baked dir because it doesn't need a
 # colour swap; the slate background and light-grey mark are baked in.
-qt_add_resources(qumesh "qumesh_tile_icon"
+qt_add_resources(qumesh_appcore "qumesh_tile_icon"
     PREFIX "/icons"
     BASE   "${_branding_dir}/svg"
     FILES

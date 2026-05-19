@@ -6,15 +6,8 @@
 #include "computermodel.h"
 #include "configstore.h"
 #include "filename_formatter.h"
-#include "idercontroller.h"
-#include "kvmcontroller.h"
-#include "kvmframebuffer.h"
-#include "kvmviewer.h"
-#include "machinedetailscontroller.h"
 #include "migrationcontroller.h"
-#include "scannercontroller.h"
-#include "solcontroller.h"
-#include "terminal/terminalscreen.h"
+#include "qml_registration.h"
 #include "updater.h"
 #include "wsman/local_amt_probe.h"
 
@@ -28,7 +21,6 @@
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QTimer>
-#include <QtQml/qqml.h>
 
 int main(int argc, char *argv[])
 {
@@ -107,46 +99,32 @@ int main(int argc, char *argv[])
     // creates it). On non-Apple builds (or with auto-update disabled)
     // this is the stub from updater.cpp — same QML surface, no-op.
     qumesh::app::Updater updater;
-    qmlRegisterSingletonInstance("QuMesh", 1, 0, "Updater", &updater);
-
-    qmlRegisterSingletonInstance("QuMesh", 1, 0, "ComputerModel", &computerModel);
 
     // LocalAmtProbe — sniffs 127.0.0.1:16992/:16993 to decide whether
     // Intel LMS is exposing the local machine's AMT firmware on the
     // loopback. Result lives behind a QML property; ComputerListView
     // shows "This PC" when available.
     qumesh::wsman::LocalAmtProbe localAmtProbe;
-    qmlRegisterSingletonInstance("QuMesh", 1, 0, "LocalAmtProbe", &localAmtProbe);
     QTimer::singleShot(0, &app, [&localAmtProbe]() { localAmtProbe.start(); });
-    qmlRegisterSingletonInstance("QuMesh", 1, 0, "MigrationController",
-                                 &migrationController);
-    qmlRegisterSingletonInstance("QuMesh", 1, 0, "CertModel", &certModel);
 
     // Stateless QML-side helper that turns a (machine name, extension)
     // pair into the suggested save filename for KVM/SOL dialogs.
     qumesh::app::FilenameFormatter filenameFormatter;
-    qmlRegisterSingletonInstance("QuMesh", 1, 0, "FilenameFormatter",
-                                  &filenameFormatter);
 
     // Build / release metadata for the About dialog (#246). The version
     // and build date are baked in at configure time; the license text
     // is read lazily from `:/QuMesh/LICENSE.md`.
     qumesh::app::AppInfo appInfo;
-    qmlRegisterSingletonInstance("QuMesh", 1, 0, "AppInfo", &appInfo);
-    qmlRegisterType<qumesh::app::SolController>("QuMesh", 1, 0, "SolController");
-    qmlRegisterType<qumesh::app::IderController>("QuMesh", 1, 0, "IderController");
-    qmlRegisterType<qumesh::app::KvmController>("QuMesh", 1, 0, "KvmController");
-    qmlRegisterType<qumesh::app::KvmViewer>("QuMesh", 1, 0, "KvmViewer");
-    qmlRegisterType<qumesh::app::MachineDetailsController>(
-        "QuMesh", 1, 0, "MachineDetailsController");
-    qmlRegisterType<qumesh::app::ScannerController>(
-        "QuMesh", 1, 0, "ScannerController");
-    qmlRegisterUncreatableType<qumesh::terminal::TerminalScreen>(
-        "QuMesh", 1, 0, "TerminalScreen",
-        QStringLiteral("Owned by SolController"));
-    qmlRegisterUncreatableType<qumesh::app::KvmFramebuffer>(
-        "QuMesh", 1, 0, "KvmFramebuffer",
-        QStringLiteral("Owned by KvmController"));
+
+    qumesh::app::registerQumeshQmlTypes({
+        .updater              = &updater,
+        .computerModel        = &computerModel,
+        .localAmtProbe        = &localAmtProbe,
+        .migrationController  = &migrationController,
+        .certModel            = &certModel,
+        .filenameFormatter    = &filenameFormatter,
+        .appInfo              = &appInfo,
+    });
 
     QQmlApplicationEngine engine;
 
