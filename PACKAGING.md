@@ -211,10 +211,14 @@ keypair and a few repo settings:
    base64-decodes and imports it into an ephemeral GPG home for the
    signing step, then exits.
 
-4. **Enable GitHub Pages** — Settings → Pages → Source: `Deploy from
-   a branch`, branch: `gh-pages`, folder: `/ (root)`. The first run
-   of the apt workflow seeds an empty `gh-pages` branch if it
-   doesn't exist yet.
+4. **Enable GitHub Pages** — Settings → Pages → Source: **GitHub
+   Actions**. No `gh-pages` branch needed; `release-apt.yml`
+   uploads a full site artifact via `actions/upload-pages-artifact`
+   and `actions/deploy-pages` swaps it in atomically. Each run is
+   stateless — the workflow reconstructs the full `.deb` pool by
+   listing every `v*` GitHub Release and downloading its assets,
+   so a re-run can fix metadata without touching any persistent
+   branch state.
 
 Until step 3 is done the apt workflow is a no-op — it logs a
 `::notice::` and skips. Releases continue to ship `.deb` assets on the

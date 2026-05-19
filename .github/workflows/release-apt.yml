@@ -1,26 +1,32 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 #
-# Publishes the .deb artifacts attached to the latest GitHub Release into
-# a static APT repo on the `gh-pages` branch. The repo layout follows the
-# debian archive convention so `apt update` parses it without any special
-# configuration on the client side:
+# Publishes a signed APT repo to GitHub Pages each time the Release
+# workflow ships a new tag. The repo layout follows the debian archive
+# convention so `apt update` parses it without any special client-side
+# configuration:
 #
-#   /                        (GitHub Pages root, https://<owner>.github.io/<repo>/)
+#   /                        (Pages root, https://<owner>.github.io/<repo>/)
 #   ├── apt-pub.asc          (ASCII-armored GPG public key — users curl this)
-#   ├── pool/main/q/qumesh/  (the .deb files themselves)
+#   ├── pool/main/q/qumesh/  (the .deb files)
 #   └── dists/stable/        (per-suite metadata)
-#       ├── InRelease        (clearsigned Release file — primary)
-#       ├── Release          (raw Release file)
+#       ├── InRelease        (clearsigned Release — preferred)
+#       ├── Release          (raw Release)
 #       ├── Release.gpg      (detached signature — legacy fallback)
 #       └── main/binary-amd64/
 #           ├── Packages
 #           └── Packages.gz
 #
-# Triggered after the Release workflow completes successfully on a tag.
-# Skips silently if the APT_SIGNING_KEY secret isn't configured — keeps
-# tag releases working before the maintainer has finished the one-time
-# GPG-key setup documented in PACKAGING.md.
+# Pages is configured with Source: GitHub Actions, so each run uploads a
+# full site artifact and deploy-pages atomically replaces the previous
+# deploy. That's stateless by design — every run reconstructs the
+# cumulative .deb pool from scratch by listing every GitHub Release
+# tagged `v*` and downloading its .deb assets. GitHub Releases is the
+# single source of truth; this workflow just renders metadata over it.
+#
+# Triggered after Release completes successfully on a tag, or manually
+# via workflow_dispatch. Skips silently if APT_SIGNING_KEY isn't
+# provisioned (one-time setup documented in PACKAGING.md).
 
 name: APT repo publish
 
@@ -31,13 +37,24 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages requires this concurrency group; a queued deploy supersedes
+# any in-flight one for the same environment so a backed-up queue
+# doesn't ship a stale snapshot.
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Publish APT repo to gh-pages
+  build:
+    name: Assemble APT repo
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      skip: ${{ steps.gate.outputs.skip }}
     steps:
       - name: Skip when signing key not provisioned
         id: gate
@@ -58,62 +75,43 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             apt-utils gnupg dpkg-dev curl
 
-      # Default-branch checkout to read branding/apt-pub.asc into the
-      # site root. We push to gh-pages later, separately.
-      - name: Checkout default branch (for apt-pub.asc)
+      - name: Checkout (for apt-pub.asc + the Pages index template)
         if: steps.gate.outputs.skip != 'true'
         uses: actions/checkout@v4
-        with:
-          path: src
 
-      - name: Checkout gh-pages branch (or seed an empty one)
-        if: steps.gate.outputs.skip != 'true'
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: pages
-        continue-on-error: true
-
-      - name: Seed gh-pages if missing
-        if: steps.gate.outputs.skip != 'true'
-        run: |
-          set -eux
-          if [ ! -d pages/.git ]; then
-            rm -rf pages
-            mkdir pages
-            cd pages
-            git init -b gh-pages
-            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-          fi
-
-      - name: Determine release tag
-        id: rel
+      - name: Download .debs from every v-tagged release
         if: steps.gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eux
-          # workflow_dispatch: target the latest release.
-          # workflow_run on Release: use the tag the release was cut from.
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            TAG="${{ github.event.workflow_run.head_branch }}"
-          else
-            TAG=$(gh release view --repo "${{ github.repository }}" --json tagName --jq .tagName)
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Download .deb assets from release
-        if: steps.gate.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -eux
-          mkdir -p incoming
-          gh release download "${{ steps.rel.outputs.tag }}" \
+          mkdir -p site/pool/main/q/qumesh
+          # Pages-via-Actions deploys are stateless; reconstruct the
+          # full pool every run from the source of truth (Releases).
+          # `gh release list --limit 100` covers any sane release
+          # cadence; bump if we ever ship >100 versions.
+          TAGS=$(gh release list \
               --repo "${{ github.repository }}" \
-              --pattern '*.deb' \
-              --dir incoming
-          ls -la incoming/
+              --limit 100 \
+              --json tagName,isDraft,isPrerelease \
+              --jq '.[] | select(.isDraft == false) | .tagName' \
+              | grep -E '^v[0-9]' || true)
+          if [ -z "$TAGS" ]; then
+            echo "::warning::No v-tagged releases found; APT repo will publish with empty pool."
+          fi
+          for TAG in $TAGS; do
+            echo "::group::Fetching .debs from $TAG"
+            # download fails the workflow if no asset matches the
+            # pattern — older releases may not have any .deb yet.
+            # `|| true` keeps us moving past those.
+            gh release download "$TAG" \
+                --repo "${{ github.repository }}" \
+                --pattern '*.deb' \
+                --dir site/pool/main/q/qumesh \
+                --skip-existing || true
+            echo "::endgroup::"
+          done
+          ls -la site/pool/main/q/qumesh/ || true
 
       - name: Import GPG signing key
         if: steps.gate.outputs.skip != 'true'
@@ -122,50 +120,38 @@ jobs:
         run: |
           set -eu
           # The secret is a base64-encoded armored private key. Decode
-          # to a file (mktemp), pipe into `gpg --import`, then wipe.
+          # to a file, import, then wipe.
           KEY_FILE=$(mktemp)
           printf '%s' "$APT_SIGNING_KEY" | base64 -d > "$KEY_FILE"
           gpg --batch --import "$KEY_FILE"
           rm -f "$KEY_FILE"
-          # Capture the long key id for later `--default-key` use.
           KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
           echo "GPG_KEYID=$KEYID" >> "$GITHUB_ENV"
 
-      - name: Stage incoming .debs into pool/
-        if: steps.gate.outputs.skip != 'true'
-        run: |
-          set -eux
-          mkdir -p pages/pool/main/q/qumesh
-          # Move (not copy) so re-running the workflow on the same tag
-          # doesn't double-add. Files with the same name overwrite,
-          # which is correct: a regenerated release with the same tag
-          # supersedes its prior asset.
-          cp incoming/*.deb pages/pool/main/q/qumesh/
-          ls -la pages/pool/main/q/qumesh/
-
       - name: Generate Packages + Packages.gz
         if: steps.gate.outputs.skip != 'true'
-        working-directory: pages
+        working-directory: site
         run: |
           set -eux
           mkdir -p dists/stable/main/binary-amd64
           # `apt-ftparchive packages` walks the pool, hashes each .deb,
-          # and emits a Packages file. Run from repo root so the paths
-          # inside Packages stay relative (which is what apt expects).
+          # and emits a Packages file. Run from the site root so the
+          # paths inside Packages stay relative — apt joins them to
+          # the source-list URL at update time.
           apt-ftparchive packages pool/main/q/qumesh > dists/stable/main/binary-amd64/Packages
           gzip -kf9 dists/stable/main/binary-amd64/Packages
-          cat dists/stable/main/binary-amd64/Packages
+          head -50 dists/stable/main/binary-amd64/Packages || true
 
       - name: Generate Release + InRelease + Release.gpg
         if: steps.gate.outputs.skip != 'true'
-        working-directory: pages
+        working-directory: site
         run: |
           set -eux
           # apt-ftparchive needs an ad-hoc config to fill in the
-          # Origin/Suite/Codename/Components/Architectures headers it
-          # otherwise leaves blank. Pin the suite to `stable` (single
-          # moving target — see issue #254 discussion) and component to
-          # `main`, matching the standard third-party-repo convention.
+          # Origin/Suite/Codename/Components/Architectures headers.
+          # Pin the suite to `stable` (single moving target — see
+          # issue #254 discussion) so we don't tie users to a specific
+          # Debian/Ubuntu codename.
           cat > /tmp/apt-release.conf <<'CFG'
           APT::FTPArchive::Release {
             Origin "QuMesh";
@@ -181,9 +167,8 @@ jobs:
               > dists/stable/Release
 
           # InRelease = clearsigned (inline signature) — apt's preferred
-          # form since stretch. Release.gpg = detached, kept for any
-          # client that still wants it. `--default-key` is the long
-          # key id we captured at import.
+          # form. Release.gpg = detached signature, kept for any client
+          # that still wants it.
           gpg --batch --yes --default-key "$GPG_KEYID" \
               --clearsign --output dists/stable/InRelease \
               dists/stable/Release
@@ -191,21 +176,19 @@ jobs:
               --armor --detach-sign --output dists/stable/Release.gpg \
               dists/stable/Release
 
-      - name: Copy public key + index page into site root
+      - name: Drop public key + landing page at site root
         if: steps.gate.outputs.skip != 'true'
         run: |
           set -eux
-          # apt-pub.asc lives in the repo (branding/apt-pub.asc) and is
-          # committed. Copy verbatim to the Pages root so users can
-          # `curl https://<owner>.github.io/<repo>/apt-pub.asc`.
-          cp src/branding/apt-pub.asc pages/apt-pub.asc
+          # apt-pub.asc is committed at branding/apt-pub.asc; copy
+          # verbatim so users can `curl https://<owner>.github.io/<repo>/apt-pub.asc`.
+          cp branding/apt-pub.asc site/apt-pub.asc
 
-          # A minimal index.html so the bare URL doesn't 404. Mirrors
-          # the install snippet from the release body / README so users
-          # who land here from a search engine have copy-paste at hand.
+          # Minimal index.html so the bare URL doesn't 404. Mirrors
+          # the install snippet from the release body and README.
           REPO_OWNER="${{ github.repository_owner }}"
-          REPO_NAME=$(basename "${{ github.repository }}")
-          cat > pages/index.html <<HTML
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          cat > site/index.html <<HTML
           <!doctype html>
           <html lang="en">
           <head>
@@ -222,8 +205,9 @@ jobs:
           </head>
           <body>
             <h1>QuMesh APT repository</h1>
-            <p>Static APT repo for <a href="https://github.com/${{ github.repository }}">QuMesh</a>,
-               covering Debian 13 and Ubuntu 26.04 (amd64).</p>
+            <p>Static APT repo for
+              <a href="https://github.com/${{ github.repository }}">QuMesh</a>,
+              covering Debian 13 and Ubuntu 26.04 (amd64).</p>
             <h2>Add the repository</h2>
             <pre>curl -fsSL https://${REPO_OWNER}.github.io/${REPO_NAME}/apt-pub.asc | \\
             sudo tee /etc/apt/keyrings/qumesh.asc > /dev/null
@@ -232,33 +216,32 @@ jobs:
             sudo tee /etc/apt/sources.list.d/qumesh.list
           sudo apt update
           sudo apt install qumesh</pre>
-            <p>The signing key fingerprint is published <a href="apt-pub.asc">here</a>;
-               metadata lives under <a href="dists/stable/">dists/stable/</a> and the
-               .deb pool under <a href="pool/main/q/qumesh/">pool/main/q/qumesh/</a>.</p>
+            <p>Signing key: <a href="apt-pub.asc">apt-pub.asc</a>.
+               Metadata: <a href="dists/stable/">dists/stable/</a>.
+               Pool: <a href="pool/main/q/qumesh/">pool/main/q/qumesh/</a>.</p>
           </body>
           </html>
           HTML
 
-      - name: Commit and push to gh-pages
+      - name: Configure Pages
         if: steps.gate.outputs.skip != 'true'
-        working-directory: pages
-        env:
-          TAG: ${{ steps.rel.outputs.tag }}
-        run: |
-          set -eux
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # First-run case: no remote ref to push against. Push
-          # unconditionally and let the first commit create the branch.
-          if git remote get-url origin > /dev/null 2>&1; then
-            :
-          else
-            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-          fi
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No changes to publish."
-            exit 0
-          fi
-          git commit -m "APT repo: publish $TAG"
-          git push -u "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:gh-pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: needs.build.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
