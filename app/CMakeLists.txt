@@ -121,6 +121,7 @@ qt_add_qml_module(qumesh
         qml/CertPinFlash.qml
         qml/FlatButton.qml
         qml/HttpsBootPrompt.qml
+        qml/Icon.qml
         qml/KvmSettingsDialog.qml
         qml/OptInPrompt.qml
         qml/Paths.qml
@@ -173,26 +174,43 @@ set(_branding_dir "${CMAKE_SOURCE_DIR}/branding")
 set(_baked_icons_dir "${CMAKE_CURRENT_BINARY_DIR}/icons")
 file(MAKE_DIRECTORY "${_baked_icons_dir}")
 
+# Same bake-on-configure pattern applies to the Lucide UI icon set
+# (under branding/svg/lucide/) — the upstream SVGs are also authored
+# with `stroke="currentColor"`. Keeping all the swaps in one block so
+# branding + UI icons travel through the same pipeline; see #248.
+set(_lucide_icons
+    alarm-clock arrow-left-right badge-check bell clipboard-list
+    clock cloud-cog cpu dog layout-dashboard lock monitor network
+    power scroll-text shield terminal users wifi
+)
+
+set(_baked_icon_files "")
 foreach(_svg_name IN ITEMS qumesh-mark qumesh-mark-small icon-sun icon-moon)
     file(READ "${_branding_dir}/svg/${_svg_name}.svg" _svg_src)
     string(REPLACE "currentColor" "#1e293b" _svg_slate "${_svg_src}")
     string(REPLACE "currentColor" "#E6EDF3" _svg_light "${_svg_src}")
     file(WRITE "${_baked_icons_dir}/${_svg_name}-slate.svg" "${_svg_slate}")
     file(WRITE "${_baked_icons_dir}/${_svg_name}-light.svg" "${_svg_light}")
+    list(APPEND _baked_icon_files
+        "${_baked_icons_dir}/${_svg_name}-slate.svg"
+        "${_baked_icons_dir}/${_svg_name}-light.svg")
+endforeach()
+
+foreach(_svg_name IN LISTS _lucide_icons)
+    file(READ "${_branding_dir}/svg/lucide/${_svg_name}.svg" _svg_src)
+    string(REPLACE "currentColor" "#1e293b" _svg_slate "${_svg_src}")
+    string(REPLACE "currentColor" "#E6EDF3" _svg_light "${_svg_src}")
+    file(WRITE "${_baked_icons_dir}/${_svg_name}-slate.svg" "${_svg_slate}")
+    file(WRITE "${_baked_icons_dir}/${_svg_name}-light.svg" "${_svg_light}")
+    list(APPEND _baked_icon_files
+        "${_baked_icons_dir}/${_svg_name}-slate.svg"
+        "${_baked_icons_dir}/${_svg_name}-light.svg")
 endforeach()
 
 qt_add_resources(qumesh "qumesh_icons"
     PREFIX "/icons"
     BASE   "${_baked_icons_dir}"
-    FILES
-        "${_baked_icons_dir}/qumesh-mark-slate.svg"
-        "${_baked_icons_dir}/qumesh-mark-light.svg"
-        "${_baked_icons_dir}/qumesh-mark-small-slate.svg"
-        "${_baked_icons_dir}/qumesh-mark-small-light.svg"
-        "${_baked_icons_dir}/icon-sun-slate.svg"
-        "${_baked_icons_dir}/icon-sun-light.svg"
-        "${_baked_icons_dir}/icon-moon-slate.svg"
-        "${_baked_icons_dir}/icon-moon-light.svg"
+    FILES  ${_baked_icon_files}
 )
 
 # Standalone tile asset (slate background + light Q) for the window
