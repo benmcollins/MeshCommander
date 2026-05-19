@@ -229,9 +229,17 @@ elseif(UNIX)
 
     # /usr/bin/qumesh → QuMesh-app  (typing `qumesh` in a shell is
     # convention; the .desktop file still launches QuMesh-app).
+    #
+    # `install(CODE …)` does NOT auto-apply DESTDIR the way
+    # `install(FILES …)` does — the standard install rules prepend
+    # it internally, but user code has to do it manually. Without
+    # the `$ENV{DESTDIR}` prefix, the script would try to write
+    # the literal `/usr/bin/qumesh` (requiring root, also outside
+    # CPack's staging tree). The path expression matches the
+    # canonical CMake DESTDIR-aware pattern.
     install(CODE [[
         file(CREATE_LINK QuMesh-app
-            "${CMAKE_INSTALL_PREFIX}/bin/qumesh"
+            "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/qumesh"
             SYMBOLIC)
     ]])
 
