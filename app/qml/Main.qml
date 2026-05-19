@@ -75,6 +75,55 @@ ApplicationWindow {
             id: aboutDialog
         }
 
+        // Linux-only "Update available" flow. Sparkle/WinSparkle own
+        // their own dialogs on the other two platforms; on Linux
+        // there's no in-app installer (apt does that), so we just
+        // surface the appcast's version + notes and link out. The
+        // info dialog covers the "up to date" and "check failed"
+        // cases so the "Updates" button always gives feedback.
+        LinuxUpdateDialog {
+            id: linuxUpdateDialog
+        }
+
+        Dialog {
+            id: linuxUpdateInfoDialog
+            property string body: ""
+            title: qsTr("Software update")
+            modal: true
+            closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+            anchors.centerIn: parent
+            standardButtons: Dialog.Ok
+            implicitWidth: 420
+            contentItem: Text {
+                text: linuxUpdateInfoDialog.body
+                color: Colors.text
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                wrapMode: Text.WordWrap
+            }
+        }
+
+        Connections {
+            target: Updater
+            function onUpdateAvailable(version, notesHtml, releasePageUrl) {
+                linuxUpdateDialog.version = version;
+                linuxUpdateDialog.notesHtml = notesHtml;
+                linuxUpdateDialog.releaseUrl = releasePageUrl;
+                linuxUpdateDialog.open();
+            }
+            function onUpToDate(currentVersion) {
+                linuxUpdateInfoDialog.body =
+                    qsTr("You're running the latest version (v%1).")
+                        .arg(currentVersion);
+                linuxUpdateInfoDialog.open();
+            }
+            function onCheckFailed(error) {
+                linuxUpdateInfoDialog.body =
+                    qsTr("Couldn't check for updates: %1").arg(error);
+                linuxUpdateInfoDialog.open();
+            }
+        }
+
         HeartbeatBar {
             Layout.fillWidth: true
             ToolTip.visible: ActivityHeartbeat.lastFailure.length > 0

@@ -127,8 +127,13 @@ set(CPACK_RESOURCE_FILE_LICENSE "${QUMESH_LICENSE_RTF}")
 # Drop LICENSE.rtf at the install-prefix root. On macOS that lands it
 # at the .dmg root next to QuMesh.app; on Windows it sits beside
 # QuMesh.exe in `%ProgramFiles%\QuMesh\`. The app/CMakeLists.txt block
-# additionally copies it into QuMesh.app/Contents/Resources/.
-install(FILES "${QUMESH_LICENSE_RTF}" DESTINATION .)
+# additionally copies it into QuMesh.app/Contents/Resources/. On
+# Linux this would land at /usr/LICENSE.rtf — skip there; the .deb
+# install rule below puts LICENSE.md at /usr/share/doc/qumesh/copyright
+# instead, which is what Debian policy expects.
+if(APPLE OR WIN32)
+    install(FILES "${QUMESH_LICENSE_RTF}" DESTINATION .)
+endif()
 
 # Note: CMake's CPack DragNDrop generator auto-creates the
 # `Applications` symlink in the .dmg root (opt out with
@@ -185,6 +190,72 @@ elseif(WIN32)
     set(CPACK_NSIS_MODIFY_PATH OFF)
     set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "QuMesh-${PROJECT_VERSION}")
     set(CPACK_PACKAGE_FILE_NAME "QuMesh-${PROJECT_VERSION}-windows-x64")
+elseif(UNIX)
+    # --- .deb for Debian/Ubuntu --------------------------------------
+    #
+    # CPack's DEB generator turns our `install()` rules into a real
+    # .deb that apt accepts. The release workflow builds one .deb per
+    # target distro (ubuntu:26.04, debian:13) inside a container and
+    # attaches them to the GitHub Release; .github/workflows/
+    # release-apt.yml then publishes both into a signed APT repo on
+    # gh-pages. See PACKAGING.md for the maintainer-side GPG setup.
+    set(CPACK_GENERATOR "DEB")
+
+    # Lowercase Debian package name. The QuMesh-app binary name is
+    # internal; the package the user installs is `qumesh`.
+    set(CPACK_DEBIAN_PACKAGE_NAME "qumesh")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Ben Collins <ben@ironrocketsmc.org>")
+    set(CPACK_DEBIAN_PACKAGE_SECTION "net")
+    set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+    set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "${CPACK_PACKAGE_HOMEPAGE_URL}")
+
+    # Let dpkg-shlibdeps figure out the dynamic-linker deps (Qt6,
+    # libssh, libssl, libstdc++…). Keeping this auto-detected means
+    # the same CMakeLists drops compatible deps for both Ubuntu 26.04
+    # and Debian 13 without us hard-coding minor versions.
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+
+    # Conventional file name (qumesh_X.Y.Z_amd64.deb) — release.yml
+    # appends the distro suffix when uploading so both can coexist
+    # as release assets.
+    set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
+
+    # --- Linux install layout -------------------------------------
+    #
+    # We already install the binary to bin/ over in app/CMakeLists.txt.
+    # Stage the rest of the Freedesktop layout here so it ships in
+    # the .deb and works just as well for `make install` on a system
+    # that builds from source.
+
+    # /usr/bin/qumesh → QuMesh-app  (typing `qumesh` in a shell is
+    # convention; the .desktop file still launches QuMesh-app).
+    install(CODE [[
+        file(CREATE_LINK QuMesh-app
+            "${CMAKE_INSTALL_PREFIX}/bin/qumesh"
+            SYMBOLIC)
+    ]])
+
+    install(FILES app/qumesh.desktop
+        DESTINATION share/applications)
+
+    install(FILES app/qumesh.metainfo.xml
+        DESTINATION share/metainfo)
+
+    # Hicolor theme icons. The build-icons.py script already renders
+    # the mark at each standard size; install those into the theme
+    # paths the apps menu reads.
+    foreach(_size IN ITEMS 16 24 32 48 64 96 128 256 512)
+        install(FILES "branding/build/png/qumesh-mark-${_size}.png"
+            DESTINATION "share/icons/hicolor/${_size}x${_size}/apps"
+            RENAME "qumesh.png")
+    endforeach()
+
+    # License under /usr/share/doc/qumesh/ — required by Debian policy
+    # for the copyright file. Plain Markdown is fine; lintian doesn't
+    # complain because it's just a "copyright file should exist" check.
+    install(FILES LICENSE.md
+        DESTINATION share/doc/qumesh
+        RENAME copyright)
 endif()
 
 include(CPack)

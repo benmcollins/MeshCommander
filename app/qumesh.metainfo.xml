@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-License-Identifier: Apache-2.0
+  Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
+-->
+<component type="desktop-application">
+  <id>com.insynergy.QuMesh</id>
+  <launchable type="desktop-id">qumesh.desktop</launchable>
+
+  <name>QuMesh</name>
+  <summary>Native Qt6 console for Intel AMT (vPro) devices</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+
+  <description>
+    <p>
+      QuMesh manages Intel AMT (vPro) hardware over WSMAN and the Intel
+      redirection protocol. It is a native Qt6 successor to Intel's
+      NW.js-based MeshCommander, removing the embedded Chromium runtime
+      and the 1.1 GB application bundle that came with it.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>WSMAN client — connect, inventory, power control, event log.</li>
+      <li>Serial-over-LAN terminal (VT100) over the Intel redirection channel.</li>
+      <li>IDE-R — mount a local ISO as a remote drive on the AMT host.</li>
+      <li>KVM viewer with input forwarding.</li>
+      <li>Certificate store with pinning and mutual-TLS hooks.</li>
+      <li>One-shot import of configurations saved by the legacy NW.js MeshCommander.</li>
+    </ul>
+  </description>
+
+  <url type="homepage">https://github.com/benmcollins/QuMesh</url>
+  <url type="bugtracker">https://github.com/benmcollins/QuMesh/issues</url>
+  <url type="vcs-browser">https://github.com/benmcollins/QuMesh</url>
+
+  <developer id="org.ironrocketsmc">
+    <name>Ben Collins</name>
+  </developer>
+
+  <categories>
+    <category>System</category>
+    <category>Network</category>
+    <category>RemoteAccess</category>
+  </categories>
+
+  <keywords>
+    <keyword>AMT</keyword>
+    <keyword>vPro</keyword>
+    <keyword>Intel</keyword>
+    <keyword>WSMAN</keyword>
+    <keyword>KVM</keyword>
+    <keyword>Serial</keyword>
+  </keywords>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <content_rating type="oars-1.1"/>
+</component>

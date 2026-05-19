@@ -14,3 +14,5 @@ branding/build/*
 !branding/build/dmg-background.png
 !branding/build/dmg-background@2x.png
 !branding/build/qumesh-dmg.icns
+!branding/build/png/
+!branding/build/png/qumesh-mark-*.png

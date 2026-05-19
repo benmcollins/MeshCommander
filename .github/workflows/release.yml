@@ -416,9 +416,125 @@ jobs:
           path: artifacts/*
           if-no-files-found: error
 
+  # Linux .deb builds run inside the target distro's container so the
+  # shlibdeps resolved by CPack DEB are accurate for that distro. Ubuntu
+  # 26.04 and Debian 13 both ship Qt 6.8 + libssh 0.11 with compatible
+  # dep strings; the .debs aren't strictly distro-locked, but matching
+  # the build container to the target stops us from quietly shipping
+  # libfoo.so.4 deps that only resolve on whichever distro we built in.
+  build-linux:
+    name: Build (${{ matrix.distro_label }})
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.container_image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - container_image: 'ubuntu:26.04'
+            distro_label: 'Ubuntu 26.04'
+            distro_tag: ubuntu26.04
+          - container_image: 'debian:13'
+            distro_label: 'Debian 13'
+            distro_tag: debian13
+
+    steps:
+      # `actions/checkout` needs git + ca-certificates inside the
+      # container, neither of which the minimal images ship. Install
+      # the toolchain first; the checkout then works normally.
+      - name: Install build dependencies
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -eux
+          apt-get update -qq
+          apt-get install -y --no-install-recommends \
+            git ca-certificates curl \
+            cmake ninja-build build-essential \
+            python3 file \
+            qt6-base-dev qt6-base-dev-tools \
+            qt6-declarative-dev qt6-tools-dev \
+            libqt6svg6-dev \
+            libssh-dev libssl-dev \
+            dpkg-dev
+
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --parallel
+
+      - name: Test (smoke)
+        shell: bash
+        working-directory: build
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --output-on-failure --parallel
+
+      - name: Package (.deb)
+        shell: bash
+        working-directory: build
+        run: cpack -G DEB --verbose
+
+      - name: Smoke-install + launch
+        shell: bash
+        working-directory: build
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QUMESH_SMOKE_EXIT_MS: '3000'
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -eux
+          DEB=$(ls qumesh_*_amd64.deb | head -1)
+          # `apt-get install ./<file>.deb` resolves transitive deps
+          # against the configured archive — closest to what a user
+          # running `apt install qumesh` from our APT repo will see.
+          apt-get install -y "./$DEB"
+          # Same pattern macOS/Windows use: rely on the in-app
+          # QUMESH_SMOKE_EXIT_MS handler to self-exit, with a kill -9
+          # backstop after 60 s.
+          QuMesh-app &
+          APP_PID=$!
+          ( sleep 60 && kill -9 $APP_PID 2>/dev/null ) &
+          GUARD_PID=$!
+          if wait $APP_PID; then
+            kill -9 $GUARD_PID 2>/dev/null
+            exit 0
+          else
+            RC=$?
+            kill -9 $GUARD_PID 2>/dev/null
+            exit $RC
+          fi
+
+      - name: Collect artifact
+        shell: bash
+        working-directory: build
+        run: |
+          # CPack outputs qumesh_<version>_amd64.deb; rename with the
+          # distro tag so the Ubuntu and Debian debs can coexist as
+          # release assets (and so users can see which one matches
+          # their system at a glance).
+          ORIG=$(ls qumesh_*_amd64.deb | head -1)
+          NEW="${ORIG%_amd64.deb}-${{ matrix.distro_tag }}_amd64.deb"
+          mv "$ORIG" "$NEW"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp "$NEW" "$GITHUB_WORKSPACE/artifacts/"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qumesh-${{ matrix.distro_tag }}
+          path: artifacts/*
+          if-no-files-found: error
+
   publish:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -449,6 +565,18 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: qumesh-Windows
+          path: dist/
+
+      - name: Download Ubuntu 26.04 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: qumesh-ubuntu26.04
+          path: dist/
+
+      - name: Download Debian 13 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: qumesh-debian13
           path: dist/
 
       - name: Download Sparkle appcast fragment (if produced)
@@ -603,6 +731,17 @@ jobs:
           - **Windows** — run the .exe installer. SmartScreen will warn
             that the publisher is unverified; click "More info" →
             "Run anyway".
+          - **Linux (Debian 13 / Ubuntu 26.04)** — preferred path is the
+            APT repo so apt handles upgrades:
+
+                curl -fsSL https://benmcollins.github.io/QuMesh/apt-pub.asc | \\
+                    sudo tee /etc/apt/keyrings/qumesh.asc > /dev/null
+                echo "deb [signed-by=/etc/apt/keyrings/qumesh.asc] \\
+                    https://benmcollins.github.io/QuMesh stable main" | \\
+                    sudo tee /etc/apt/sources.list.d/qumesh.list
+                sudo apt update && sudo apt install qumesh
+
+            Or grab the matching \`.deb\` below and \`sudo apt install ./qumesh_*.deb\`.
 
           See [the changelog](https://github.com/${{ github.repository }}/compare/...$TAG)
           for what changed.

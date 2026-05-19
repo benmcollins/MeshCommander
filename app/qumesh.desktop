@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=QuMesh
+GenericName=Intel AMT Console
+Comment=Native Qt6 console for Intel AMT (vPro) devices
+Exec=QuMesh-app
+Icon=qumesh
+Terminal=false
+Categories=System;Network;RemoteAccess;
+Keywords=AMT;vPro;Intel;WSMAN;KVM;Serial;Console;
+StartupNotify=true
+StartupWMClass=QuMesh-app
