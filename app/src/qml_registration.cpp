@@ -4,6 +4,7 @@
 #include "qml_registration.h"
 
 #include "appinfo.h"
+#include "batchcontroller.h"
 #include "certmodel.h"
 #include "computermodel.h"
 #include "filename_formatter.h"
@@ -36,6 +37,8 @@ void registerQumeshQmlTypes(const QmlSingletonContext &ctx)
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "FilenameFormatter",
                                  ctx.filenameFormatter);
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "AppInfo", ctx.appInfo);
+    qmlRegisterSingletonInstance("QuMesh", 1, 0, "BatchController",
+                                 ctx.batchController);
 
     qmlRegisterType<SolController>("QuMesh", 1, 0, "SolController");
     qmlRegisterType<IderController>("QuMesh", 1, 0, "IderController");

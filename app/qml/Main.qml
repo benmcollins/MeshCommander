@@ -157,6 +157,14 @@ ApplicationWindow {
                 onLocalAmtRequested: localAmtPromptDialog.openForLocal(
                     LocalAmtProbe.tlsAvailable)
                 onOpenDetailsRequested: function(row) { detailsLoader.launchFor(row) }
+                onBatchActionRequested: function(action, rows) {
+                    if (rows.length === 0) return;
+                    batchProgressDialog.actionLabel =
+                        BatchController.actionLabel(action);
+                    if (BatchController.start(rows, action)) {
+                        batchProgressDialog.open();
+                    }
+                }
             }
 
             ComputerStatusPane {
@@ -184,6 +192,10 @@ ApplicationWindow {
 
     ScanDialog {
         id: scanDialog
+    }
+
+    BatchProgressDialog {
+        id: batchProgressDialog
     }
 
     LocalAmtPromptDialog {

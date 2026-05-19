@@ -24,6 +24,8 @@ private slots:
     void classifyAccessInfoSelectsCimInfoFormat();
     void computeDigestPasswordMatchesHa1();
     void buildInvokeEnvelopeOrderedRepeatsKeys();
+    void clearLogEnvelopeShapeForAuditLog();
+    void clearLogEnvelopeShapeForMessageLog();
 };
 
 namespace {
@@ -246,6 +248,50 @@ void TestSoapEnvelope::buildInvokeEnvelopeOrderedRepeatsKeys()
     QVERIFY(env.contains("<r:DigestUsername>alice</r:DigestUsername>"));
     // Action URI = resource + "/" + method.
     QVERIFY(env.contains("AMT_AuthorizationService/AddUserAclEntryEx"));
+}
+
+void TestSoapEnvelope::clearLogEnvelopeShapeForAuditLog()
+{
+    // ClearLog is parameterless against AMT_AuditLog. Build the same
+    // invoke envelope the wsman op constructs and assert the wire shape.
+    const QByteArray env = buildInvokeEnvelope(
+        QStringLiteral("http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AuditLog"),
+        QStringLiteral("ClearLog"),
+        {}, {},
+        QStringLiteral("http://10.0.0.5:16992/wsman"),
+        QStringLiteral("uuid:audit-clear-1"));
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Action = <resource>/ClearLog.
+    QVERIFY(env.contains("AMT_AuditLog/ClearLog"));
+    // The method body element is ClearLog_INPUT in the resource ns,
+    // with no parameters inside.
+    QVERIFY(env.contains("ClearLog_INPUT"));
+    // No stray <Params> tags from an empty hash.
+    QVERIFY(!env.contains("<r:>"));
+    // MessageID echoes through.
+    QVERIFY(env.contains("uuid:audit-clear-1"));
+}
+
+void TestSoapEnvelope::clearLogEnvelopeShapeForMessageLog()
+{
+    const QByteArray env = buildInvokeEnvelope(
+        QStringLiteral("http://intel.com/wbem/wscim/1/amt-schema/1/AMT_MessageLog"),
+        QStringLiteral("ClearLog"),
+        {}, {},
+        QStringLiteral("http://10.0.0.5:16992/wsman"),
+        QStringLiteral("uuid:event-clear-1"));
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    QVERIFY(env.contains("AMT_MessageLog/ClearLog"));
+    QVERIFY(env.contains("ClearLog_INPUT"));
+    QVERIFY(env.contains("uuid:event-clear-1"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)

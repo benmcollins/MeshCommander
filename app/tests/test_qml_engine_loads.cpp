@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
 #include "appinfo.h"
+#include "batchcontroller.h"
 #include "certmodel.h"
 #include "computermodel.h"
 #include "configstore.h"
@@ -149,6 +150,8 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
     qumesh::wsman::LocalAmtProbe localAmtProbe; // not started — would open sockets
     qumesh::app::FilenameFormatter filenameFormatter;
     qumesh::app::AppInfo appInfo;
+    qumesh::app::BatchController batchController;
+    batchController.setComputerModel(&computerModel);
 
     qumesh::app::registerQumeshQmlTypes({
         .updater              = &updater,
@@ -158,6 +161,7 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
         .certModel            = &certModel,
         .filenameFormatter    = &filenameFormatter,
         .appInfo              = &appInfo,
+        .batchController      = &batchController,
     });
 
     std::atomic<bool> creationFailed{false};

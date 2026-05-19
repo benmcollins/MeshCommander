@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
 #include "appinfo.h"
+#include "batchcontroller.h"
 #include "certmodel.h"
 #include "computermodel.h"
 #include "configstore.h"
@@ -116,6 +117,12 @@ int main(int argc, char *argv[])
     // is read lazily from `:/QuMesh/LICENSE.md`.
     qumesh::app::AppInfo appInfo;
 
+    // Batch-actions controller (#202): one per app, owns a BatchRunner
+    // and the per-host dispatcher that translates an action enum + row
+    // index into a fresh WsmanClient + the matching wsman::* primitive.
+    qumesh::app::BatchController batchController;
+    batchController.setComputerModel(&computerModel);
+
     qumesh::app::registerQumeshQmlTypes({
         .updater              = &updater,
         .computerModel        = &computerModel,
@@ -124,6 +131,7 @@ int main(int argc, char *argv[])
         .certModel            = &certModel,
         .filenameFormatter    = &filenameFormatter,
         .appInfo              = &appInfo,
+        .batchController      = &batchController,
     });
 
     QQmlApplicationEngine engine;

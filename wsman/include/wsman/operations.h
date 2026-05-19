@@ -1517,4 +1517,18 @@ void setAdminAclEntryEx(WsmanClient *client, const QString &username,
 void performBootAction(WsmanClient *client, BootActionParams params,
                        std::function<void(InvokeResult)> callback);
 
+/// Invoke `AMT_AuditLog.ClearLog`. Clears every audit-log entry the
+/// firmware has stored. The caller must have `Audit Log Reader` realm
+/// (or equivalent admin) — otherwise `r.error` is the firmware fault.
+/// No parameters; AMT's ClearLog is idempotent and returns `0` on
+/// success.
+void clearAuditLog(WsmanClient *client,
+                   std::function<void(InvokeResult)> callback);
+
+/// Invoke `AMT_MessageLog.ClearLog`. Clears the firmware event log
+/// (the same log surfaced via `enumerateEventLog`). AMT's ClearLog
+/// takes no parameters and returns `0` on success.
+void clearEventLog(WsmanClient *client,
+                   std::function<void(InvokeResult)> callback);
+
 } // namespace qumesh::wsman

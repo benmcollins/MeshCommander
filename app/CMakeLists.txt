@@ -48,6 +48,10 @@ qt_add_library(qumesh_appcore STATIC
     src/scannercontroller.h
     src/setupbincontroller.cpp
     src/setupbincontroller.h
+    src/batchrunner.cpp
+    src/batchrunner.h
+    src/batchcontroller.cpp
+    src/batchcontroller.h
     src/qml_registration.cpp
     src/qml_registration.h
 )
@@ -140,6 +144,7 @@ qt_add_qml_module(qumesh_appcore
         qml/CertificatesWindow.qml
         qml/CertTrustDialog.qml
         qml/SetupBinWindow.qml
+        qml/BatchProgressDialog.qml
         qml/AccentButton.qml
         qml/AppMark.qml
         qml/AppWindow.qml

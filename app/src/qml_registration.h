@@ -5,6 +5,7 @@
 
 namespace qumesh::app {
 class AppInfo;
+class BatchController;
 class CertModel;
 class FilenameFormatter;
 class MigrationController;
@@ -32,6 +33,7 @@ struct QmlSingletonContext {
     CertModel *certModel;
     FilenameFormatter *filenameFormatter;
     AppInfo *appInfo;
+    BatchController *batchController;
 };
 
 // Register every `QuMesh.<Type>` the QML files import. Factored out of
