@@ -25,8 +25,10 @@ Image {
     source: name.length > 0
         ? "qrc:/icons/" + name + (Colors.dark ? "-light" : "-slate") + ".svg"
         : ""
-    implicitWidth: size
-    implicitHeight: size
+    // `Image.implicitWidth`/`implicitHeight` are read-only and derive
+    // from `sourceSize`. Setting `sourceSize` alone gives us both the
+    // rasterisation resolution AND the natural item size that any
+    // surrounding `RowLayout`/`ColumnLayout` falls back to.
     sourceSize.width: size
     sourceSize.height: size
     fillMode: Image.PreserveAspectFit
