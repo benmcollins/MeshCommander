@@ -26,6 +26,7 @@
 #include <QtTest>
 
 #include <atomic>
+#include <cstdio>
 
 namespace {
 
@@ -222,9 +223,25 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
 
 int main(int argc, char *argv[])
 {
+    // Unbuffered I/O so any output the test produces shows up in CI
+    // even if a crash or fast exit truncates the normal buffered
+    // streams. ctest collects via pipes, but on Windows the C runtime
+    // line-buffers stdout/stderr in a way that's eaten on abnormal
+    // exit — and that's exactly what we'd need to see to diagnose any
+    // future failure here.
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    std::setvbuf(stderr, nullptr, _IONBF, 0);
     // Run headless on every platform regardless of whether the CI lane
     // sets QT_QPA_PLATFORM itself. Must happen before QGuiApplication.
     qputenv("QT_QPA_PLATFORM", "offscreen");
+    // Force Qt Quick onto its 2D software renderer. Default RHI
+    // backends (D3D11/Metal/Vulkan/OpenGL) need a real GPU / window
+    // surface; under the offscreen QPA on Windows specifically, the
+    // RHI init silently failed at QQuickWindow construction and the
+    // test exited before any QTest output reached ctest. The 2D
+    // software backend works on every platform and is precisely what
+    // a smoke test wants — no hardware surface required.
+    qputenv("QT_QUICK_BACKEND", "software");
     QGuiApplication app(argc, argv);
     // Mirror main.cpp's QCoreApplication setup. Without these the QML
     // `Settings { category: "theme" }` in Main.qml fails to initialise
