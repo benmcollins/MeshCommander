@@ -1060,6 +1060,25 @@ qumesh::wsman::WiFiPskProfile pskProfileFromMap(const QVariantMap &fields)
         fields.value(QStringLiteral("encryptionMethod"), 4).toInt();
     p.priority = fields.value(QStringLiteral("priority"), 1).toInt();
     p.psk      = fields.value(QStringLiteral("psk")).toString();
+
+    // Phase C (#223) — optional enterprise / EAP fields. The PSK side
+    // leaves them at defaults so the wire shape is unchanged.
+    p.enterpriseEnabled =
+        fields.value(QStringLiteral("enterpriseEnabled"), false).toBool();
+    p.authenticationProtocol =
+        fields.value(QStringLiteral("authenticationProtocol"), 0).toInt();
+    p.eapUsername =
+        fields.value(QStringLiteral("eapUsername")).toString();
+    p.eapPassword =
+        fields.value(QStringLiteral("eapPassword")).toString();
+    p.eapServerCertificateName =
+        fields.value(QStringLiteral("eapServerCertificateName")).toString();
+    p.eapServerCertificateNameComparison =
+        fields.value(QStringLiteral("eapServerCertificateNameComparison"), 1).toInt();
+    p.clientCertificateInstanceId =
+        fields.value(QStringLiteral("clientCertificateInstanceId")).toString();
+    p.caCertificateInstanceId =
+        fields.value(QStringLiteral("caCertificateInstanceId")).toString();
     return p;
 }
 
@@ -1077,12 +1096,31 @@ void MachineDetailsController::addWiFiPskProfile(const QVariantMap &fields)
         setLastError(QStringLiteral("Add WiFi: SSID is empty."));
         return;
     }
-    if (profile.psk.length() < 8) {
-        // WPA2/WPA3 PSK is at least 8 chars. Fail fast rather than
-        // letting AMT round-trip a vague fault.
-        setLastError(QStringLiteral(
-            "Add WiFi: PSK must be at least 8 characters."));
-        return;
+    if (!profile.enterpriseEnabled) {
+        if (profile.psk.length() < 8) {
+            // WPA2/WPA3 PSK is at least 8 chars. Fail fast rather than
+            // letting AMT round-trip a vague fault.
+            setLastError(QStringLiteral(
+                "Add WiFi: PSK must be at least 8 characters."));
+            return;
+        }
+    } else {
+        // EAP-TLS (proto 0) requires a client cert; PEAP / TTLS /
+        // EAP-FAST (proto 1..5) require username + password. Both
+        // benefit from a CA cert for RADIUS-server validation, but
+        // the firmware will still accept the profile without one.
+        if (profile.authenticationProtocol == 0
+            && profile.clientCertificateInstanceId.isEmpty()) {
+            setLastError(QStringLiteral(
+                "Add WiFi: EAP-TLS requires a client certificate."));
+            return;
+        }
+        if (profile.authenticationProtocol != 0
+            && (profile.eapUsername.isEmpty() || profile.eapPassword.isEmpty())) {
+            setLastError(QStringLiteral(
+                "Add WiFi: PEAP/TTLS/EAP-FAST requires username + password."));
+            return;
+        }
     }
     rebuildEndpoint();
     if (m_host.isEmpty()) {
@@ -1111,10 +1149,25 @@ void MachineDetailsController::updateWiFiPskProfile(const QVariantMap &fields)
         setLastError(QStringLiteral("Update WiFi: profile name is empty."));
         return;
     }
-    if (profile.psk.length() > 0 && profile.psk.length() < 8) {
+    if (!profile.enterpriseEnabled
+        && profile.psk.length() > 0 && profile.psk.length() < 8) {
         setLastError(QStringLiteral(
             "Update WiFi: PSK must be at least 8 characters."));
         return;
+    }
+    if (profile.enterpriseEnabled) {
+        if (profile.authenticationProtocol == 0
+            && profile.clientCertificateInstanceId.isEmpty()) {
+            setLastError(QStringLiteral(
+                "Update WiFi: EAP-TLS requires a client certificate."));
+            return;
+        }
+        if (profile.authenticationProtocol != 0
+            && (profile.eapUsername.isEmpty() || profile.eapPassword.isEmpty())) {
+            setLastError(QStringLiteral(
+                "Update WiFi: PEAP/TTLS/EAP-FAST requires username + password."));
+            return;
+        }
     }
     rebuildEndpoint();
     if (m_host.isEmpty()) {

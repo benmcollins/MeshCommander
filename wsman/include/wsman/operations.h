@@ -1318,24 +1318,74 @@ void getWireless(WsmanClient *client,
 /// (`authenticationMethod=7`); the dialog picks. `priority` is the
 /// usual SSID-prioritisation knob (1 = top). PSK is the passphrase
 /// the operator types — AMT hashes it on the way in.
+///
+/// Despite the "Psk" in the type name (kept for source compatibility
+/// with Phase B callers), this struct also carries the optional EAP
+/// fields the Phase C enterprise variant emits. When
+/// `enterpriseEnabled` is false the envelope builder skips every EAP
+/// field — the wire shape is byte-identical to Phase B. When true,
+/// the matching `IEEE8021xSettingsInput` block and credential EPRs
+/// are emitted. See #223.
 struct WiFiPskProfile
 {
     QString elementName;  ///< Identity key; required.
     QString ssid;
-    int authenticationMethod = 6;  ///< 6 = WPA2-PSK, 7 = WPA3-PSK.
+    /// PSK: 6 = WPA2-PSK, 7 = WPA3-PSK. Enterprise: 5 = WPA2-Enterprise,
+    /// 8 = WPA3-Enterprise. The QML side flips this based on
+    /// `enterpriseEnabled` × PSK/Enterprise.
+    int authenticationMethod = 6;
     int encryptionMethod = 4;      ///< 3 = TKIP, 4 = CCMP.
     int priority = 1;
     /// Pre-Shared Key — operator's passphrase. Sent over the WSMAN
     /// channel (TLS-protected) and never echoed back on Get.
     QString psk;
+
+    /// Phase C (#223) — when true, the envelope emits the EAP block.
+    bool enterpriseEnabled = false;
+    /// `CIM_IEEE8021xSettings.AuthenticationProtocol`:
+    ///   0 = EAP-TLS, 1 = EAP-TTLS/MSCHAPv2,
+    ///   2 = PEAPv0/MSCHAPv2, 3 = PEAPv1/GTC,
+    ///   4 = EAP-FAST/MSCHAPv2, 5 = EAP-FAST/GTC.
+    int authenticationProtocol = 0;
+    /// PEAP / TTLS / EAP-FAST — RADIUS-side username + password.
+    QString eapUsername;
+    QString eapPassword;
+    /// Optional "anonymous identity guard": AMT validates the
+    /// CN/SAN of the RADIUS server cert against this name when
+    /// `eapServerCertificateName` is non-empty.
+    QString eapServerCertificateName;
+    /// `CIM_IEEE8021xSettings.ServerCertificateNameComparison`:
+    ///   1 = FullName, 2 = DomainSuffix.
+    /// Ignored when `eapServerCertificateName` is empty.
+    int eapServerCertificateNameComparison = 1;
+    /// `InstanceID` of an `AMT_PublicKeyCertificate` row to use as
+    /// the EAP-TLS client cert. Required for `authenticationProtocol
+    /// == 0`; ignored otherwise.
+    QString clientCertificateInstanceId;
+    /// `InstanceID` of an `AMT_PublicKeyCertificate` row marked as
+    /// a trusted root, used to validate the RADIUS server's cert.
+    QString caCertificateInstanceId;
 };
 
 /// Invoke `AMT_WiFiPortConfigurationService.AddWiFiSettings` with a PSK
-/// profile. Hand-rolls the envelope because the embedded
-/// `WiFiEndpointSettingsInput` element doesn't fit the flat parameter
-/// shape `buildInvokeEnvelope` supports. See #159.
+/// (or, when `profile.enterpriseEnabled`, EAP) profile. Hand-rolls
+/// the envelope because the embedded `WiFiEndpointSettingsInput` and
+/// `IEEE8021xSettingsInput` elements (plus credential EPRs) don't fit
+/// the flat parameter shape `buildInvokeEnvelope` supports. See #159
+/// and #223.
 void addWiFiSettingsPsk(WsmanClient *client, const WiFiPskProfile &profile,
                          std::function<void(InvokeResult)> callback);
+
+/// Test-only seam: hand back the bytes the `AddWiFiSettings` /
+/// `UpdateWiFiSettings` envelope builder would send for `profile`,
+/// without round-tripping through a `WsmanClient`. Used by
+/// `wsman/tests/test_soap_envelope.cpp` to lock in the EAP-TLS /
+/// PEAP wire shape from #223 without needing an HTTP server mock.
+/// `methodName` is `"AddWiFiSettings"` or `"UpdateWiFiSettings"`.
+[[nodiscard]] QByteArray buildWiFiSettingsEnvelopeForTesting(
+    const QString &methodName, const WiFiPskProfile &profile,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:wifi-test"));
 
 /// Invoke `AMT_WiFiPortConfigurationService.UpdateWiFiSettings` for an
 /// existing PSK profile, keyed by `WiFiEndpointSettings` ElementName.

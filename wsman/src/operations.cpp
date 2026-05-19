@@ -5332,11 +5332,95 @@ QByteArray buildWiFiSettingsEnvelope(const QString &methodName,
                         QString::number(profile.priority));
     // PSK is only meaningful for the PSK auth methods (6 = WPA2-PSK,
     // 7 = WPA3-PSK). For enterprise methods AMT ignores it and looks
-    // at the IEEE8021xSettingsInput instead — which we don't send in
-    // this PSK-only path.
+    // at the IEEE8021xSettingsInput instead. Always emit (omitting it
+    // would change the wire shape vs Phase B and AMT happily accepts
+    // a stale value when it isn't going to use it).
     w.writeTextElement(resource, QStringLiteral("PSKPassPhrase"),
                         profile.psk);
     w.writeEndElement(); // WiFiEndpointSettingsInput
+
+    // Phase C (#223) — emit `IEEE8021xSettingsInput` and the two
+    // credential EPRs when `enterpriseEnabled` is set. Order matches
+    // the legacy MeshCommander emitter + go-wsman-messages: the EAP
+    // settings come right after the WiFi settings, the credentials
+    // are siblings, not nested.
+    if (profile.enterpriseEnabled) {
+        const QString cimNs = QStringLiteral(
+            "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/"
+            "CIM_IEEE8021xSettings");
+        const QString certResource = QString::fromLatin1(kPublicKeyCertificateResource);
+
+        // IEEE8021xSettingsInput — wraps the EAP-side knobs. The
+        // outer element lives in the WiFi service namespace; the
+        // inner fields (AuthenticationProtocol etc.) inherit CIM's
+        // 8021x schema. AMT accepts both q: and the parent's r:
+        // prefix; using r: keeps the namespace list short.
+        w.writeStartElement(resource, QStringLiteral("IEEE8021xSettingsInput"));
+        // ElementName + InstanceID echo the parent WiFi profile;
+        // AMT correlates the two by ElementName.
+        w.writeTextElement(resource, QStringLiteral("ElementName"),
+                            profile.elementName);
+        w.writeTextElement(resource, QStringLiteral("InstanceID"),
+                            QStringLiteral("Intel(r) AMT:IEEE 802.1x Settings %1")
+                                .arg(profile.elementName));
+        w.writeTextElement(resource, QStringLiteral("AuthenticationProtocol"),
+                            QString::number(profile.authenticationProtocol));
+        // Username/Password only matter for PEAP / TTLS / EAP-FAST
+        // (auth protocols 1..5). Emit always when non-empty —
+        // harmless for EAP-TLS, simplifies the QML side.
+        if (!profile.eapUsername.isEmpty()) {
+            w.writeTextElement(resource, QStringLiteral("Username"),
+                                profile.eapUsername);
+        }
+        if (!profile.eapPassword.isEmpty()) {
+            w.writeTextElement(resource, QStringLiteral("Password"),
+                                profile.eapPassword);
+        }
+        if (!profile.eapServerCertificateName.isEmpty()) {
+            w.writeTextElement(resource, QStringLiteral("ServerCertificateName"),
+                                profile.eapServerCertificateName);
+            w.writeTextElement(resource,
+                                QStringLiteral("ServerCertificateNameComparison"),
+                                QString::number(profile.eapServerCertificateNameComparison));
+        }
+        w.writeEndElement(); // IEEE8021xSettingsInput
+
+        // ClientCredential EPR — EAP-TLS only. Same EPR shape as
+        // the cert-bind path in #222 (see
+        // `buildTlsCredentialContextPutEnvelope`).
+        auto writeCredentialEpr = [&](const QString &name,
+                                       const QString &certInstanceId) {
+            w.writeStartElement(resource, name);
+            w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                                QStringLiteral("Address"),
+                                QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+            w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                                QStringLiteral("ReferenceParameters"));
+            w.writeTextElement(QString::fromLatin1(kNsWsman),
+                                QStringLiteral("ResourceURI"), certResource);
+            w.writeStartElement(QString::fromLatin1(kNsWsman),
+                                QStringLiteral("SelectorSet"));
+            w.writeStartElement(QString::fromLatin1(kNsWsman),
+                                QStringLiteral("Selector"));
+            w.writeAttribute(QStringLiteral("Name"),
+                              QStringLiteral("InstanceID"));
+            w.writeCharacters(certInstanceId);
+            w.writeEndElement(); // Selector
+            w.writeEndElement(); // SelectorSet
+            w.writeEndElement(); // ReferenceParameters
+            w.writeEndElement(); // <name>
+        };
+
+        if (!profile.clientCertificateInstanceId.isEmpty()) {
+            writeCredentialEpr(QStringLiteral("ClientCredential"),
+                                profile.clientCertificateInstanceId);
+        }
+        if (!profile.caCertificateInstanceId.isEmpty()) {
+            writeCredentialEpr(QStringLiteral("CACredential"),
+                                profile.caCertificateInstanceId);
+        }
+        Q_UNUSED(cimNs);
+    }
 
     w.writeEndElement(); // <method>_INPUT
     w.writeEndElement(); // Body
@@ -5347,6 +5431,14 @@ QByteArray buildWiFiSettingsEnvelope(const QString &methodName,
 }
 
 } // namespace
+
+QByteArray buildWiFiSettingsEnvelopeForTesting(const QString &methodName,
+                                                const WiFiPskProfile &profile,
+                                                const QString &to,
+                                                const QString &messageId)
+{
+    return buildWiFiSettingsEnvelope(methodName, profile, to, messageId);
+}
 
 void addWiFiSettingsPsk(WsmanClient *client, const WiFiPskProfile &profile,
                          std::function<void(InvokeResult)> callback)
