@@ -4342,6 +4342,344 @@ void setTlsSettings(WsmanClient *client, const QString &instanceId,
         std::move(callback));
 }
 
+namespace {
+
+// Walk a `<KeyPair>` EPR returned by `GenerateKeyPair_OUTPUT`. The
+// shape (lifted from go-wsman-messages and AMT's
+// `AMT_PublicKeyManagementService.GenerateKeyPair_OUTPUT` reference
+// XML) is:
+//
+//   <g:KeyPair>
+//     <a:Address>...</a:Address>
+//     <a:ReferenceParameters>
+//       <w:ResourceURI>...AMT_PublicPrivateKeyPair</w:ResourceURI>
+//       <w:SelectorSet>
+//         <w:Selector Name="InstanceID">Intel(r) AMT Key: Handle: N</w:Selector>
+//       </w:SelectorSet>
+//     </a:ReferenceParameters>
+//   </g:KeyPair>
+//
+// We pull out the InstanceID selector value — it's the only piece
+// we need to address the new pair on follow-up calls.
+QString parseGenerateKeyPairInstanceId(const QByteArray &bodyXml)
+{
+    QXmlStreamReader r(bodyXml);
+    bool inSelector = false;
+    QString currentSelectorName;
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement() && r.name() == QStringLiteral("Selector")) {
+            inSelector = true;
+            currentSelectorName = r.attributes().value(QStringLiteral("Name")).toString();
+            continue;
+        }
+        if (inSelector && r.isCharacters()
+            && currentSelectorName == QStringLiteral("InstanceID")) {
+            const QString v = r.text().toString();
+            if (!v.trimmed().isEmpty()) return v;
+        }
+        if (r.isEndElement() && r.name() == QStringLiteral("Selector")) {
+            inSelector = false;
+            currentSelectorName.clear();
+        }
+    }
+    return {};
+}
+
+// Hand-rolled `Put` envelope for `AMT_TLSCredentialContext`. The
+// binding fields are EPRs (`ElementInContext` → the cert, and
+// `ElementProvidingContext` → the TLS endpoint collection); neither
+// is expressible through `buildPutEnvelope`'s QHash<QString,QString>
+// property map. Same shape pattern as `setTlsSettings`'s hand-rolled
+// envelope above.
+QByteArray buildTlsCredentialContextPutEnvelope(
+    const QString &certInstanceId,
+    const QString &tlsEndpointCollectionId,
+    const QString &to,
+    const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    const QString resource = QString::fromLatin1(kTlsCredentialContextResource);
+    const QString certResource = QString::fromLatin1(kPublicKeyCertificateResource);
+    const QString endpointCollectionResource = QStringLiteral(
+        "http://intel.com/wbem/wscim/1/amt-schema/1/"
+        "AMT_TLSProtocolEndpointCollection");
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(resource,                            QStringLiteral("r"));
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header.
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/09/transfer/Put"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing), QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing), QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeEndElement(); // Header
+
+    // Body.
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resource, QStringLiteral("AMT_TLSCredentialContext"));
+
+    auto writeEpr = [&](const QString &elementName,
+                        const QString &eprResource,
+                        const QString &selectorName,
+                        const QString &selectorValue) {
+        w.writeStartElement(resource, elementName);
+        w.writeStartElement(QString::fromLatin1(kNsAddressing), QStringLiteral("Address"));
+        w.writeCharacters(QStringLiteral(
+            "http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+        w.writeEndElement(); // Address
+        w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                             QStringLiteral("ReferenceParameters"));
+        w.writeTextElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("ResourceURI"), eprResource);
+        w.writeStartElement(QString::fromLatin1(kNsWsman), QStringLiteral("SelectorSet"));
+        w.writeStartElement(QString::fromLatin1(kNsWsman), QStringLiteral("Selector"));
+        w.writeAttribute(QStringLiteral("Name"), selectorName);
+        w.writeCharacters(selectorValue);
+        w.writeEndElement(); // Selector
+        w.writeEndElement(); // SelectorSet
+        w.writeEndElement(); // ReferenceParameters
+        w.writeEndElement(); // <elementName>
+    };
+
+    writeEpr(QStringLiteral("ElementInContext"),
+             QString::fromLatin1(kPublicKeyCertificateResource),
+             QStringLiteral("InstanceID"), certInstanceId);
+    writeEpr(QStringLiteral("ElementProvidingContext"),
+             endpointCollectionResource,
+             QStringLiteral("ElementName"), tlsEndpointCollectionId);
+
+    w.writeEndElement(); // AMT_TLSCredentialContext
+    w.writeEndElement(); // Body
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    Q_UNUSED(certResource);
+    return out;
+}
+
+// Hand-rolled `GeneratePKCS10RequestEx` invoke envelope. The
+// `KeyPair` parameter is an EPR pointing at AMT_PublicPrivateKeyPair;
+// `buildInvokeEnvelope`'s `params` map can't represent it.
+QByteArray buildGeneratePkcs10Envelope(const QString &keyPairInstanceId,
+                                        int signingAlgorithm,
+                                        const QByteArray &nullSignedCsrDer,
+                                        const QString &to,
+                                        const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    const QString resource = QString::fromLatin1(kPublicKeyManagementServiceResource);
+    const QString keyPairResource = QString::fromLatin1(kPublicPrivateKeyPairResource);
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(resource,                            QStringLiteral("h"));
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"),
+                        resource + QStringLiteral("/GeneratePKCS10RequestEx"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing), QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing), QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeEndElement(); // Header
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resource, QStringLiteral("GeneratePKCS10RequestEx_INPUT"));
+
+    // <h:KeyPair> EPR.
+    w.writeStartElement(resource, QStringLiteral("KeyPair"));
+    w.writeStartElement(QString::fromLatin1(kNsAddressing), QStringLiteral("Address"));
+    w.writeCharacters(QStringLiteral(
+        "http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // Address
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                         QStringLiteral("ReferenceParameters"));
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), keyPairResource);
+    w.writeStartElement(QString::fromLatin1(kNsWsman), QStringLiteral("SelectorSet"));
+    w.writeStartElement(QString::fromLatin1(kNsWsman), QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("InstanceID"));
+    w.writeCharacters(keyPairInstanceId);
+    w.writeEndElement(); // Selector
+    w.writeEndElement(); // SelectorSet
+    w.writeEndElement(); // ReferenceParameters
+    w.writeEndElement(); // KeyPair
+
+    w.writeTextElement(resource, QStringLiteral("SigningAlgorithm"),
+                        QString::number(signingAlgorithm));
+    w.writeTextElement(resource, QStringLiteral("NullSignedCertificateRequest"),
+                        QString::fromLatin1(nullSignedCsrDer.toBase64()));
+
+    w.writeEndElement(); // GeneratePKCS10RequestEx_INPUT
+    w.writeEndElement(); // Body
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+} // namespace
+
+void generateKeyPair(WsmanClient *client, int keyAlgorithm, int keyLength,
+                     std::function<void(GenerateKeyPairResult)> callback)
+{
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("KeyAlgorithm"), QString::number(keyAlgorithm));
+    params.insert(QStringLiteral("KeyLength"), QString::number(keyLength));
+    const QByteArray env = buildInvokeEnvelope(
+        QString::fromLatin1(kPublicKeyManagementServiceResource),
+        QStringLiteral("GenerateKeyPair"),
+        /*selectors*/ {}, params,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<GenerateKeyPairResult>(client, env, {},
+        [](const QByteArray &body, GenerateKeyPairResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            if (rv.isEmpty()) {
+                r.error = QStringLiteral("GenerateKeyPair response had no ReturnValue");
+                return;
+            }
+            bool conv = false;
+            r.returnValue = rv.toInt(&conv);
+            if (!conv || r.returnValue != 0) {
+                r.error = QStringLiteral("GenerateKeyPair returned %1").arg(rv);
+                return;
+            }
+            r.keyPairInstanceId = parseGenerateKeyPairInstanceId(body);
+            if (r.keyPairInstanceId.isEmpty()) {
+                r.error = QStringLiteral("GenerateKeyPair: missing InstanceID in KeyPair EPR");
+                return;
+            }
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void getPublicPrivateKeyPair(WsmanClient *client, const QString &instanceId,
+                              std::function<void(PublicPrivateKeyPairGetResult)> callback)
+{
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("InstanceID"), instanceId);
+    const QByteArray env = buildGetEnvelope(
+        QString::fromLatin1(kPublicPrivateKeyPairResource), selectors,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<PublicPrivateKeyPairGetResult>(client, env, {},
+        [](const QByteArray &body, PublicPrivateKeyPairGetResult &r) {
+            const QString b64 = findScalar(body, QStringLiteral("DERKey"));
+            if (b64.isEmpty()) {
+                r.error = QStringLiteral("AMT_PublicPrivateKeyPair.DERKey missing");
+                return;
+            }
+            r.derKey = QByteArray::fromBase64(b64.toLatin1());
+            if (r.derKey.isEmpty()) {
+                r.error = QStringLiteral("AMT_PublicPrivateKeyPair.DERKey base64 decode failed");
+                return;
+            }
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void generatePkcs10Request(WsmanClient *client,
+                            const QString &keyPairInstanceId,
+                            int signingAlgorithm,
+                            const QByteArray &nullSignedCsrDer,
+                            std::function<void(GeneratePkcs10RequestResult)> callback)
+{
+    const QByteArray env = buildGeneratePkcs10Envelope(
+        keyPairInstanceId, signingAlgorithm, nullSignedCsrDer,
+        client ? client->endpoint().toString() : QString(),
+        newMessageId());
+    runRequest<GeneratePkcs10RequestResult>(client, env, {},
+        [](const QByteArray &body, GeneratePkcs10RequestResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            if (rv.isEmpty()) {
+                r.error = QStringLiteral("GeneratePKCS10RequestEx response had no ReturnValue");
+                return;
+            }
+            bool conv = false;
+            r.returnValue = rv.toInt(&conv);
+            if (!conv || r.returnValue != 0) {
+                r.error = QStringLiteral("GeneratePKCS10RequestEx returned %1").arg(rv);
+                return;
+            }
+            const QString b64 = findScalar(body, QStringLiteral("SignedCertificateRequest"));
+            if (b64.isEmpty()) {
+                r.error = QStringLiteral("GeneratePKCS10RequestEx: SignedCertificateRequest missing");
+                return;
+            }
+            r.signedRequestDer = QByteArray::fromBase64(b64.toLatin1());
+            if (r.signedRequestDer.isEmpty()) {
+                r.error = QStringLiteral("GeneratePKCS10RequestEx: empty CSR DER after decode");
+                return;
+            }
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+void bindCertToTlsEndpoint(WsmanClient *client,
+                            const QString &certInstanceId,
+                            const QString &tlsEndpointCollectionId,
+                            bool replaceExisting,
+                            std::function<void(InvokeResult)> callback)
+{
+    // AMT exposes the binding as a single `AMT_TLSCredentialContext`
+    // instance per endpoint collection. When `replaceExisting` is
+    // true the existing instance is updated via Put; when false (the
+    // collection has no cert bound yet) we still send the same Put —
+    // AMT's behavior is to upsert. The flag is plumbed through so
+    // future versions can switch to a Create + Delete pattern if a
+    // firmware revision needs it.
+    Q_UNUSED(replaceExisting);
+    const QByteArray env = buildTlsCredentialContextPutEnvelope(
+        certInstanceId, tlsEndpointCollectionId,
+        client ? client->endpoint().toString() : QString(),
+        newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            // WS-Transfer Put: absence of fault = success. AMT may
+            // echo the new TLSCredentialContext but doesn't carry a
+            // ReturnValue here.
+            Q_UNUSED(body);
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
 // `decodeExtendedData` / `buildExtendedData` are declared in
 // `wsman/include/wsman/operations.h` (public, so tests can call
 // either side directly) and implemented further down in the

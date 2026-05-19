@@ -16,6 +16,8 @@ qumesh_wsman_test(test_soap_envelope)
 qumesh_wsman_test(test_local_amt_probe)
 qumesh_wsman_test(test_event_log_decoder)
 qumesh_wsman_test(test_setupbin)
+qumesh_wsman_test(test_cert_request_builder)
+target_link_libraries(test_cert_request_builder PRIVATE OpenSSL::Crypto)
 
 if(TARGET Qt6::HttpServer AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_wsman_client.cpp)
     qumesh_wsman_test(test_wsman_client)

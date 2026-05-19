@@ -7,6 +7,7 @@
 #include <QTimer>
 
 #include "certs/cert_parser.h"
+#include "wsman/cert_request_builder.h"
 #include "wsman/operations.h"
 #include "wsman/wsman_client.h"
 
@@ -1688,6 +1689,188 @@ void MachineDetailsController::setTlsSettingsForInstance(
                 return;
             }
             refreshDeviceCerts();
+        });
+}
+
+void MachineDetailsController::generateKeyPairAndCsr(int keyLength,
+                                                     int keyAlgorithm,
+                                                     const QString &subjectDn,
+                                                     int signingAlgorithm)
+{
+    setLastError({});
+    if (subjectDn.trimmed().isEmpty()) {
+        setLastError(QStringLiteral("Issue cert: Subject DN is empty."));
+        emit csrFailed(lastError());
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Issue cert: host is empty."));
+        emit csrFailed(lastError());
+        return;
+    }
+    incInflight();
+    qumesh::wsman::generateKeyPair(m_client, keyAlgorithm, keyLength,
+        [this, subjectDn, signingAlgorithm]
+        (qumesh::wsman::GenerateKeyPairResult kp) {
+            if (!kp.ok) {
+                decInflight();
+                setLastError(kp.error.isEmpty()
+                    ? QStringLiteral("Issue cert: GenerateKeyPair failed")
+                    : QStringLiteral("Issue cert: GenerateKeyPair: %1").arg(kp.error));
+                emit csrFailed(lastError());
+                return;
+            }
+            // Step 2: pull the freshly generated public key so we can
+            // build the null-signed PKCS#10 template.
+            const QString keyId = kp.keyPairInstanceId;
+            qumesh::wsman::getPublicPrivateKeyPair(m_client, keyId,
+                [this, keyId, subjectDn, signingAlgorithm]
+                (qumesh::wsman::PublicPrivateKeyPairGetResult kg) {
+                    if (!kg.ok || kg.derKey.isEmpty()) {
+                        decInflight();
+                        setLastError(kg.error.isEmpty()
+                            ? QStringLiteral("Issue cert: missing public key on new pair")
+                            : QStringLiteral("Issue cert: read public key: %1").arg(kg.error));
+                        emit csrFailed(lastError());
+                        return;
+                    }
+                    QString buildErr;
+                    const QByteArray nullCsr = qumesh::wsman::buildNullSignedPkcs10Csr(
+                        kg.derKey, subjectDn, signingAlgorithm, &buildErr);
+                    if (nullCsr.isEmpty()) {
+                        decInflight();
+                        setLastError(QStringLiteral(
+                            "Issue cert: build null-signed CSR: %1").arg(buildErr));
+                        emit csrFailed(lastError());
+                        return;
+                    }
+                    // Step 3: AMT signs the template with its private key.
+                    qumesh::wsman::generatePkcs10Request(m_client, keyId,
+                        signingAlgorithm, nullCsr,
+                        [this](qumesh::wsman::GeneratePkcs10RequestResult pr) {
+                            decInflight();
+                            if (!pr.ok || pr.signedRequestDer.isEmpty()) {
+                                setLastError(pr.error.isEmpty()
+                                    ? QStringLiteral("Issue cert: GeneratePKCS10RequestEx failed")
+                                    : QStringLiteral("Issue cert: %1").arg(pr.error));
+                                emit csrFailed(lastError());
+                                return;
+                            }
+                            // Wrap the firmware-signed DER as PEM so the
+                            // operator can paste it into their CA's web
+                            // form without an extra hex/base64 step.
+                            const QByteArray b64 = pr.signedRequestDer.toBase64(
+                                QByteArray::Base64Encoding);
+                            QByteArray pem("-----BEGIN CERTIFICATE REQUEST-----\n");
+                            for (int i = 0; i < b64.size(); i += 64) {
+                                pem.append(b64.mid(i, 64));
+                                pem.append('\n');
+                            }
+                            pem.append("-----END CERTIFICATE REQUEST-----\n");
+                            emit csrReady(QString::fromLatin1(pem));
+                        });
+                });
+        });
+}
+
+void MachineDetailsController::installSignedCertAndBindTls(
+    const QString &signedCertPem, const QString &tlsEndpointCollectionId)
+{
+    setLastError({});
+    if (signedCertPem.trimmed().isEmpty()) {
+        setLastError(QStringLiteral("Install cert: PEM is empty."));
+        emit certInstallFailed(lastError());
+        return;
+    }
+    if (tlsEndpointCollectionId.trimmed().isEmpty()) {
+        setLastError(QStringLiteral("Install cert: pick a TLS endpoint to bind."));
+        emit certInstallFailed(lastError());
+        return;
+    }
+    QString parseErr;
+    const auto entry = qumesh::certs::CertParser::fromPem(
+        signedCertPem.toUtf8(), &parseErr);
+    if (entry.certDer.isEmpty()) {
+        setLastError(parseErr.isEmpty()
+            ? QStringLiteral("Install cert: no certificate block found")
+            : QStringLiteral("Install cert: %1").arg(parseErr));
+        emit certInstallFailed(lastError());
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Install cert: host is empty."));
+        emit certInstallFailed(lastError());
+        return;
+    }
+    const QByteArray b64 = entry.certDer.toBase64();
+    const QString fingerprint = entry.fingerprintSha256;
+
+    incInflight();
+    qumesh::wsman::addCertificate(m_client, QString::fromLatin1(b64),
+        [this, fingerprint, tlsEndpointCollectionId]
+        (qumesh::wsman::InvokeResult r) {
+            if (!r.ok) {
+                decInflight();
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Install cert: AddCertificate failed")
+                    : QStringLiteral("Install cert: %1").arg(r.error));
+                emit certInstallFailed(lastError());
+                return;
+            }
+            // Re-enumerate device certs to find the freshly added row
+            // (AMT picks the InstanceID; we match by SHA-256 fingerprint
+            // after running each stored DER back through CertParser
+            // for the same canonical "AA:BB:…" format).
+            qumesh::wsman::getDeviceCertStore(m_client,
+                [this, fingerprint, tlsEndpointCollectionId]
+                (qumesh::wsman::DeviceCertResult store) {
+                    if (!store.ok) {
+                        decInflight();
+                        setLastError(QStringLiteral(
+                            "Install cert: re-enumerate device store failed: %1")
+                            .arg(store.error));
+                        emit certInstallFailed(lastError());
+                        return;
+                    }
+                    QString newInstanceId;
+                    for (const auto &c : store.certificates) {
+                        const QByteArray der = QByteArray::fromBase64(
+                            c.x509Base64.toLatin1());
+                        if (der.isEmpty()) continue;
+                        QString parseErr;
+                        const auto storedEntry =
+                            qumesh::certs::CertParser::fromDer(der, &parseErr);
+                        if (storedEntry.fingerprintSha256 == fingerprint) {
+                            newInstanceId = c.instanceId;
+                            break;
+                        }
+                    }
+                    if (newInstanceId.isEmpty()) {
+                        decInflight();
+                        setLastError(QStringLiteral(
+                            "Install cert: couldn't locate the new cert in the device store"));
+                        emit certInstallFailed(lastError());
+                        return;
+                    }
+                    const bool replace = !store.activeCertInstanceIds.isEmpty();
+                    qumesh::wsman::bindCertToTlsEndpoint(m_client,
+                        newInstanceId, tlsEndpointCollectionId, replace,
+                        [this, newInstanceId]
+                        (qumesh::wsman::InvokeResult bindRes) {
+                            decInflight();
+                            if (!bindRes.ok) {
+                                setLastError(bindRes.error.isEmpty()
+                                    ? QStringLiteral("Install cert: bind to TLS endpoint failed")
+                                    : QStringLiteral("Install cert: bind: %1").arg(bindRes.error));
+                                emit certInstallFailed(lastError());
+                                return;
+                            }
+                            refreshDeviceCerts();
+                            emit certInstalled(newInstanceId);
+                        });
+                });
         });
 }
 

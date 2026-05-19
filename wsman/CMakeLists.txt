@@ -7,11 +7,13 @@ qt_add_library(qumesh_wsman STATIC
     src/operations.cpp
     src/local_amt_probe.cpp
     src/setupbin.cpp
+    src/cert_request_builder.cpp
     include/wsman/soap_envelope.h
     include/wsman/wsman_client.h
     include/wsman/operations.h
     include/wsman/local_amt_probe.h
     include/wsman/setupbin.h
+    include/wsman/cert_request_builder.h
 )
 
 target_include_directories(qumesh_wsman
@@ -22,6 +24,7 @@ target_link_libraries(qumesh_wsman
     PUBLIC
         Qt6::Core
         Qt6::Network
+        OpenSSL::Crypto
 )
 
 if(MSVC)

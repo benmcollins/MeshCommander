@@ -955,6 +955,91 @@ void setTlsSettings(WsmanClient *client, const QString &instanceId,
                     const QStringList &trustedCn,
                     std::function<void(InvokeResult)> callback);
 
+/// `AMT_PublicKeyManagementService.GenerateKeyPair` reply. The
+/// `returnValue` mirrors the standard Invoke shape; on success the
+/// `KeyPair` EPR in the body carries an `InstanceID` selector pointing
+/// at the freshly created `AMT_PublicPrivateKeyPair` row. See #222.
+struct GenerateKeyPairResult
+{
+    bool ok = false;
+    QString error;
+    int returnValue = -1;
+    /// `Intel(r) AMT Key: Handle: N` style identifier; matches what
+    /// `getDeviceCertStore` returns for the same row's `instanceId`.
+    QString keyPairInstanceId;
+};
+
+/// Invoke `AMT_PublicKeyManagementService.GenerateKeyPair`. AMT
+/// generates the key pair entirely inside firmware; only the public
+/// half is reachable from this side (via a follow-up Get on the
+/// returned EPR, see `getPublicPrivateKeyPair`).
+///
+/// `keyAlgorithm` matches AMT's enum: `0 = RSA` (the only value
+/// firmware accepts today; ECC is parked behind a future firmware
+/// release). `keyLength` is the modulus size in bits — pick 2048,
+/// 3072, or 4096; 1024 is no longer accepted from CSME 18.0+.
+void generateKeyPair(WsmanClient *client, int keyAlgorithm, int keyLength,
+                     std::function<void(GenerateKeyPairResult)> callback);
+
+/// Result of `getPublicPrivateKeyPair`. AMT returns the public-key
+/// component of a `AMT_PublicPrivateKeyPair` as a base64 string in
+/// the `DERKey` field; we decode it into raw DER for the caller.
+struct PublicPrivateKeyPairGetResult
+{
+    bool ok = false;
+    QString error;
+    /// SubjectPublicKeyInfo (X.509) bytes — the same shape OpenSSL's
+    /// `d2i_PUBKEY` expects.
+    QByteArray derKey;
+};
+
+/// WS-Transfer Get on `AMT_PublicPrivateKeyPair[InstanceID=…]`. Used
+/// by the Phase C issue-certificate flow to pull the public key off
+/// the freshly generated pair so we can build the null-signed PKCS#10
+/// template.
+void getPublicPrivateKeyPair(WsmanClient *client, const QString &instanceId,
+                              std::function<void(PublicPrivateKeyPairGetResult)> callback);
+
+/// `AMT_PublicKeyManagementService.GeneratePKCS10RequestEx` reply.
+/// `signedRequestDer` is the firmware-signed CertificationRequest in
+/// raw DER (already base64-decoded). Wrap as PEM at the QML side.
+struct GeneratePkcs10RequestResult
+{
+    bool ok = false;
+    QString error;
+    int returnValue = -1;
+    QByteArray signedRequestDer;
+};
+
+/// Invoke `AMT_PublicKeyManagementService.GeneratePKCS10RequestEx`.
+/// The `keyPairInstanceId` identifies the `AMT_PublicPrivateKeyPair`
+/// the firmware should sign with (returned by `generateKeyPair`).
+/// `signingAlgorithm` is AMT's enum: `0 = SHA1-RSA` (removed in CSME
+/// 18.0+), `1 = SHA256-RSA`. `nullSignedCsrDer` is the un-signed
+/// PKCS#10 template; build it with `buildNullSignedPkcs10Csr` from
+/// `wsman/cert_request_builder.h`. See #222.
+void generatePkcs10Request(WsmanClient *client,
+                            const QString &keyPairInstanceId,
+                            int signingAlgorithm,
+                            const QByteArray &nullSignedCsrDer,
+                            std::function<void(GeneratePkcs10RequestResult)> callback);
+
+/// Put on `AMT_TLSCredentialContext` to bind a freshly imported cert
+/// to a TLS endpoint. The PutResource's `ElementInContext` references
+/// the cert (`AMT_PublicKeyCertificate[InstanceID]`); `ElementProvidingContext`
+/// references the endpoint (`AMT_TLSProtocolEndpointCollection`).
+///
+/// AMT actually exposes the binding via a *Create* on
+/// `AMT_TLSCredentialContext` when no prior binding exists, and a
+/// Delete-then-Create when replacing; this op picks the operation
+/// automatically based on whether the endpoint currently has a cert
+/// bound — that decision is the caller's via `replaceExisting`. See #222.
+void bindCertToTlsEndpoint(WsmanClient *client,
+                            const QString &certInstanceId,
+                            const QString &tlsEndpointCollectionId,
+                            bool replaceExisting,
+                            std::function<void(InvokeResult)> callback);
+
 /// One Management Presence Server — from `AMT_ManagementPresenceRemoteSAP`.
 struct MpsServer
 {
