@@ -215,8 +215,8 @@ class TestKvmSession : public QObject
 private slots:
     void handshakeThroughFrameLoopWithRawTile();
     void clientPinsRfb38EvenWhenServerOffers40();
-    void kvmExtCmdDisabledByDefault();
-    void kvmExtCmdEnabledWhenEnvVarSet();
+    void kvmExtCmdEnabledByDefault();
+    void kvmExtCmdDisabledViaKillSwitch();
 };
 
 void TestKvmSession::handshakeThroughFrameLoopWithRawTile()
@@ -373,36 +373,11 @@ QByteArray driveHandshakeAndCaptureSetup(MockServer &server,
 
 } // namespace
 
-void TestKvmSession::kvmExtCmdDisabledByDefault()
+void TestKvmSession::kvmExtCmdEnabledByDefault()
 {
-    // QUMESH_KVM_COMPRESSION unset — the session must send the
-    // compression-disable KvmExtCmd (4, 0). Tests #237 default.
+    // QUMESH_KVM_COMPRESSION unset — the session must enable
+    // compression: KvmExtCmd(4, 1) on the wire.
     qunsetenv("QUMESH_KVM_COMPRESSION");
-
-    MockServer server;
-    QVERIFY(server.listen());
-
-    RedirectionClient client;
-    client.setProtocol(qumesh::redir::Protocol::Kvm);
-    client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
-
-    KvmSession session(&client);
-    const QByteArray sent = driveHandshakeAndCaptureSetup(server, client, session);
-    QVERIFY(!sent.isEmpty());
-
-    QVERIFY2(sent.contains(buildKvmExtCmd(4, 0)),
-              "KvmExtCmd(4, 0) not found on wire");
-    QVERIFY2(!sent.contains(buildKvmExtCmd(4, 1)),
-              "KvmExtCmd(4, 1) unexpectedly present");
-}
-
-void TestKvmSession::kvmExtCmdEnabledWhenEnvVarSet()
-{
-    // QUMESH_KVM_COMPRESSION=1 flips the toggle — the session must
-    // send (4, 1) instead. Restore the env var on exit so other tests
-    // in the suite see a clean environment.
-    qputenv("QUMESH_KVM_COMPRESSION", "1");
-    auto cleanup = qScopeGuard([]() { qunsetenv("QUMESH_KVM_COMPRESSION"); });
 
     MockServer server;
     QVERIFY(server.listen());
@@ -419,6 +394,31 @@ void TestKvmSession::kvmExtCmdEnabledWhenEnvVarSet()
               "KvmExtCmd(4, 1) not found on wire");
     QVERIFY2(!sent.contains(buildKvmExtCmd(4, 0)),
               "KvmExtCmd(4, 0) unexpectedly present");
+}
+
+void TestKvmSession::kvmExtCmdDisabledViaKillSwitch()
+{
+    // QUMESH_KVM_COMPRESSION=0 is the documented kill switch — must
+    // suppress compression and emit (4, 0) instead. Restore on exit
+    // so other tests in the suite see a clean environment.
+    qputenv("QUMESH_KVM_COMPRESSION", "0");
+    auto cleanup = qScopeGuard([]() { qunsetenv("QUMESH_KVM_COMPRESSION"); });
+
+    MockServer server;
+    QVERIFY(server.listen());
+
+    RedirectionClient client;
+    client.setProtocol(qumesh::redir::Protocol::Kvm);
+    client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
+
+    KvmSession session(&client);
+    const QByteArray sent = driveHandshakeAndCaptureSetup(server, client, session);
+    QVERIFY(!sent.isEmpty());
+
+    QVERIFY2(sent.contains(buildKvmExtCmd(4, 0)),
+              "KvmExtCmd(4, 0) not found on wire");
+    QVERIFY2(!sent.contains(buildKvmExtCmd(4, 1)),
+              "KvmExtCmd(4, 1) unexpectedly present");
 }
 
 QTEST_MAIN(TestKvmSession)
