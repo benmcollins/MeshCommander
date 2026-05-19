@@ -65,6 +65,14 @@ void captureMessage(QtMsgType type, const QMessageLogContext &ctx,
         // signal from #251's perspective — drop it.
         QRegularExpression(QStringLiteral(
             "Populating font family aliases took.*\"Sans Serif\"")),
+        // Linux/Windows CI runners install Qt from apt or
+        // install-qt-action and don't always ship the SVG image
+        // plugin (libqsvg). QImageReader rejects our baked branding
+        // SVGs with "Unsupported image format" — environmental, not
+        // a QML wiring bug. Smoke-test scope is engine load + type
+        // resolution, not image-codec coverage.
+        QRegularExpression(QStringLiteral(
+            "Error decoding: qrc:/icons/.*\\.svg: Unsupported image format")),
     };
 
     for (const auto &re : kAllowList) {
@@ -218,6 +226,15 @@ int main(int argc, char *argv[])
     // sets QT_QPA_PLATFORM itself. Must happen before QGuiApplication.
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QGuiApplication app(argc, argv);
+    // Mirror main.cpp's QCoreApplication setup. Without these the QML
+    // `Settings { category: "theme" }` in Main.qml fails to initialise
+    // its underlying QSettings ("Failed to initialize QSettings
+    // instance. Status code is: 1" + "organizationName /
+    // organizationDomain not set") and the smoke captures that as a
+    // failure.
+    QCoreApplication::setOrganizationName(QStringLiteral("Insynergy"));
+    QCoreApplication::setOrganizationDomain(QStringLiteral("insynergy.com"));
+    QCoreApplication::setApplicationName(QStringLiteral("QuMesh"));
     TestQmlEngineLoads tc;
     return QTest::qExec(&tc, argc, argv);
 }
