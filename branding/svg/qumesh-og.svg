@@ -97,20 +97,27 @@
 
     <!-- macOS pill -->
     <g>
-      <rect x="0" y="0" width="148" height="50" rx="25" fill="#334155"/>
+      <rect x="0" y="0" width="138" height="50" rx="25" fill="#334155"/>
       <circle cx="22" cy="25" r="5" fill="#38bdf8"/>
       <text x="40" y="33">macOS</text>
     </g>
 
     <!-- Windows pill -->
-    <g transform="translate(164, 0)">
-      <rect x="0" y="0" width="166" height="50" rx="25" fill="#334155"/>
+    <g transform="translate(154, 0)">
+      <rect x="0" y="0" width="156" height="50" rx="25" fill="#334155"/>
       <circle cx="22" cy="25" r="5" fill="#38bdf8"/>
       <text x="40" y="33">Windows</text>
     </g>
 
+    <!-- Linux pill -->
+    <g transform="translate(326, 0)">
+      <rect x="0" y="0" width="124" height="50" rx="25" fill="#334155"/>
+      <circle cx="22" cy="25" r="5" fill="#38bdf8"/>
+      <text x="40" y="33">Linux</text>
+    </g>
+
     <!-- Qt6 / QML pill -->
-    <g transform="translate(346, 0)">
+    <g transform="translate(466, 0)">
       <rect x="0" y="0" width="180" height="50" rx="25" fill="#334155"/>
       <circle cx="22" cy="25" r="5" fill="#38bdf8"/>
       <text x="40" y="33">Qt6 + QML</text>
