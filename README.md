@@ -55,7 +55,7 @@ Run it:
 ```bash
 ./build/app/QuMesh.app/Contents/MacOS/QuMesh    # macOS
 build\app\QuMesh.exe                            # Windows
-./build/app/qumesh                              # Linux
+./build/app/QuMesh-app                          # Linux
 ```
 
 Windows: install Qt 6.6+ (`win64_msvc2022_64`), OpenSSL 3, and libssh from vcpkg. Set `CMAKE_PREFIX_PATH` to the Qt install and pass `-DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake`. The [CI workflow](.github/workflows/ci.yml) is the canonical reference.
