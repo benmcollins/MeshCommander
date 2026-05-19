@@ -401,8 +401,23 @@ if(WIN32)
     target_sources(qumesh PRIVATE "${_win_rc}")
 endif()
 
+# On macOS the output is `QuMesh.app/` (bundle) and on Windows it's
+# `QuMesh.exe`, so the extension keeps them off the `QuMesh/` directory
+# that `qt_add_qml_module(URI QuMesh …)` drops in the build tree. On
+# Linux the executable would be a bare file at the same path — link
+# fails with "cannot open output file QuMesh: Is a directory". Just
+# lowercasing isn't enough: case-insensitive filesystems (APFS by
+# default on macOS, NTFS, exFAT) still treat `qumesh` and `QuMesh/`
+# as the same path, so a Linux build staged on one of those would
+# regress. `QuMesh-app` is textually distinct under case folding.
+if(APPLE OR WIN32)
+    set(_qumesh_output_name "QuMesh")
+else()
+    set(_qumesh_output_name "QuMesh-app")
+endif()
+
 set_target_properties(qumesh PROPERTIES
-    OUTPUT_NAME "QuMesh"
+    OUTPUT_NAME "${_qumesh_output_name}"
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_BUNDLE_NAME "QuMesh"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.insynergy.QuMesh"

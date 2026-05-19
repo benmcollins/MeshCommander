@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-QuMesh — a native Qt6/QML console for managing Intel AMT (vPro) hardware over WSMAN and the Intel redirection protocol. Cross-platform (macOS + Windows). The successor to Intel's NW.js MeshCommander, which lived under `legacy/` in this repo until it was deleted (see git history, or Intel's upstream at https://github.com/Ylianst/MeshCommander, for the reference implementation).
+QuMesh — a native Qt6/QML console for managing Intel AMT (vPro) hardware over WSMAN and the Intel redirection protocol. Cross-platform (macOS + Windows + Linux). The successor to Intel's NW.js MeshCommander, which lived under `legacy/` in this repo until it was deleted (see git history, or Intel's upstream at https://github.com/Ylianst/MeshCommander, for the reference implementation).
 
 ## Workflow
 
@@ -16,9 +16,9 @@ For any non-trivial change in this repo, follow these steps in order:
 2. **Create a branch** off `main` named `<issue#>-<short-desc>` (e.g. `97-ssh-tunnel`).
 3. **Write the implementation plan** — the approach, files you'll touch, what's in scope and what isn't.
 4. **Comment the plan on the issue** before writing code, so the maintainer can redirect early.
-5. **Implement the plan** on the branch. Tests are required for all new code. CI (`.github/workflows/ci.yml`) builds and tests on macOS + Windows on every PR.
+5. **Implement the plan** on the branch. Tests are required for all new code. CI (`.github/workflows/ci.yml`) builds and tests on macOS + Windows + Linux on every PR.
 6. **Open the PR** when the implementation is complete and passes locally.
-7. **Watch CI** until both `macos-latest` and `windows-latest` are green.
+7. **Watch CI** until `macos-latest`, `windows-latest`, and `ubuntu-latest` are green.
 8. **Merge** once CI is green.
 
 For Qt/QML changes specifically: use the `qt-development-skills` plugin — invoke `qt-development-skills:qt-qml` when authoring QML, run `qt-development-skills:qt-qml-review` and/or `qt-development-skills:qt-cpp-review` before opening a PR.
@@ -31,7 +31,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Run the app: `./build/app/qumesh.app/Contents/MacOS/qumesh` (macOS) or `build\app\qumesh.exe` (Windows). Requires Qt 6.6+ with the `Quick`, `QuickControls2`, `Network`, and `Test` modules — on macOS install via `brew install qt ninja`. CI uses Qt 6.8.0.
+Run the app: `./build/app/QuMesh.app/Contents/MacOS/QuMesh` (macOS), `build\app\QuMesh.exe` (Windows), or `./build/app/QuMesh-app` (Linux — the `-app` suffix is there so the bare executable doesn't collide with the `build/app/QuMesh/` QML module dir, including on case-insensitive filesystems). Requires Qt 6.6+ with the `Quick`, `QuickControls2`, `Network`, `Svg`, and `Test` modules — install via `brew install qt ninja` (macOS) or `apt install qt6-base-dev qt6-base-dev-tools qt6-declarative-dev qt6-tools-dev libqt6svg6-dev libssh-dev libssl-dev cmake ninja-build` (Debian/Ubuntu). CI uses Qt 6.8.0 across all three platforms.
 
 ## Legacy MeshCommander persistence (load-bearing for `migrate/`)
 
