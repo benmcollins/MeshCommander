@@ -532,12 +532,21 @@ endif()
 # macdeployqt / windeployqt with the right QML scan roots. The deploy
 # script runs at install time, so it's already aware of our install
 # prefix and bundle layout.
-qt_generate_deploy_qml_app_script(
-    TARGET qumesh
-    OUTPUT_SCRIPT qumesh_deploy_script
-    NO_UNSUPPORTED_PLATFORM_ERROR
-)
-install(SCRIPT ${qumesh_deploy_script})
+#
+# Linux is deliberately excluded: the .deb depends on the distro Qt6
+# packages, so the QML engine finds plugins under
+# /usr/lib/<triplet>/qt6/qml/ at runtime. NO_UNSUPPORTED_PLATFORM_ERROR
+# only suppresses the platform-unsupported diagnostic; the deploy
+# script still copies Qt's QML plugin tree into the install staging
+# dir, and CPack then tries to ship a 100-plus-MB .deb that overlaps
+# the system Qt6 packages — and fails (issue #256).
+if(APPLE OR WIN32)
+    qt_generate_deploy_qml_app_script(
+        TARGET qumesh
+        OUTPUT_SCRIPT qumesh_deploy_script
+    )
+    install(SCRIPT ${qumesh_deploy_script})
+endif()
 
 # --- Code signing stubs ----------------------------------------------
 #

@@ -4,8 +4,9 @@ QuMesh ships as:
 
 - a `.dmg` on macOS,
 - an NSIS-based `.exe` installer on Windows,
-- a `.deb` for Debian 13 and Ubuntu 26.04, distributed both as a
-  release asset and through a signed APT repo on GitHub Pages.
+- a `.deb` for Debian 13 and Ubuntu 26.04 on amd64 and arm64
+  (four `.deb`s per release), distributed both as release assets
+  and through a signed APT repo on GitHub Pages.
 
 The macOS and Windows bundles are self-contained — Qt, the QML modules,
 and OpenSSL are inlined so the app runs on a fresh OS install without

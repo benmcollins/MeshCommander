@@ -422,9 +422,15 @@ jobs:
   # dep strings; the .debs aren't strictly distro-locked, but matching
   # the build container to the target stops us from quietly shipping
   # libfoo.so.4 deps that only resolve on whichever distro we built in.
+  #
+  # The matrix doubles up on architecture: amd64 jobs run on the
+  # standard `ubuntu-latest` runners, arm64 jobs on GH's native
+  # `ubuntu-24.04-arm` runners (free for public repos since 2025).
+  # No QEMU emulation — native builds are 5-10x faster and arm64
+  # users get binaries with arm64-resolved shlibdeps.
   build-linux:
-    name: Build (${{ matrix.distro_label }})
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.distro_label }} ${{ matrix.arch }})
+    runs-on: ${{ matrix.runs_on }}
     container:
       image: ${{ matrix.container_image }}
     strategy:
@@ -434,9 +440,23 @@ jobs:
           - container_image: 'ubuntu:26.04'
             distro_label: 'Ubuntu 26.04'
             distro_tag: ubuntu26.04
+            arch: amd64
+            runs_on: ubuntu-latest
+          - container_image: 'ubuntu:26.04'
+            distro_label: 'Ubuntu 26.04'
+            distro_tag: ubuntu26.04
+            arch: arm64
+            runs_on: ubuntu-24.04-arm
           - container_image: 'debian:13'
             distro_label: 'Debian 13'
             distro_tag: debian13
+            arch: amd64
+            runs_on: ubuntu-latest
+          - container_image: 'debian:13'
+            distro_label: 'Debian 13'
+            distro_tag: debian13
+            arch: arm64
+            runs_on: ubuntu-24.04-arm
 
     steps:
       # `actions/checkout` needs git + ca-certificates inside the
@@ -481,6 +501,22 @@ jobs:
         working-directory: build
         run: cpack -G DEB --verbose
 
+      - name: Verify .deb doesn't bundle Qt
+        shell: bash
+        working-directory: build
+        run: |
+          set -eux
+          # Belt-and-braces against the regression in #256: if anyone
+          # re-introduces qt_generate_deploy_qml_app_script on Linux,
+          # the .deb will contain Qt's QML plugin tree at
+          # /usr/lib/<triplet>/qt6/. Fail loudly before we publish.
+          DEB=$(ls qumesh_*.deb | head -1)
+          if dpkg-deb -c "$DEB" | grep -q '/qt6/'; then
+            echo "::error::$DEB contains /qt6/ paths — Qt is being bundled. See #256."
+            dpkg-deb -c "$DEB" | grep '/qt6/'
+            exit 1
+          fi
+
       - name: Smoke-install + launch
         shell: bash
         working-directory: build
@@ -490,7 +526,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           set -eux
-          DEB=$(ls qumesh_*_amd64.deb | head -1)
+          DEB=$(ls qumesh_*.deb | head -1)
           # `apt-get install ./<file>.deb` resolves transitive deps
           # against the configured archive — closest to what a user
           # running `apt install qumesh` from our APT repo will see.
@@ -515,12 +551,14 @@ jobs:
         shell: bash
         working-directory: build
         run: |
-          # CPack outputs qumesh_<version>_amd64.deb; rename with the
-          # distro tag so the Ubuntu and Debian debs can coexist as
-          # release assets (and so users can see which one matches
-          # their system at a glance).
-          ORIG=$(ls qumesh_*_amd64.deb | head -1)
-          NEW="${ORIG%_amd64.deb}-${{ matrix.distro_tag }}_amd64.deb"
+          # CPack outputs qumesh_<version>_<arch>.deb where <arch> is
+          # whatever `dpkg --print-architecture` returns in the build
+          # container. Rename with both the distro tag and the arch so
+          # all four combinations can coexist as release assets and
+          # users can see at a glance which one matches their system.
+          DEB_ARCH=$(dpkg --print-architecture)
+          ORIG=$(ls qumesh_*_"${DEB_ARCH}".deb | head -1)
+          NEW="${ORIG%_${DEB_ARCH}.deb}-${{ matrix.distro_tag }}_${DEB_ARCH}.deb"
           mv "$ORIG" "$NEW"
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
           cp "$NEW" "$GITHUB_WORKSPACE/artifacts/"
@@ -528,7 +566,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: qumesh-${{ matrix.distro_tag }}
+          name: qumesh-${{ matrix.distro_tag }}-${{ matrix.arch }}
           path: artifacts/*
           if-no-files-found: error
 
@@ -567,16 +605,28 @@ jobs:
           name: qumesh-Windows
           path: dist/
 
-      - name: Download Ubuntu 26.04 artifact
+      - name: Download Ubuntu 26.04 (amd64) artifact
         uses: actions/download-artifact@v4
         with:
-          name: qumesh-ubuntu26.04
+          name: qumesh-ubuntu26.04-amd64
           path: dist/
 
-      - name: Download Debian 13 artifact
+      - name: Download Ubuntu 26.04 (arm64) artifact
         uses: actions/download-artifact@v4
         with:
-          name: qumesh-debian13
+          name: qumesh-ubuntu26.04-arm64
+          path: dist/
+
+      - name: Download Debian 13 (amd64) artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: qumesh-debian13-amd64
+          path: dist/
+
+      - name: Download Debian 13 (arm64) artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: qumesh-debian13-arm64
           path: dist/
 
       - name: Download Sparkle appcast fragment (if produced)
