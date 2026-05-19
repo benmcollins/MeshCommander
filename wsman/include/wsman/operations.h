@@ -692,6 +692,17 @@ struct BootActionParams
     /// a base64 TLV blob built from `httpsBootUrl` plus the count.
     bool httpsBootUrl = false;
     QString httpsBootUrlStr;
+
+    /// One-Click Recovery (#170). When `oneClickRecovery == true` the
+    /// chain attaches `ocrTlvBase64` + `ocrTlvCount` to the
+    /// `AMT_BootSettingData` Put the same way the platform-erase /
+    /// UEFI HTTPS Boot branches do, and the caller has already set
+    /// `amtBootSource` to the right `Force OCR UEFI ...` instance.
+    /// Build the TLV with `buildOcrPbaBootTlv` (PBA / WinRE) or
+    /// `buildOcrHttpsBootPinnedTlv` (HTTPS recovery image).
+    bool oneClickRecovery = false;
+    QString ocrTlvBase64;
+    int ocrTlvCount = 0;
 };
 
 /// Build the `UefiBootParametersArray` TLV blob for a Platform Erase
@@ -714,6 +725,87 @@ struct BootActionParams
 ///   * type 20 — 1-byte "sync root CA" flag (1)
 ///   * type 30 — 2-byte HTTPS request timeout (0 = firmware default)
 [[nodiscard]] QByteArray buildHttpsBootUrlTlv(const QString &url, int *tlvCount);
+
+/// One row of `CIM_BootSourceSetting`. AMT enumerates per-source rows
+/// for every BIOS-registered firmware boot option; the OCR-specific
+/// rows have InstanceIDs of the form `Intel(r) AMT: Force OCR UEFI
+/// Boot Option N`, with a `BIOSBootString` the firmware uses to
+/// identify which OCR sub-target (PBA, WinRE) the row references.
+struct BootSourceSetting
+{
+    QString instanceId;
+    QString elementName;
+    /// The firmware-registered string AMT uses to address this boot
+    /// option in the OCR TLV (`OCR_EFI_FILE_DEVICE_PATH`).
+    QString bootString;
+    /// Friendly label set by BIOS — usually contains "WinRe" for the
+    /// Windows Recovery row.
+    QString biosBootString;
+    QString structuredBootString;
+};
+
+struct BootSourceSettingsResult
+{
+    bool ok = false;
+    QString error;
+    QList<BootSourceSetting> sources;
+};
+
+/// Enumerate `CIM_BootSourceSetting`. Used by the One-Click Recovery
+/// flow (#170) to find the InstanceID + BootString of the PBA / WinRE
+/// boot option the operator wants to trigger.
+void enumerateBootSourceSettings(WsmanClient *client,
+                                  std::function<void(BootSourceSettingsResult)> callback);
+
+/// One-Click Recovery (#170) parameter-type table — values match
+/// Intel's `bootOptionsValidator.ts` in the open-amt-cloud-toolkit
+/// MPS reference. Public so tests can assert by name.
+enum class OcrTlvType : quint16
+{
+    EfiNetworkDevicePath        = 1,
+    EfiFileDevicePath           = 2,
+    EfiDevicePathLen            = 3,
+    BootImageHashSha256         = 4,
+    BootImageHashSha384         = 5,
+    BootImageHashSha512         = 6,
+    EfiBootOptionalData         = 10,
+    HttpsCertSyncRootCa         = 20,
+    HttpsCertServerName         = 21,
+    HttpsServerNameVerifyMethod = 22,
+    HttpsServerCertHashSha256   = 23,
+    HttpsServerCertHashSha384   = 24,
+    HttpsServerCertHashSha512   = 25,
+    HttpsRequestTimeout         = 30,
+    HttpsUserName               = 40,
+    HttpsPassword               = 41,
+};
+
+/// Build the OCR PBA / WinRE TLV — `OCR_EFI_FILE_DEVICE_PATH` (the
+/// firmware-registered BootString) plus `OCR_EFI_DEVICE_PATH_LEN`
+/// (the BootString length as little-endian u16). `*tlvCount` returns
+/// the number of parameters written (always 2). See #170.
+[[nodiscard]] QByteArray buildOcrPbaBootTlv(const QString &bootString, int *tlvCount);
+
+/// Build the OCR HTTPS-Boot TLV with optional cert + image-hash
+/// pinning. Fields:
+///   * type 1                — URL bytes
+///   * type 4/5/6            — boot image hash (alg picks the type)
+///   * type 20               — sync root CA flag (always 1)
+///   * type 23/24/25         — server cert hash pin (alg picks)
+///   * type 40 / 41          — HTTPS basic-auth username / password
+///
+/// `hashAlg` is `"sha256"`, `"sha384"`, or `"sha512"`; an empty string
+/// skips the image-hash entry. Likewise for `pinnedServerCertHash*`.
+/// `username` / `password` are optional. See #170.
+[[nodiscard]] QByteArray buildOcrHttpsBootPinnedTlv(
+    const QString &url,
+    const QString &hashAlg,
+    const QByteArray &imageHash,
+    const QString &pinnedServerCertHashAlg,
+    const QByteArray &pinnedServerCertHash,
+    const QString &username,
+    const QString &password,
+    int *tlvCount);
 
 /// One processor — `CIM_Processor` zipped with `CIM_Chip` by index.
 struct HardwareCpu

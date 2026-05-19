@@ -196,6 +196,12 @@ class MachineDetailsController : public QObject
     /// build the per-sub-action checkbox list.
     Q_PROPERTY(int capPlatformEraseMask READ capPlatformEraseMask NOTIFY bootCapabilitiesChanged)
     Q_PROPERTY(bool capForceUefiHttpsBoot READ capForceUefiHttpsBoot NOTIFY bootCapabilitiesChanged)
+    /// One-Click Recovery (#170) capability bits, surfaced as scalar
+    /// `Q_PROPERTY` for QML's enable/visible gates. Mirrors the
+    /// `AMT_BootCapabilities` fields `ForceWinREBoot` and
+    /// `ForceUEFILocalPBABoot`.
+    Q_PROPERTY(bool capForceWinReBoot READ capForceWinReBoot NOTIFY bootCapabilitiesChanged)
+    Q_PROPERTY(bool capForceUefiLocalPbaBoot READ capForceUefiLocalPbaBoot NOTIFY bootCapabilitiesChanged)
 
     /// Comprehensive `AMT_BootCapabilities` snapshot keyed by capability
     /// name for the read-only Boot Capabilities pane (#172). Each value
@@ -313,6 +319,8 @@ public:
         return static_cast<int>(m_capPlatformEraseMask);
     }
     [[nodiscard]] bool capForceUefiHttpsBoot() const { return m_capForceUefiHttpsBoot; }
+    [[nodiscard]] bool capForceWinReBoot() const { return m_capForceWinReBoot; }
+    [[nodiscard]] bool capForceUefiLocalPbaBoot() const { return m_capForceUefiLocalPbaBoot; }
     [[nodiscard]] QVariantMap bootCapabilities() const { return m_bootCapabilities; }
 
     [[nodiscard]] bool optInRequired() const { return m_optInRequired; }
@@ -643,6 +651,37 @@ public:
     /// (otherwise the firmware refuses).
     Q_INVOKABLE void bootToHttpsBootUrl(bool reset, const QString &url);
 
+    /// One-Click Recovery (#170). Boot the device into the BIOS-
+    /// registered Windows Recovery Environment. Enumerates
+    /// `CIM_BootSourceSetting`, picks the row whose `BIOSBootString`
+    /// contains "WinRe", and triggers the OCR boot via the standard
+    /// chain. Surfaces a `lastError` when BIOS hasn't registered a
+    /// WinRE row.
+    Q_INVOKABLE void bootToWinRE(bool reset);
+
+    /// One-Click Recovery (#170). Boot to the `pbaIndex`-th BIOS-
+    /// registered Pre-Boot Authentication image (1..10). The boot
+    /// options are enumerated in InstanceID order, so #1 is the
+    /// first row AMT exposes.
+    Q_INVOKABLE void bootToLocalPBA(bool reset, int pbaIndex);
+
+    /// One-Click Recovery (#170). Fetch a signed PBA image over
+    /// HTTPS at `url`. `hashAlg` ∈ {"sha256","sha384","sha512"} and
+    /// `hashHex` pin the boot image; pass empty values to skip. The
+    /// optional `pinnedServerCertHash*` pair (same alg names, hex
+    /// digest) pins the recovery server's cert. `username` /
+    /// `password` carry HTTPS basic auth. Hex strings are decoded
+    /// by the controller; we take strings rather than `QByteArray`
+    /// because QML can't easily produce raw byte buffers.
+    Q_INVOKABLE void bootToOcrHttpsUrl(bool reset,
+                                        const QString &url,
+                                        const QString &hashAlg,
+                                        const QString &hashHex,
+                                        const QString &pinnedServerCertHashAlg,
+                                        const QString &pinnedServerCertHashHex,
+                                        const QString &username,
+                                        const QString &password);
+
     /// Called by the QML trust prompt. On accept, the pending cert's
     /// fingerprint is promoted into the trusted list, the trust state
     /// clears, and the operation that triggered the prompt is retried.
@@ -867,6 +906,8 @@ private:
     bool m_capBiosPause = false;
     bool m_capSecureErase = false;
     bool m_capPlatformErase = false;
+    bool m_capForceWinReBoot = false;
+    bool m_capForceUefiLocalPbaBoot = false;
     quint32 m_capPlatformEraseMask = 0;
     bool m_capForceUefiHttpsBoot = false;
     QVariantMap m_bootCapabilities;
