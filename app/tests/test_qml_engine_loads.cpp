@@ -221,24 +221,33 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
     }
 }
 
-// #262 diagnostic. The Windows CI runner consistently fails the test
-// in ~0.4 s with zero captured stdout/stderr — looks like the process
-// terminates before C-runtime output is flushed (most likely an
-// unhandled SEH exception inside `Q_IMPORT_PLUGIN(QuMeshPlugin)`'s
-// static-init pass, ahead of main()). Write to a file from main() so
-// the next CI cycle can prove whether main() is ever reached. The
-// caller is expected to print the file's contents from the Test step
-// when the test fails. Drop this once the bug is understood.
+// #262 diagnostic. Windows CI reports the test as failed in ~0.4 s
+// with zero captured stdout/stderr. The first diagnostic round
+// (file-based checkpoints) proved main() runs end-to-end, so the
+// non-zero exit must be coming from a shutdown destructor crash OR
+// QtTest output is buffered+lost somewhere ctest can't see. This
+// round dumps the QTest::qExec return code, force-flushes stdout +
+// stderr at every checkpoint, and installs an atexit() handler so
+// we can tell whether the process exits cleanly after main returns.
+// Drop this once the underlying bug is fixed.
 static void diag(const char *stage)
 {
     if (FILE *f = std::fopen("test_qml_engine_loads.diag.log", "a")) {
         std::fprintf(f, "[diag] %s\n", stage);
         std::fclose(f);
     }
+    std::fflush(stdout);
+    std::fflush(stderr);
+}
+
+static void diagAtExit()
+{
+    diag("atexit fired (process is about to exit cleanly)");
 }
 
 int main(int argc, char *argv[])
 {
+    std::atexit(&diagAtExit);
     diag("entered main()");
     // Run headless on every platform regardless of whether the CI lane
     // sets QT_QPA_PLATFORM itself. Must happen before QGuiApplication.
@@ -262,6 +271,11 @@ int main(int argc, char *argv[])
     diag("about to QTest::qExec");
     TestQmlEngineLoads tc;
     const int rc = QTest::qExec(&tc, argc, argv);
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "QTest::qExec returned rc=%d", rc);
+        diag(buf);
+    }
     diag("returning from main()");
     return rc;
 }
