@@ -4,6 +4,7 @@
 #include "certmodel.h"
 #include "computermodel.h"
 #include "configstore.h"
+#include "filename_formatter.h"
 #include "idercontroller.h"
 #include "kvmcontroller.h"
 #include "kvmframebuffer.h"
@@ -119,6 +120,12 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "MigrationController",
                                  &migrationController);
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "CertModel", &certModel);
+
+    // Stateless QML-side helper that turns a (machine name, extension)
+    // pair into the suggested save filename for KVM/SOL dialogs.
+    qumesh::app::FilenameFormatter filenameFormatter;
+    qmlRegisterSingletonInstance("QuMesh", 1, 0, "FilenameFormatter",
+                                  &filenameFormatter);
     qmlRegisterType<qumesh::app::SolController>("QuMesh", 1, 0, "SolController");
     qmlRegisterType<qumesh::app::IderController>("QuMesh", 1, 0, "IderController");
     qmlRegisterType<qumesh::app::KvmController>("QuMesh", 1, 0, "KvmController");

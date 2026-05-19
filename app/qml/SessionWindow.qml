@@ -243,6 +243,7 @@ AppWindow {
             SolPanel {
                 id: solPanel
                 targetHost: root.targetHost
+                machineName: root.label
                 user: root.user
                 password: root.password
                 tls: root.tls
@@ -259,6 +260,7 @@ AppWindow {
             KvmPanel {
                 id: kvmPanel
                 targetHost: root.targetHost
+                machineName: root.label
                 user: root.user
                 password: root.password
                 tls: root.tls

@@ -31,6 +31,8 @@ qt_add_executable(qumesh
     src/asciicast_recorder.h
     src/mjpeg_mov_recorder.cpp
     src/mjpeg_mov_recorder.h
+    src/filename_formatter.cpp
+    src/filename_formatter.h
     src/certmodel.cpp
     src/certmodel.h
     src/scannercontroller.cpp

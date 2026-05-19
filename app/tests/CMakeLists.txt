@@ -86,6 +86,18 @@ target_link_libraries(test_mjpeg_mov_recorder PRIVATE
 )
 add_test(NAME test_mjpeg_mov_recorder COMMAND test_mjpeg_mov_recorder)
 
+qt_add_executable(test_filename_formatter
+    test_filename_formatter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/filename_formatter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/filename_formatter.h
+)
+target_include_directories(test_filename_formatter PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_filename_formatter PRIVATE
+    Qt6::Core
+    Qt6::Test
+)
+add_test(NAME test_filename_formatter COMMAND test_filename_formatter)
+
 qt_add_executable(test_solcontroller
     test_solcontroller.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/asciicast_recorder.cpp
