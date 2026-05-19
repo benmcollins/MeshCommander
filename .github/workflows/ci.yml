@@ -122,6 +122,26 @@ jobs:
           set "PATH=%RUNNER_TEMP%\windeps\x64-windows\bin;%PATH%"
           ctest --output-on-failure --parallel
 
+      # #262 diagnostic. test_qml_engine_loads on Windows fails with
+      # zero captured ctest output (process terminates before stdout
+      # is flushed). The test writes structured progress to
+      # `<test-dir>/test_qml_engine_loads.diag.log` from main(); print
+      # it on test failure so we can tell whether main() was reached.
+      # Remove once the underlying bug is fixed.
+      - name: Dump #262 diagnostic log (Windows)
+        if: runner.os == 'Windows' && failure()
+        shell: cmd
+        working-directory: build
+        run: |
+          dir /S /B test_qml_engine_loads.diag.log 2>nul && (
+            for /R %%f in (test_qml_engine_loads.diag.log) do (
+              echo === %%f ===
+              type "%%f"
+            )
+          ) || (
+            echo "(no diag log produced — main() was not reached)"
+          )
+
   # Mirrors the matrix used by release.yml's `build-linux` job so PRs
   # catch the two regressions that are easy to introduce when only
   # macOS/Windows are tested at PR time:

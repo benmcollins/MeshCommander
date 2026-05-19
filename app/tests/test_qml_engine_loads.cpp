@@ -26,6 +26,7 @@
 #include <QtTest>
 
 #include <atomic>
+#include <cstdio>
 
 namespace {
 
@@ -220,8 +221,25 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
     }
 }
 
+// #262 diagnostic. The Windows CI runner consistently fails the test
+// in ~0.4 s with zero captured stdout/stderr — looks like the process
+// terminates before C-runtime output is flushed (most likely an
+// unhandled SEH exception inside `Q_IMPORT_PLUGIN(QuMeshPlugin)`'s
+// static-init pass, ahead of main()). Write to a file from main() so
+// the next CI cycle can prove whether main() is ever reached. The
+// caller is expected to print the file's contents from the Test step
+// when the test fails. Drop this once the bug is understood.
+static void diag(const char *stage)
+{
+    if (FILE *f = std::fopen("test_qml_engine_loads.diag.log", "a")) {
+        std::fprintf(f, "[diag] %s\n", stage);
+        std::fclose(f);
+    }
+}
+
 int main(int argc, char *argv[])
 {
+    diag("entered main()");
     // Run headless on every platform regardless of whether the CI lane
     // sets QT_QPA_PLATFORM itself. Must happen before QGuiApplication.
     qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -229,7 +247,9 @@ int main(int argc, char *argv[])
     // surface — sometimes needed under offscreen, and never harmful
     // for a load-only smoke test.
     qputenv("QT_QUICK_BACKEND", "software");
+    diag("about to construct QGuiApplication");
     QGuiApplication app(argc, argv);
+    diag("QGuiApplication constructed");
     // Mirror main.cpp's QCoreApplication setup. Without these the QML
     // `Settings { category: "theme" }` in Main.qml fails to initialise
     // its underlying QSettings ("Failed to initialize QSettings
@@ -239,8 +259,11 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("Insynergy"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("insynergy.com"));
     QCoreApplication::setApplicationName(QStringLiteral("QuMesh"));
+    diag("about to QTest::qExec");
     TestQmlEngineLoads tc;
-    return QTest::qExec(&tc, argc, argv);
+    const int rc = QTest::qExec(&tc, argc, argv);
+    diag("returning from main()");
+    return rc;
 }
 
 #include "test_qml_engine_loads.moc"
