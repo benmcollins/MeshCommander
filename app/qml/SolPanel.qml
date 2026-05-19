@@ -3,6 +3,7 @@
 
 pragma ComponentBehavior: Bound
 
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Dialogs
@@ -16,11 +17,17 @@ Item {
     id: root
 
     property string targetHost
+    property string machineName
     property string user
     property string password
     property bool tls: false
     property var trustedFingerprints: []
     property var sshConfig: ({})
+
+    // Prefix the save dialogs default to. Prefer the user-given name;
+    // fall back to the host when no name is set.
+    readonly property string saveNamePrefix:
+        machineName.length > 0 ? machineName : targetHost
 
     signal trustedFingerprintPersistRequested(string fingerprint)
     signal trustedSshHostKeyPersistRequested(string fingerprint)
@@ -57,6 +64,22 @@ Item {
 
     CertTrustDialog {
         controller: controller
+    }
+
+    // Open the save dialogs with a default name pre-populated.
+    function openScreenshotDialog() {
+        screenshotDialog.currentFolder =
+            StandardPaths.writableLocation(StandardPaths.DocumentsLocation);
+        screenshotDialog.selectedFile = screenshotDialog.currentFolder + "/"
+            + FilenameFormatter.defaultName(root.saveNamePrefix, "png");
+        screenshotDialog.open();
+    }
+    function openRecordDialog() {
+        recordDialog.currentFolder =
+            StandardPaths.writableLocation(StandardPaths.DocumentsLocation);
+        recordDialog.selectedFile = recordDialog.currentFolder + "/"
+            + FilenameFormatter.defaultName(root.saveNamePrefix, "cast");
+        recordDialog.open();
     }
 
     FileDialog {
@@ -152,7 +175,7 @@ Item {
                 font.family: Type.sans
                 font.pixelSize: Type.sizeXs
                 enabled: term.width > 0 && term.height > 0
-                onClicked: screenshotDialog.open()
+                onClicked: root.openScreenshotDialog()
             }
 
             Rectangle {
@@ -189,7 +212,7 @@ Item {
                 enabled: controller.state === SolController.Connected
                 onClicked: {
                     if (controller.recording) controller.stopRecording();
-                    else                       recordDialog.open();
+                    else                       root.openRecordDialog();
                 }
             }
 

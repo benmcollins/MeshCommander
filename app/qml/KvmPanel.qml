@@ -3,6 +3,7 @@
 
 pragma ComponentBehavior: Bound
 
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Dialogs
@@ -16,11 +17,18 @@ Item {
     id: root
 
     property string targetHost
+    property string machineName
     property string user
     property string password
     property bool tls: false
     property var trustedFingerprints: []
     property var sshConfig: ({})
+
+    // The prefix the save dialogs default the filename to. Prefer the
+    // user-given machine name; fall back to the host so a freshly-added
+    // unnamed machine still gets a usable suggestion.
+    readonly property string saveNamePrefix:
+        machineName.length > 0 ? machineName : targetHost
 
     signal trustedFingerprintPersistRequested(string fingerprint)
     signal trustedSshHostKeyPersistRequested(string fingerprint)
@@ -75,6 +83,25 @@ Item {
 
     CertTrustDialog {
         controller: controller
+    }
+
+    // Open the save dialogs with a sensible default name pre-populated:
+    //   "<machine> YYYY-MM-DD at H.MM.SS [AP]M.<ext>"
+    // The folder defaults to the user's Documents directory; the dialog
+    // remembers wherever the user navigates to afterwards.
+    function openScreenshotDialog() {
+        screenshotDialog.currentFolder =
+            StandardPaths.writableLocation(StandardPaths.DocumentsLocation);
+        screenshotDialog.selectedFile = screenshotDialog.currentFolder + "/"
+            + FilenameFormatter.defaultName(root.saveNamePrefix, "png");
+        screenshotDialog.open();
+    }
+    function openRecordDialog() {
+        recordDialog.currentFolder =
+            StandardPaths.writableLocation(StandardPaths.DocumentsLocation);
+        recordDialog.selectedFile = recordDialog.currentFolder + "/"
+            + FilenameFormatter.defaultName(root.saveNamePrefix, "mov");
+        recordDialog.open();
     }
 
     FileDialog {
@@ -162,7 +189,7 @@ Item {
                 font.family: Type.sans
                 font.pixelSize: Type.sizeXs
                 enabled: controller.state === KvmController.Connected
-                onClicked: screenshotDialog.open()
+                onClicked: root.openScreenshotDialog()
             }
 
             // Pulsing red dot + elapsed time, shown only during recording.
@@ -200,7 +227,7 @@ Item {
                 enabled: controller.state === KvmController.Connected
                 onClicked: {
                     if (controller.recording) controller.stopRecording();
-                    else                       recordDialog.open();
+                    else                       root.openRecordDialog();
                 }
             }
 
