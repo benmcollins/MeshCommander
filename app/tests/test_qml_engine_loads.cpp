@@ -73,6 +73,13 @@ void captureMessage(QtMsgType type, const QMessageLogContext &ctx,
         // resolution, not image-codec coverage.
         QRegularExpression(QStringLiteral(
             "Error decoding: qrc:/icons/.*\\.svg: Unsupported image format")),
+        // Windows + offscreen QPA looks for fonts at
+        // `<prefix>/lib/fonts/` at QGuiApplication construction. When
+        // we run from the build tree (not an installed Qt), the dir
+        // doesn't exist and QFontDatabase logs a one-shot warning.
+        // Doesn't affect anything the smoke test cares about. See #262.
+        QRegularExpression(QStringLiteral(
+            "QFontDatabase: Cannot find font directory")),
     };
 
     for (const auto &re : kAllowList) {
@@ -172,7 +179,6 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
         return QStringLiteral("Captured QtMsg output:\n  ")
             + sink.messages.join(QStringLiteral("\n  "));
     };
-
     QVERIFY2(!creationFailed.load(), qPrintable(dumpSink()));
     QCOMPARE(engine.rootObjects().size(), 1);
 
