@@ -26,6 +26,9 @@ private slots:
     void buildInvokeEnvelopeOrderedRepeatsKeys();
     void clearLogEnvelopeShapeForAuditLog();
     void clearLogEnvelopeShapeForMessageLog();
+    void generateKeyPairEnvelopeShape();
+    void parseGenerateKeyPairInstanceIdFromBody();
+    void getPublicPrivateKeyPairEnvelopeShape();
 };
 
 namespace {
@@ -292,6 +295,103 @@ void TestSoapEnvelope::clearLogEnvelopeShapeForMessageLog()
     QVERIFY(env.contains("AMT_MessageLog/ClearLog"));
     QVERIFY(env.contains("ClearLog_INPUT"));
     QVERIFY(env.contains("uuid:event-clear-1"));
+}
+
+void TestSoapEnvelope::generateKeyPairEnvelopeShape()
+{
+    // The `buildInvokeEnvelope` path used by `generateKeyPair`. Two
+    // numeric parameters land inside `<GenerateKeyPair_INPUT>`.
+    QHash<QString, QString> params;
+    params.insert(QStringLiteral("KeyAlgorithm"), QStringLiteral("0"));
+    params.insert(QStringLiteral("KeyLength"), QStringLiteral("2048"));
+    const QByteArray env = buildInvokeEnvelope(
+        QStringLiteral("http://intel.com/wbem/wscim/1/amt-schema/1/"
+                       "AMT_PublicKeyManagementService"),
+        QStringLiteral("GenerateKeyPair"),
+        {}, params,
+        QStringLiteral("http://10.0.0.5:16992/wsman"),
+        QStringLiteral("uuid:gkp-1"));
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    QVERIFY(env.contains("AMT_PublicKeyManagementService/GenerateKeyPair"));
+    QVERIFY(env.contains("GenerateKeyPair_INPUT"));
+    QVERIFY(env.contains("KeyAlgorithm"));
+    QVERIFY(env.contains("KeyLength"));
+    QVERIFY(env.contains(">2048<"));
+    QVERIFY(env.contains("uuid:gkp-1"));
+}
+
+void TestSoapEnvelope::parseGenerateKeyPairInstanceIdFromBody()
+{
+    // GenerateKeyPair_OUTPUT carries an EPR. The op uses a private
+    // helper to pluck the InstanceID selector — re-create the same
+    // walk here via `findScalar`'s sibling, which is the contract
+    // surface other tests share.
+    constexpr char kBody[] = R"(<g:GenerateKeyPair_OUTPUT
+            xmlns:g="http://intel.com/wbem/wscim/1/amt-schema/1/AMT_PublicKeyManagementService"
+            xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+            xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd">
+          <g:KeyPair>
+            <a:Address>http://...anonymous</a:Address>
+            <a:ReferenceParameters>
+              <w:ResourceURI>http://intel.com/wbem/wscim/1/amt-schema/1/AMT_PublicPrivateKeyPair</w:ResourceURI>
+              <w:SelectorSet>
+                <w:Selector Name="InstanceID">Intel(r) AMT Key: Handle: 7</w:Selector>
+              </w:SelectorSet>
+            </a:ReferenceParameters>
+          </g:KeyPair>
+          <g:ReturnValue>0</g:ReturnValue>
+        </g:GenerateKeyPair_OUTPUT>)";
+
+    // Body-level findScalar for ReturnValue is the same one
+    // `generateKeyPair` uses; sanity-check it parses.
+    QCOMPARE(findScalar(QByteArray(kBody), QStringLiteral("ReturnValue")),
+             QStringLiteral("0"));
+
+    // The runtime parses the EPR's selector via a streaming reader.
+    // Mirror its shape: walk for the Selector[Name=InstanceID] value.
+    QXmlStreamReader r(QByteArray{kBody});
+    QString found;
+    bool inSelector = false;
+    QString curName;
+    while (!r.atEnd()) {
+        r.readNext();
+        if (r.isStartElement() && r.name() == QStringLiteral("Selector")) {
+            inSelector = true;
+            curName = r.attributes().value(QStringLiteral("Name")).toString();
+        } else if (inSelector && r.isCharacters() && curName == QStringLiteral("InstanceID")) {
+            found = r.text().toString();
+        } else if (r.isEndElement() && r.name() == QStringLiteral("Selector")) {
+            inSelector = false;
+        }
+    }
+    QCOMPARE(found, QStringLiteral("Intel(r) AMT Key: Handle: 7"));
+}
+
+void TestSoapEnvelope::getPublicPrivateKeyPairEnvelopeShape()
+{
+    QHash<QString, QString> sel{
+        {QStringLiteral("InstanceID"),
+         QStringLiteral("Intel(r) AMT Key: Handle: 7")},
+    };
+    const QByteArray env = buildGetEnvelope(
+        QStringLiteral("http://intel.com/wbem/wscim/1/amt-schema/1/"
+                       "AMT_PublicPrivateKeyPair"),
+        sel,
+        QStringLiteral("http://10.0.0.5:16992/wsman"),
+        QStringLiteral("uuid:gppkp-1"));
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    QVERIFY(env.contains("http://schemas.xmlsoap.org/ws/2004/09/transfer/Get"));
+    QVERIFY(env.contains("AMT_PublicPrivateKeyPair"));
+    QVERIFY(env.contains("Intel(r) AMT Key: Handle: 7"));
+    QVERIFY(env.contains("uuid:gppkp-1"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)

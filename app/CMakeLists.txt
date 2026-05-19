@@ -121,6 +121,7 @@ qt_add_qml_module(qumesh_appcore
         qml/AboutDialog.qml
         qml/LinuxUpdateDialog.qml
         qml/AddCertificateDialog.qml
+        qml/IssueCertificateDialog.qml
         qml/TlsModeDialog.qml
         qml/CertDetailsDialog.qml
         qml/WiFiProfileDialog.qml

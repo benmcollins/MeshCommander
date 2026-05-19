@@ -419,6 +419,28 @@ public:
                                                 bool acceptNonSecureConnections,
                                                 const QVariantList &trustedCn);
 
+    /// Phase C of the device-cert work (#222): issue a fresh
+    /// certificate from scratch. Kicks off the multi-step flow —
+    /// GenerateKeyPair → Get on the returned EPR for DERKey → build
+    /// null-signed PKCS#10 template → GeneratePKCS10RequestEx. Emits
+    /// `csrReady(pem)` on success or `csrFailed(err)` on any step's
+    /// failure. `keyAlgorithm` 0 = RSA (only value AMT accepts);
+    /// `signingAlgorithm` 0 = SHA1-RSA (removed from CSME 18.0+),
+    /// 1 = SHA256-RSA.
+    Q_INVOKABLE void generateKeyPairAndCsr(int keyLength,
+                                            int keyAlgorithm,
+                                            const QString &subjectDn,
+                                            int signingAlgorithm);
+
+    /// Phase C step 2 (#222): install the signed cert into the device
+    /// store and bind it to the chosen TLS endpoint collection.
+    /// Internally: AddCertificate → re-enumerate (to find the new
+    /// InstanceID by fingerprint) → bindCertToTlsEndpoint → refresh.
+    /// Emits `certInstalled(newInstanceId)` or `certInstallFailed(err)`.
+    Q_INVOKABLE void installSignedCertAndBindTls(
+        const QString &signedCertPem,
+        const QString &tlsEndpointCollectionId);
+
     Q_INVOKABLE void refreshRemoteAccess();
 
     /// Invoke `IPS_HTTPProxyService.AddProxyAccessPoint` and re-read
@@ -664,6 +686,17 @@ signals:
     void auditLogChanged();
     void activeSessionsChanged();
     void deviceCertStoreChanged();
+    /// Phase C (#222) — `generateKeyPairAndCsr` reached the firmware-
+    /// signed CSR. `pemCsr` is a PEM-wrapped CertificationRequest the
+    /// operator can hand off to a CA.
+    void csrReady(const QString &pemCsr);
+    /// Phase C (#222) — any step of `generateKeyPairAndCsr` failed.
+    void csrFailed(const QString &error);
+    /// Phase C (#222) — `installSignedCertAndBindTls` finished: the
+    /// signed cert is in the device store and bound to the chosen
+    /// TLS endpoint collection.
+    void certInstalled(const QString &newCertInstanceId);
+    void certInstallFailed(const QString &error);
     void remoteAccessChanged();
     void wirelessChanged();
     void agentPresenceChanged();

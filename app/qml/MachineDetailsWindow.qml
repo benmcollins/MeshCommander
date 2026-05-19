@@ -205,6 +205,11 @@ AppWindow {
         controller: controller
     }
 
+    IssueCertificateDialog {
+        id: issueCertificateDialog
+        controller: controller
+    }
+
     TlsModeDialog {
         id: tlsModeDialog
         controller: controller
@@ -2774,6 +2779,14 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Item { Layout.fillWidth: true }
+                                    FlatButton {
+                                        text: qsTr("Issue certificate…")
+                                        font.family: Type.sans
+                                        font.pixelSize: Type.sizeXs
+                                        ToolTip.text: qsTr("Generate a fresh key pair on the device and obtain a CA-signed cert")
+                                        ToolTip.visible: hovered
+                                        onClicked: issueCertificateDialog.openForIssue()
+                                    }
                                     AccentButton {
                                         text: qsTr("Add certificate…")
                                         font.family: Type.sans
