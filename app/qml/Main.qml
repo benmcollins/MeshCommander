@@ -68,6 +68,11 @@ ApplicationWindow {
                 Colors.dark = !Colors.dark;
                 themeSettings.dark = Colors.dark;
             }
+            onOpenAbout: aboutDialog.open()
+        }
+
+        AboutDialog {
+            id: aboutDialog
         }
 
         HeartbeatBar {

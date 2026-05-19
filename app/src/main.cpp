@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
+#include "appinfo.h"
 #include "certmodel.h"
 #include "computermodel.h"
 #include "configstore.h"
@@ -126,6 +127,12 @@ int main(int argc, char *argv[])
     qumesh::app::FilenameFormatter filenameFormatter;
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "FilenameFormatter",
                                   &filenameFormatter);
+
+    // Build / release metadata for the About dialog (#246). The version
+    // and build date are baked in at configure time; the license text
+    // is read lazily from `:/QuMesh/LICENSE.md`.
+    qumesh::app::AppInfo appInfo;
+    qmlRegisterSingletonInstance("QuMesh", 1, 0, "AppInfo", &appInfo);
     qmlRegisterType<qumesh::app::SolController>("QuMesh", 1, 0, "SolController");
     qmlRegisterType<qumesh::app::IderController>("QuMesh", 1, 0, "IderController");
     qmlRegisterType<qumesh::app::KvmController>("QuMesh", 1, 0, "KvmController");

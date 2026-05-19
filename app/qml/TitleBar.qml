@@ -13,6 +13,7 @@ Rectangle {
 
     signal openCertificates()
     signal toggleTheme()
+    signal openAbout()
 
     color: Colors.surface
     implicitHeight: 36
@@ -101,6 +102,20 @@ Rectangle {
             font.pixelSize: Type.sizeXs
             font.letterSpacing: 1
             onClicked: Updater.checkForUpdates()
+        }
+
+        // Version chip on the far right. Clickable to open the About
+        // dialog (#246). Muted so it reads as metadata, not a button.
+        FlatButton {
+            id: versionChip
+            text: qsTr("v%1").arg(AppInfo.version)
+            font.family: Type.mono
+            font.pixelSize: Type.sizeXs
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("About QuMesh")
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("About QuMesh")
+            onClicked: root.openAbout()
         }
     }
 
