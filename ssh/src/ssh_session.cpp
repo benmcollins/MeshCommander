@@ -2,8 +2,10 @@
 // Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
 #include "ssh/ssh_session.h"
+#include "ssh_poll.h"
 #include "ssh_session_worker.h"
 
+#include <QElapsedTimer>
 #include <QFile>
 #include <QMutexLocker>
 #include <QPointer>
@@ -50,6 +52,27 @@ QString keyTypeName(ssh_keytypes_e t)
 
 SshSessionWorker::SshSessionWorker(QObject *parent) : QObject(parent) {}
 
+int SshSessionWorker::waitForLibssh(const std::function<int()> &call, int timeoutMs)
+{
+    constexpr int kTickMs = 50;
+    if (timeoutMs <= 0) timeoutMs = qMax(1, m_params.connectTimeoutMs);
+    QElapsedTimer deadline;
+    deadline.start();
+    while (true) {
+        if (m_stopRequested.load(std::memory_order_acquire))
+            return SSH_ABORTED;
+        const int rc = call();
+        if (rc != SSH_AGAIN && rc != SSH_AUTH_AGAIN)
+            return rc;
+        if (m_session == nullptr) return SSH_ABORTED;
+        if (deadline.elapsed() >= timeoutMs)
+            return SSH_ERROR;
+        const int flags = ssh_get_poll_flags(m_session);
+        const socket_t fd = ssh_get_fd(m_session);
+        detail::waitSessionReady(fd, flags, kTickMs);
+    }
+}
+
 SshSessionWorker::~SshSessionWorker()
 {
     if (m_session != nullptr) {
@@ -87,6 +110,13 @@ void SshSessionWorker::open(SshSession::Params p)
         fail(QStringLiteral("ssh_new() failed"));
         return;
     }
+    // libssh's blocking-mode default starves the worker's event loop
+    // during ssh_connect / ssh_userauth_* — so a destructor that wants
+    // to land on this thread can't, until libssh's full timeout
+    // expires. Switching to non-blocking + a short-tick poll loop
+    // (see `waitForLibssh`) bounds the worker's responsiveness at
+    // ~50 ms regardless of what libssh is doing. See #233.
+    ssh_set_blocking(m_session, 0);
 
     const QByteArray hostBytes = m_params.host.toUtf8();
     const QByteArray userBytes = m_params.user.toUtf8();
@@ -118,7 +148,14 @@ void SshSessionWorker::open(SshSession::Params p)
         }
     }
 
-    if (ssh_connect(m_session) != SSH_OK) {
+    const int connectRc = waitForLibssh([this]{ return ssh_connect(m_session); });
+    if (connectRc == SSH_ABORTED) {
+        // Caller is tearing us down; skip the user-facing error path,
+        // just clean up the session. close() (queued from the dtor)
+        // will fire next and emit Disconnected.
+        return;
+    }
+    if (connectRc != SSH_OK) {
         fail(sshErrorString(m_session, QStringLiteral("ssh_connect failed")));
         return;
     }
@@ -163,8 +200,10 @@ ssh_channel SshSessionWorker::openForwardChannel(const QString &remoteHost,
     ssh_channel ch = ssh_channel_new(m_session);
     if (ch == nullptr) return nullptr;
     const QByteArray rhost = remoteHost.toUtf8();
-    const int rc = ssh_channel_open_forward(ch, rhost.constData(),
-                                             remotePort, "127.0.0.1", 0);
+    const int rc = waitForLibssh([ch, &rhost, remotePort]{
+        return ssh_channel_open_forward(ch, rhost.constData(),
+                                         remotePort, "127.0.0.1", 0);
+    });
     if (rc != SSH_OK) {
         ssh_channel_free(ch);
         return nullptr;
@@ -225,7 +264,9 @@ void SshSessionWorker::proceedWithAuth()
     switch (m_params.authMode) {
     case SshSession::AuthPassword: {
         const QByteArray pw = m_params.password.toUtf8();
-        rc = ssh_userauth_password(m_session, nullptr, pw.constData());
+        rc = waitForLibssh([this, &pw]{
+            return ssh_userauth_password(m_session, nullptr, pw.constData());
+        });
         break;
     }
     case SshSession::AuthKey: {
@@ -249,12 +290,18 @@ void SshSessionWorker::proceedWithAuth()
             fail(QStringLiteral("Failed to read private key (wrong passphrase?)"));
             return;
         }
-        rc = ssh_userauth_publickey(m_session, nullptr, pkey);
+        rc = waitForLibssh([this, pkey]{
+            return ssh_userauth_publickey(m_session, nullptr, pkey);
+        });
         ssh_key_free(pkey);
         break;
     }
     }
 
+    if (rc == SSH_ABORTED) {
+        // Same teardown path as the connect aborted case.
+        return;
+    }
     if (rc == SSH_AUTH_SUCCESS) {
         emit stateChanged(SshSession::Connected);
         return;
@@ -314,10 +361,28 @@ SshSession::~SshSession()
     emit aboutToDestroy();
 
     if (d->worker != nullptr) {
-        QMetaObject::invokeMethod(d->worker, "close", Qt::BlockingQueuedConnection);
+        // Cancel any in-flight libssh call at the next ~50 ms poll tick.
+        // requestStop() is a plain atomic store, so it doesn't need the
+        // worker's event loop — which is exactly why we can't go back
+        // to the old BlockingQueuedConnection here (the worker can be
+        // mid-`ssh_connect` / `ssh_userauth_*` with its event loop
+        // starved, and the blocking invoke would freeze for up to
+        // libssh's full `connectTimeoutMs`). See #233.
+        d->worker->requestStop();
+        // Post the actual close() on the worker thread; the poll loop
+        // above exits first, then the worker's event loop picks this
+        // up. QueuedConnection so we don't wait.
+        QMetaObject::invokeMethod(d->worker, "close", Qt::QueuedConnection);
     }
     d->thread.quit();
-    d->thread.wait();
+    // Bounded wait: the worker's libssh polls tick every 50 ms, so
+    // 5000 ms is two orders of magnitude more than enough. If we ever
+    // do hit it, force-terminate as last resort — this destructor
+    // existing to fix a freeze must not regress into one itself.
+    if (!d->thread.wait(5000)) {
+        d->thread.terminate();
+        d->thread.wait();
+    }
 }
 
 void SshSession::open(Params params)
