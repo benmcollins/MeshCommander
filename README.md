@@ -72,7 +72,7 @@ sudo apt install qt6-base-dev qt6-base-dev-tools qt6-declarative-dev \
 
 Grab the `.dmg` (macOS) or `.exe` (Windows) installer from the [Releases page](https://github.com/benmcollins/QuMesh/releases). Bundles include Qt, OpenSSL, and libssh — no extra installs needed.
 
-On Debian 13 or Ubuntu 26.04, install from the APT repo so `apt` handles upgrades:
+On Debian 13 or Ubuntu 26.04 (amd64 or arm64), install from the APT repo so `apt` handles upgrades:
 
 ```bash
 curl -fsSL https://benmcollins.github.io/QuMesh/apt-pub.asc | \

@@ -8,14 +8,14 @@
 #
 #   /                        (Pages root, https://<owner>.github.io/<repo>/)
 #   ├── apt-pub.asc          (ASCII-armored GPG public key — users curl this)
-#   ├── pool/main/q/qumesh/  (the .deb files)
+#   ├── pool/main/q/qumesh/  (the .deb files for every arch)
 #   └── dists/stable/        (per-suite metadata)
 #       ├── InRelease        (clearsigned Release — preferred)
 #       ├── Release          (raw Release)
 #       ├── Release.gpg      (detached signature — legacy fallback)
-#       └── main/binary-amd64/
-#           ├── Packages
-#           └── Packages.gz
+#       └── main/
+#           ├── binary-amd64/{Packages,Packages.gz}
+#           └── binary-arm64/{Packages,Packages.gz}
 #
 # Pages is configured with Source: GitHub Actions, so each run uploads a
 # full site artifact and deploy-pages atomically replaces the previous
@@ -128,19 +128,27 @@ jobs:
           KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
           echo "GPG_KEYID=$KEYID" >> "$GITHUB_ENV"
 
-      - name: Generate Packages + Packages.gz
+      - name: Generate per-arch Packages + Packages.gz
         if: steps.gate.outputs.skip != 'true'
         working-directory: site
         run: |
           set -eux
-          mkdir -p dists/stable/main/binary-amd64
           # `apt-ftparchive packages` walks the pool, hashes each .deb,
-          # and emits a Packages file. Run from the site root so the
-          # paths inside Packages stay relative — apt joins them to
-          # the source-list URL at update time.
-          apt-ftparchive packages pool/main/q/qumesh > dists/stable/main/binary-amd64/Packages
-          gzip -kf9 dists/stable/main/binary-amd64/Packages
-          head -50 dists/stable/main/binary-amd64/Packages || true
+          # and emits a Packages file. Run once per architecture with
+          # `--arch=` so each binary-<arch>/Packages only references
+          # debs matching that arch; apt clients then ignore packages
+          # built for foreign architectures. Run from the site root so
+          # the paths inside Packages stay relative — apt joins them
+          # to the source-list URL at update time.
+          for ARCH in amd64 arm64; do
+            mkdir -p "dists/stable/main/binary-${ARCH}"
+            apt-ftparchive --arch="${ARCH}" packages pool/main/q/qumesh \
+                > "dists/stable/main/binary-${ARCH}/Packages"
+            gzip -kf9 "dists/stable/main/binary-${ARCH}/Packages"
+            echo "::group::Packages (${ARCH})"
+            head -50 "dists/stable/main/binary-${ARCH}/Packages" || true
+            echo "::endgroup::"
+          done
 
       - name: Generate Release + InRelease + Release.gpg
         if: steps.gate.outputs.skip != 'true'
@@ -159,7 +167,7 @@ jobs:
             Suite "stable";
             Codename "stable";
             Components "main";
-            Architectures "amd64";
+            Architectures "amd64 arm64";
             Description "QuMesh APT repository (Debian / Ubuntu)";
           };
           CFG
@@ -207,7 +215,7 @@ jobs:
             <h1>QuMesh APT repository</h1>
             <p>Static APT repo for
               <a href="https://github.com/${{ github.repository }}">QuMesh</a>,
-              covering Debian 13 and Ubuntu 26.04 (amd64).</p>
+              covering Debian 13 and Ubuntu 26.04 on amd64 and arm64.</p>
             <h2>Add the repository</h2>
             <pre>curl -fsSL https://${REPO_OWNER}.github.io/${REPO_NAME}/apt-pub.asc | \\
             sudo tee /etc/apt/keyrings/qumesh.asc > /dev/null
