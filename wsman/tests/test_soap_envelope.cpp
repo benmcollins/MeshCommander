@@ -32,6 +32,8 @@ private slots:
     void wifiPskEnvelopeOmitsEapBlock();
     void wifiEapTlsEnvelopeIncludesClientAndCaCredential();
     void wifiPeapEnvelopeIncludesUsernameAndServerCertGuard();
+    void addAlarmEnvelopeShape();
+    void addAlarmEnvelopeOmitsIntervalForOneShot();
 };
 
 namespace {
@@ -497,6 +499,63 @@ void TestSoapEnvelope::wifiPeapEnvelopeIncludesUsernameAndServerCertGuard()
     // certificate against a trusted root.
     QVERIFY(env.contains("CACredential"));
     QVERIFY(env.contains("Intel(r) AMT Certificate: Handle: 9"));
+}
+
+void TestSoapEnvelope::addAlarmEnvelopeShape()
+{
+    WakeAlarm a;
+    a.elementName = QStringLiteral("Nightly wake");
+    a.startTimeIso = QStringLiteral("2026-06-01T03:00:00Z");
+    a.intervalIso = QStringLiteral("P1DT0H0M");
+    a.deleteOnCompletion = false;
+
+    const QByteArray env = buildAddAlarmEnvelopeForTesting(a);
+
+    // Well-formed XML.
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Targets AMT_AlarmClockService.AddAlarm — selectors + Action.
+    QVERIFY(env.contains("AMT_AlarmClockService/AddAlarm"));
+    QVERIFY(env.contains("AMT_AlarmClockService"));
+    QVERIFY(env.contains("Intel(r) AMT Alarm Clock Service"));
+
+    // Method input + the embedded occurrence carrying ElementName,
+    // StartTime/Datetime, Interval/Interval, and DeleteOnCompletion.
+    QVERIFY(env.contains("AddAlarm_INPUT"));
+    QVERIFY(env.contains("AlarmTemplate"));
+    QVERIFY(env.contains(">Nightly wake<"));
+    QVERIFY(env.contains(">2026-06-01T03:00:00Z<"));
+    QVERIFY(env.contains(">P1DT0H0M<"));
+    QVERIFY(env.contains("DeleteOnCompletion"));
+    QVERIFY(env.contains(">false<"));
+
+    // Embedded instance lives in the IPS_AlarmClockOccurrence namespace.
+    QVERIFY(env.contains("IPS_AlarmClockOccurrence"));
+}
+
+void TestSoapEnvelope::addAlarmEnvelopeOmitsIntervalForOneShot()
+{
+    // No intervalIso → AMT rejects an empty interval block on some
+    // firmware, so the builder must omit it entirely.
+    WakeAlarm a;
+    a.elementName = QStringLiteral("One shot");
+    a.startTimeIso = QStringLiteral("2026-06-01T03:00:00Z");
+    a.intervalIso.clear();
+    a.deleteOnCompletion = true;
+
+    const QByteArray env = buildAddAlarmEnvelopeForTesting(a);
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    QVERIFY(env.contains(">One shot<"));
+    QVERIFY(env.contains(">true<"));
+    // No <Interval> element at all on a one-shot — only the
+    // StartTime/Datetime block carries a CIM common element.
+    QVERIFY(!env.contains("Interval>"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)

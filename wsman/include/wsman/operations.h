@@ -522,6 +522,27 @@ struct WakeAlarmsResult
 void getWakeAlarms(WsmanClient *client,
                    std::function<void(WakeAlarmsResult)> callback);
 
+/// Invoke `AMT_AlarmClockService.AddAlarm` with an embedded
+/// `IPS_AlarmClockOccurrence`. `alarm.instanceId` is ignored — the
+/// firmware mints the new key from `elementName`. `intervalIso` may
+/// be empty for a one-shot alarm. See #347.
+void addWakeAlarm(WsmanClient *client, const WakeAlarm &alarm,
+                  std::function<void(InvokeResult)> callback);
+
+/// Test-only seam: hand back the bytes the `AddAlarm` envelope
+/// builder would send for `alarm`, without round-tripping through a
+/// `WsmanClient`. Used by `wsman/tests/test_soap_envelope.cpp` to
+/// lock in the on-wire shape.
+[[nodiscard]] QByteArray buildAddAlarmEnvelopeForTesting(
+    const WakeAlarm &alarm,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:alarm-test"));
+
+/// WS-Transfer Delete on `IPS_AlarmClockOccurrence` keyed by
+/// `InstanceID`. See #347.
+void deleteWakeAlarm(WsmanClient *client, const QString &instanceId,
+                     std::function<void(InvokeResult)> callback);
+
 /// Which WSMAN operation the browser tool (#167) should fire.
 enum class BrowseKind { Get, Enumerate };
 

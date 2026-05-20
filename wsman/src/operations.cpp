@@ -71,6 +71,9 @@ constexpr char kFilterCollectionSubscriptionResource[] =
 constexpr char kAlarmClockOccurrenceResource[] =
     "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_AlarmClockOccurrence";
 
+constexpr char kAlarmClockServiceResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AlarmClockService";
+
 constexpr char kSystemDefensePolicyResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_SystemDefensePolicy";
 
@@ -1563,6 +1566,175 @@ void getWakeAlarms(WsmanClient *client,
             }
             (*cb)(std::move(r));
         });
+}
+
+namespace {
+
+/// Build an `AMT_AlarmClockService.AddAlarm` envelope by hand.
+/// The method input wraps an embedded `IPS_AlarmClockOccurrence` in
+/// an `AlarmTemplate` element; the embedded instance is in the IPS
+/// namespace and uses the nested `<StartTime><Datetime>…` and
+/// `<Interval><Interval>…` shape the read side already parses. The
+/// interval block is omitted entirely for a one-shot alarm — sending
+/// an empty `PT0S` makes some firmware reject the call.
+QByteArray buildAddAlarmEnvelope(const WakeAlarm &alarm,
+                                  const QString &to,
+                                  const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    constexpr char kNsCimCommon[] =
+        "http://schemas.dmtf.org/wbem/wscim/1/common";
+    const QString service = QString::fromLatin1(kAlarmClockServiceResource);
+    const QString occurrence = QString::fromLatin1(kAlarmClockOccurrenceResource);
+    const QString action = service + QStringLiteral("/AddAlarm");
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(service,                             QStringLiteral("r"));
+    w.writeNamespace(occurrence,                          QStringLiteral("p"));
+    w.writeNamespace(QString::fromLatin1(kNsCimCommon),  QStringLiteral("b"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header — keyed at the singleton AlarmClockService.
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), service);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("SelectorSet"));
+    for (const auto &kv : std::initializer_list<std::pair<QString, QString>>{
+             { QStringLiteral("Name"),                    QStringLiteral("Intel(r) AMT Alarm Clock Service") },
+             { QStringLiteral("SystemCreationClassName"), QStringLiteral("CIM_ComputerSystem") },
+             { QStringLiteral("SystemName"),              QStringLiteral("Intel(r) AMT") },
+             { QStringLiteral("CreationClassName"),       QStringLiteral("AMT_AlarmClockService") },
+         }) {
+        w.writeStartElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("Selector"));
+        w.writeAttribute(QStringLiteral("Name"), kv.first);
+        w.writeCharacters(kv.second);
+        w.writeEndElement(); // Selector
+    }
+    w.writeEndElement(); // SelectorSet
+    w.writeEndElement(); // Header
+
+    // Body
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(service, QStringLiteral("AddAlarm_INPUT"));
+    w.writeStartElement(service, QStringLiteral("AlarmTemplate"));
+
+    // Embedded IPS_AlarmClockOccurrence under the IPS namespace.
+    w.writeTextElement(occurrence, QStringLiteral("ElementName"),
+                        alarm.elementName);
+    w.writeTextElement(occurrence, QStringLiteral("InstanceID"),
+                        alarm.elementName);
+
+    // <StartTime><Datetime>ISO</Datetime></StartTime>
+    w.writeStartElement(occurrence, QStringLiteral("StartTime"));
+    w.writeTextElement(QString::fromLatin1(kNsCimCommon),
+                        QStringLiteral("Datetime"), alarm.startTimeIso);
+    w.writeEndElement(); // StartTime
+
+    // <Interval><Interval>P…</Interval></Interval> — omitted for one-shot.
+    if (!alarm.intervalIso.isEmpty()) {
+        w.writeStartElement(occurrence, QStringLiteral("Interval"));
+        w.writeTextElement(QString::fromLatin1(kNsCimCommon),
+                            QStringLiteral("Interval"), alarm.intervalIso);
+        w.writeEndElement(); // Interval
+    }
+
+    w.writeTextElement(occurrence, QStringLiteral("DeleteOnCompletion"),
+                        alarm.deleteOnCompletion
+                            ? QStringLiteral("true")
+                            : QStringLiteral("false"));
+
+    w.writeEndElement(); // AlarmTemplate
+    w.writeEndElement(); // AddAlarm_INPUT
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+} // namespace
+
+void addWakeAlarm(WsmanClient *client, const WakeAlarm &alarm,
+                  std::function<void(InvokeResult)> callback)
+{
+    if (alarm.elementName.isEmpty() || alarm.startTimeIso.isEmpty()) {
+        callback({ false, QStringLiteral("AddAlarm: ElementName and StartTime are required"), -1 });
+        return;
+    }
+    const QByteArray env = buildAddAlarmEnvelope(alarm,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            if (rv.isEmpty()) {
+                // Some AMT versions return an EPR with no ReturnValue
+                // on success. Treat that as success too.
+                if (body.contains("AlarmRef") || body.contains("AddAlarm_OUTPUT")) {
+                    r.ok = true;
+                    r.returnValue = 0;
+                    return;
+                }
+                r.error = QStringLiteral("AddAlarm response had no ReturnValue");
+                return;
+            }
+            bool conv = false;
+            r.returnValue = rv.toInt(&conv);
+            r.ok = conv && r.returnValue == 0;
+            if (!r.ok && r.error.isEmpty())
+                r.error = QStringLiteral("AddAlarm returned %1").arg(rv);
+        },
+        std::move(callback));
+}
+
+QByteArray buildAddAlarmEnvelopeForTesting(const WakeAlarm &alarm,
+                                            const QString &to,
+                                            const QString &messageId)
+{
+    return buildAddAlarmEnvelope(alarm, to, messageId);
+}
+
+void deleteWakeAlarm(WsmanClient *client, const QString &instanceId,
+                     std::function<void(InvokeResult)> callback)
+{
+    if (instanceId.isEmpty()) {
+        callback({ false, QStringLiteral("DeleteAlarm: InstanceID is required"), -1 });
+        return;
+    }
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("InstanceID"), instanceId);
+    const QByteArray env = buildDeleteEnvelope(
+        QString::fromLatin1(kAlarmClockOccurrenceResource), selectors,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
 }
 
 namespace {
