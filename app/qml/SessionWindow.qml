@@ -252,43 +252,19 @@ AppWindow {
                             onTriggered: powerController.osPutToSleep()
                         }
                         MenuSeparator { visible: powerController.amtVersionMajor >= 10; height: visible ? implicitHeight : 0 }
-                        MenuItem { text: qsTr("Power on to BIOS Setup"); onTriggered: powerController.bootToBios(false) }
-                        MenuItem {
-                            text: qsTr("Reset to BIOS Setup")
-                            onTriggered: confirmPower.askFor(
-                                qsTr("Reset \"%1\" to BIOS Setup?").arg(root.targetHost),
-                                qsTr("Hard-resets the target into the BIOS Setup screen."),
-                                qsTr("Reset"),
-                                () => powerController.bootToBios(true))
-                        }
-                        MenuSeparator {}
-                        MenuItem { text: qsTr("Power on to PXE");        onTriggered: powerController.bootToPxe(false) }
-                        MenuItem {
-                            text: qsTr("Reset to PXE")
-                            onTriggered: confirmPower.askFor(
-                                qsTr("Reset \"%1\" to PXE?").arg(root.targetHost),
-                                qsTr("Hard-resets the target into PXE network boot."),
-                                qsTr("Reset"),
-                                () => powerController.bootToPxe(true))
-                        }
-                        MenuSeparator {}
-                        MenuItem { text: qsTr("Power on to IDE-R CDROM"); onTriggered: powerController.bootToIderCdrom(false) }
-                        MenuItem {
-                            text: qsTr("Reset to IDE-R CDROM")
-                            onTriggered: confirmPower.askFor(
-                                qsTr("Reset \"%1\" to IDE-R CDROM?").arg(root.targetHost),
-                                qsTr("Hard-resets the target into the redirected CD/DVD."),
-                                qsTr("Reset"),
-                                () => powerController.bootToIderCdrom(true))
-                        }
-                        MenuItem { text: qsTr("Power on to IDE-R Floppy"); onTriggered: powerController.bootToIderFloppy(false) }
-                        MenuItem {
-                            text: qsTr("Reset to IDE-R Floppy")
-                            onTriggered: confirmPower.askFor(
-                                qsTr("Reset \"%1\" to IDE-R Floppy?").arg(root.targetHost),
-                                qsTr("Hard-resets the target into the redirected floppy."),
-                                qsTr("Reset"),
-                                () => powerController.bootToIderFloppy(true))
+                        // Boot variants live in BootMenu.qml so this
+                        // window and MachineDetailsWindow can't drift
+                        // (see #299). As a submenu it also de-clutters
+                        // the top-level Power ▾ menu. The four cap-
+                        // gated items (Secure Erase / Platform Erase /
+                        // HTTPS / OCR) hide here because we don't pass
+                        // the matching prompt instances — those live
+                        // in MachineDetailsWindow and aren't carried
+                        // by SessionWindow.
+                        BootMenu {
+                            controller: powerController
+                            targetHost: root.targetHost
+                            confirmDialog: confirmPower
                         }
                     }
                 }
