@@ -174,6 +174,8 @@ qt_add_qml_module(qumesh_appcore
         qml/MachineDetails/EventSubscriptionsSection.qml
         qml/MachineDetails/WakeAlarmsSection.qml
         qml/MachineDetails/ActiveSessionsSection.qml
+        qml/MachineDetails/WsmanBrowserSection.qml
+        qml/MachineDetails/SystemDefenseSection.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
