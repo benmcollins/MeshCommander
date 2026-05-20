@@ -7,9 +7,12 @@
 
 #include <QElapsedTimer>
 #include <QFile>
+#include <QHostAddress>
+#include <QHostInfo>
 #include <QMutexLocker>
 #include <QPointer>
 #include <QThread>
+#include <atomic>
 #include <QtCore/qcoreapplication.h>
 
 namespace qumesh::ssh {
@@ -45,6 +48,69 @@ QString keyTypeName(ssh_keytypes_e t)
     case SSH_KEYTYPE_ED25519: return QStringLiteral("Ed25519");
     case SSH_KEYTYPE_DSS:     return QStringLiteral("DSA");
     default:                  return QStringLiteral("(unknown)");
+    }
+}
+
+/// Resolve `hostOrIp` to an IP literal, cancellable via `stopFlag`.
+/// Returns the IP on success or empty on cancel / timeout / failure.
+/// If `hostOrIp` is already an IP literal it's returned unchanged
+/// without touching the resolver.
+///
+/// Pre-#290 SshSession called `ssh_connect()` with whatever string
+/// the caller passed, which libssh handed to `getaddrinfo()` —
+/// uninterruptible at the OS level. A DNS-blackhole host name could
+/// hold up `requestStop()` for the full resolver timeout (often
+/// 30 s+). Here we run `QHostInfo::fromName()` on a temporary worker
+/// thread and poll the cancel flag every 50 ms. If cancellation
+/// wins we abandon the lookup thread (it self-deletes when the
+/// resolver eventually returns).
+QString resolveHostCancellable(const QString &hostOrIp,
+                                int timeoutMs,
+                                std::atomic<bool> &stopFlag,
+                                bool *aborted)
+{
+    *aborted = false;
+    const QHostAddress probe(hostOrIp);
+    if (!probe.isNull()) return hostOrIp;
+
+    // QThread::create + finished→deleteLater means the thread cleans
+    // itself up whenever getaddrinfo returns, even if we've already
+    // abandoned waiting on it.
+    auto *resultHolder = new std::atomic<QHostInfo *>{nullptr};
+    QThread *t = QThread::create([host = hostOrIp, resultHolder]() {
+        // fromName blocks here. There's no cross-platform way to
+        // interrupt it from outside.
+        QHostInfo *info = new QHostInfo(QHostInfo::fromName(host));
+        resultHolder->store(info, std::memory_order_release);
+    });
+    QObject::connect(t, &QThread::finished, t, &QObject::deleteLater);
+    t->start();
+
+    QElapsedTimer deadline;
+    deadline.start();
+    constexpr int kTickMs = 50;
+    while (true) {
+        if (QHostInfo *info = resultHolder->load(std::memory_order_acquire)) {
+            const QHostInfo r = *info;
+            delete info;
+            delete resultHolder;
+            if (r.error() != QHostInfo::NoError || r.addresses().isEmpty())
+                return {};
+            return r.addresses().first().toString();
+        }
+        if (stopFlag.load(std::memory_order_acquire)) {
+            // Leak resultHolder + the lookup thread's eventual result —
+            // the thread will deleteLater itself when getaddrinfo
+            // finally returns. resultHolder leaks a few bytes; we
+            // can't reclaim it without racing the worker thread.
+            *aborted = true;
+            return {};
+        }
+        if (deadline.elapsed() >= timeoutMs) {
+            *aborted = false; // timeout, not cancel
+            return {};
+        }
+        QThread::msleep(kTickMs);
     }
 }
 
@@ -121,7 +187,21 @@ void SshSessionWorker::open(SshSession::Params p)
     // ~50 ms regardless of what libssh is doing. See #233.
     ssh_set_blocking(m_session, 0);
 
-    const QByteArray hostBytes = m_params.host.toUtf8();
+    // Resolve hostname → IP on a cancellable thread before handing to
+    // libssh. libssh's internal getaddrinfo() is uninterruptible at
+    // the OS level — a DNS-blackhole hostname would otherwise stall
+    // requestStop() for the full system resolver timeout. See #290.
+    bool dnsAborted = false;
+    const QString resolved = resolveHostCancellable(
+        m_params.host, m_params.connectTimeoutMs, m_stopRequested,
+        &dnsAborted);
+    if (dnsAborted) return; // caller is tearing us down
+    if (resolved.isEmpty()) {
+        fail(QStringLiteral("Could not resolve host: %1").arg(m_params.host));
+        return;
+    }
+
+    const QByteArray hostBytes = resolved.toUtf8();
     const QByteArray userBytes = m_params.user.toUtf8();
     const unsigned int portU = m_params.port;
     const long timeoutSec = qMax(1L, long(m_params.connectTimeoutMs / 1000));
