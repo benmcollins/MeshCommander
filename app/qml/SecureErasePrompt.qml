@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc_org>.
+// Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
 pragma ComponentBehavior: Bound
 
