@@ -690,6 +690,17 @@ struct NetworkFilterRow
     QString filterClass;            ///< Either `Hdr8021Filter` or `IPHeadersFilter`.
 };
 
+/// One row from `AMT_ActiveFilterStatistics` — packets-passed /
+/// packets-dropped counters for a single filter, keyed by the same
+/// `InstanceID` that identifies the filter row in
+/// `AMT_Hdr8021Filter` / `AMT_IPHeadersFilter`. See #346.
+struct ActiveFilterStatRow
+{
+    QString filterInstanceId;
+    quint64 packetsPassed = 0;
+    quint64 packetsDropped = 0;
+};
+
 /// Snapshot of the System Defense classes (#165 phase A). ACM-only —
 /// the controller decides visibility off `provisioningMode`. `supported`
 /// is `false` when the firmware doesn't expose the classes at all
@@ -703,11 +714,38 @@ struct SystemDefenseResult
     QList<Hdr8021Filter>       hdrFilters;
     QList<IpHeadersFilter>     ipFilters;
     QList<NetworkFilterRow>    subFilters;
+    /// #346 — live per-filter counters. Empty when the firmware
+    /// rejects the AMT_ActiveFilterStatistics enumeration (older
+    /// boxes that expose the policy/filter classes but not the
+    /// statistics class).
+    QList<ActiveFilterStatRow> stats;
 };
 
 /// Enumerate the System Defense classes. See #165 phase A.
 void getSystemDefense(WsmanClient *client,
                       std::function<void(SystemDefenseResult)> callback);
+
+/// Enumerate `AMT_ActiveFilterStatistics` only. Used by the section
+/// when the operator clicks "Refresh stats" to repoll counters
+/// without bouncing the whole policy/filter tree. See #346.
+void getActiveFilterStatistics(WsmanClient *client,
+                                std::function<void(QList<ActiveFilterStatRow>, QString /*err*/)> callback);
+
+/// WS-Transfer Delete on `AMT_SystemDefensePolicy` keyed by
+/// `InstanceID`. AMT cascades any `AMT_NetworkPortSystemDefensePolicy`
+/// bindings that referenced the policy. See #346.
+void deleteSystemDefensePolicy(WsmanClient *client, const QString &instanceId,
+                                 std::function<void(InvokeResult)> callback);
+
+/// WS-Transfer Delete on `AMT_Hdr8021Filter` keyed by `InstanceID`.
+/// See #346.
+void deleteHdr8021Filter(WsmanClient *client, const QString &instanceId,
+                          std::function<void(InvokeResult)> callback);
+
+/// WS-Transfer Delete on `AMT_IPHeadersFilter` keyed by `InstanceID`.
+/// See #346.
+void deleteIpHeadersFilter(WsmanClient *client, const QString &instanceId,
+                            std::function<void(InvokeResult)> callback);
 
 /// Read `AMT_BootCapabilities` — which boot-source-override flags the
 /// firmware will accept. Drives the gating of menu entries

@@ -323,6 +323,28 @@ AppWindow {
     }
 
     ConfirmDialog {
+        id: systemDefenseConfirmDialog
+        property string pendingInstanceId: ""
+        property string pendingKind: "" // "policy" | "hdr" | "ip"
+        onProceed: {
+            if (pendingInstanceId.length > 0) {
+                if (pendingKind === "policy")
+                    controller.deleteSystemDefensePolicy(pendingInstanceId);
+                else if (pendingKind === "hdr")
+                    controller.deleteSystemDefenseHdrFilter(pendingInstanceId);
+                else if (pendingKind === "ip")
+                    controller.deleteSystemDefenseIpFilter(pendingInstanceId);
+            }
+            pendingInstanceId = "";
+            pendingKind = "";
+        }
+        onRejected: {
+            pendingInstanceId = "";
+            pendingKind = "";
+        }
+    }
+
+    ConfirmDialog {
         id: eventSubscriptionConfirmDialog
         property string pendingFilterInstanceId: ""
         property string pendingListenerName: ""

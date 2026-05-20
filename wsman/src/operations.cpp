@@ -95,6 +95,9 @@ constexpr char kIpHeadersFilterResource[] =
 constexpr char kNetworkFilterResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_NetworkFilter";
 
+constexpr char kActiveFilterStatisticsResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_ActiveFilterStatistics";
+
 constexpr char kBootSettingDataResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_BootSettingData";
@@ -2376,22 +2379,49 @@ void executeBrowse(WsmanClient *client, const QString &classOrUri,
         });
 }
 
+namespace {
+
+/// Walk an `AMT_ActiveFilterStatistics` row and pull the scalar
+/// fields. AMT exposes counters as unsigned 64-bit values; we keep
+/// them in `quint64` and treat parse failures as 0 (the read side
+/// just shows a zero rather than dropping the row).
+ActiveFilterStatRow parseActiveFilterStat(const QByteArray &itemXml)
+{
+    ActiveFilterStatRow s;
+    s.filterInstanceId =
+        findScalar(itemXml, QStringLiteral("InstanceID"));
+    bool conv = false;
+    const quint64 pp = findScalar(itemXml,
+        QStringLiteral("PacketsPassed")).toULongLong(&conv);
+    if (conv) s.packetsPassed = pp;
+    conv = false;
+    const quint64 pd = findScalar(itemXml,
+        QStringLiteral("PacketsDropped")).toULongLong(&conv);
+    if (conv) s.packetsDropped = pd;
+    return s;
+}
+
+} // namespace
+
 void getSystemDefense(WsmanClient *client,
                       std::function<void(SystemDefenseResult)> callback)
 {
-    // Four parallel enumerates. The firmware returns SOAP fault on
+    // Five parallel enumerates. The firmware returns SOAP fault on
     // every class for non-ACM / pre-AMT-6 boxes; treat consistent
-    // failure across all four as "not supported" rather than an error.
+    // failure across all four core classes (excluding stats, which
+    // some pre-stats firmware drops separately) as "not supported"
+    // rather than an error.
     struct Acc {
         SystemDefenseResult r;
         bool gotPolicies = false;
         bool gotHdr      = false;
         bool gotIp       = false;
         bool gotSub      = false;
+        bool gotStats    = false;
         int faulted      = 0;
         std::function<void(SystemDefenseResult)> cb;
         void maybeFire() {
-            if (!gotPolicies || !gotHdr || !gotIp || !gotSub) return;
+            if (!gotPolicies || !gotHdr || !gotIp || !gotSub || !gotStats) return;
             if (faulted == 4) {
                 r.supported = false;
                 r.ok = true;
@@ -2507,6 +2537,92 @@ void getSystemDefense(WsmanClient *client,
             }
             acc->maybeFire();
         });
+
+    // Stats are best-effort: some firmware exposes the policy/filter
+    // classes but not AMT_ActiveFilterStatistics. Drop the rows on
+    // fault — don't count toward the four-class "not supported" gate.
+    enumerateAll(client, kActiveFilterStatisticsResource,
+        [acc](QList<QByteArray> items, QString /*err*/) {
+            acc->gotStats = true;
+            for (const QByteArray &it : items) {
+                ActiveFilterStatRow s = parseActiveFilterStat(it);
+                if (!s.filterInstanceId.isEmpty())
+                    acc->r.stats.append(std::move(s));
+            }
+            acc->maybeFire();
+        });
+}
+
+void getActiveFilterStatistics(WsmanClient *client,
+                                std::function<void(QList<ActiveFilterStatRow>, QString)> callback)
+{
+    auto cb = std::make_shared<std::function<void(QList<ActiveFilterStatRow>, QString)>>(
+        std::move(callback));
+    enumerateAll(client, kActiveFilterStatisticsResource,
+        [cb](QList<QByteArray> items, QString err) {
+            QList<ActiveFilterStatRow> rows;
+            rows.reserve(items.size());
+            for (const QByteArray &it : items) {
+                ActiveFilterStatRow s = parseActiveFilterStat(it);
+                if (!s.filterInstanceId.isEmpty())
+                    rows.append(std::move(s));
+            }
+            (*cb)(std::move(rows), err);
+        });
+}
+
+namespace {
+
+/// Common WS-Transfer Delete helper for the System Defense classes —
+/// they all key off `InstanceID`. Surfaces an empty-instance-id error
+/// up front rather than firing the request and waiting for AMT to
+/// fault on the empty selector. See #346.
+void deleteByInstanceId(WsmanClient *client, const char *resourceUri,
+                          const QString &what,
+                          const QString &instanceId,
+                          std::function<void(InvokeResult)> callback)
+{
+    if (instanceId.isEmpty()) {
+        callback({ false, QStringLiteral("%1: InstanceID is required").arg(what), -1 });
+        return;
+    }
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("InstanceID"), instanceId);
+    const QByteArray env = buildDeleteEnvelope(
+        QString::fromLatin1(resourceUri), selectors,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+} // namespace
+
+void deleteSystemDefensePolicy(WsmanClient *client, const QString &instanceId,
+                                 std::function<void(InvokeResult)> callback)
+{
+    deleteByInstanceId(client, kSystemDefensePolicyResource,
+                        QStringLiteral("DeletePolicy"), instanceId,
+                        std::move(callback));
+}
+
+void deleteHdr8021Filter(WsmanClient *client, const QString &instanceId,
+                          std::function<void(InvokeResult)> callback)
+{
+    deleteByInstanceId(client, kHdr8021FilterResource,
+                        QStringLiteral("DeleteHdr8021Filter"), instanceId,
+                        std::move(callback));
+}
+
+void deleteIpHeadersFilter(WsmanClient *client, const QString &instanceId,
+                            std::function<void(InvokeResult)> callback)
+{
+    deleteByInstanceId(client, kIpHeadersFilterResource,
+                        QStringLiteral("DeleteIPHeadersFilter"), instanceId,
+                        std::move(callback));
 }
 
 void setPowerScheme(WsmanClient *client, const QString &instanceId,

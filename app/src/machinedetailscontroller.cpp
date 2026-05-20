@@ -1932,14 +1932,138 @@ void MachineDetailsController::refreshSystemDefense()
             for (const auto &f : r.hdrFilters) hdrFilters.append(mkHdr(f));
             for (const auto &f : r.ipFilters)  ipFilters.append(mkIp(f));
 
+            // Stats are surfaced as a map keyed by filter InstanceID
+            // so QML can do a single O(1) lookup per row instead of
+            // walking the list on every binding evaluation.
+            QVariantMap statsByInstance;
+            for (const auto &s : r.stats) {
+                QVariantMap m;
+                m.insert(QStringLiteral("packetsPassed"),
+                          QVariant::fromValue(s.packetsPassed));
+                m.insert(QStringLiteral("packetsDropped"),
+                          QVariant::fromValue(s.packetsDropped));
+                statsByInstance.insert(s.filterInstanceId, m);
+            }
+
             QVariantMap sd;
             sd.insert(QStringLiteral("ok"),         r.ok);
             sd.insert(QStringLiteral("supported"),  r.supported);
             sd.insert(QStringLiteral("policies"),   policies);
             sd.insert(QStringLiteral("hdrFilters"), hdrFilters);
             sd.insert(QStringLiteral("ipFilters"),  ipFilters);
+            sd.insert(QStringLiteral("stats"),      statsByInstance);
             m_systemDefense = std::move(sd);
             emit systemDefenseChanged();
+        });
+}
+
+void MachineDetailsController::refreshSystemDefenseStats()
+{
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("System Defense stats: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::getActiveFilterStatistics(m_client,
+        [this](QList<qumesh::wsman::ActiveFilterStatRow> rows, QString err) {
+            decInflight();
+            if (!err.isEmpty()) {
+                // Quiet failure — stats are best-effort. Surface a
+                // banner only if the operator explicitly triggered the
+                // poll (not on the background tree refresh).
+                setLastError(QStringLiteral("System Defense stats: %1").arg(err));
+                return;
+            }
+            QVariantMap statsByInstance;
+            for (const auto &s : rows) {
+                QVariantMap m;
+                m.insert(QStringLiteral("packetsPassed"),
+                          QVariant::fromValue(s.packetsPassed));
+                m.insert(QStringLiteral("packetsDropped"),
+                          QVariant::fromValue(s.packetsDropped));
+                statsByInstance.insert(s.filterInstanceId, m);
+            }
+            m_systemDefense.insert(QStringLiteral("stats"), statsByInstance);
+            emit systemDefenseChanged();
+        });
+}
+
+void MachineDetailsController::deleteSystemDefensePolicy(const QString &instanceId)
+{
+    setLastError({});
+    if (instanceId.isEmpty()) {
+        setLastError(QStringLiteral("Delete policy: missing instance ID."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Delete policy: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteSystemDefensePolicy(m_client, instanceId,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete policy: failed.")
+                    : QStringLiteral("Delete policy: %1").arg(r.error));
+                return;
+            }
+            refreshSystemDefense();
+        });
+}
+
+void MachineDetailsController::deleteSystemDefenseHdrFilter(const QString &instanceId)
+{
+    setLastError({});
+    if (instanceId.isEmpty()) {
+        setLastError(QStringLiteral("Delete L2 filter: missing instance ID."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Delete L2 filter: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteHdr8021Filter(m_client, instanceId,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete L2 filter: failed.")
+                    : QStringLiteral("Delete L2 filter: %1").arg(r.error));
+                return;
+            }
+            refreshSystemDefense();
+        });
+}
+
+void MachineDetailsController::deleteSystemDefenseIpFilter(const QString &instanceId)
+{
+    setLastError({});
+    if (instanceId.isEmpty()) {
+        setLastError(QStringLiteral("Delete L3/L4 filter: missing instance ID."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Delete L3/L4 filter: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteIpHeadersFilter(m_client, instanceId,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete L3/L4 filter: failed.")
+                    : QStringLiteral("Delete L3/L4 filter: %1").arg(r.error));
+                return;
+            }
+            refreshSystemDefense();
         });
 }
 

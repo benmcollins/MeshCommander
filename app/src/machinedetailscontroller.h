@@ -655,6 +655,18 @@ public:
     /// Enumerate the System Defense classes for the ACM-only pane.
     /// See #165 phase A.
     Q_INVOKABLE void refreshSystemDefense();
+    /// Repoll `AMT_ActiveFilterStatistics` only — used when the
+    /// operator clicks "Refresh stats" so per-filter counters update
+    /// without bouncing the whole policy/filter tree. See #346.
+    Q_INVOKABLE void refreshSystemDefenseStats();
+    /// WS-Transfer Delete on `AMT_SystemDefensePolicy`. AMT cascades
+    /// the policy's port bindings. On success refreshes the section.
+    /// See #346.
+    Q_INVOKABLE void deleteSystemDefensePolicy(const QString &instanceId);
+    /// WS-Transfer Delete on `AMT_Hdr8021Filter`. See #346.
+    Q_INVOKABLE void deleteSystemDefenseHdrFilter(const QString &instanceId);
+    /// WS-Transfer Delete on `AMT_IPHeadersFilter`. See #346.
+    Q_INVOKABLE void deleteSystemDefenseIpFilter(const QString &instanceId);
     /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.
     /// Auto-called as part of `refreshPower` so the dialog is ready
     /// when the operator clicks the Power Policy button. See #162.

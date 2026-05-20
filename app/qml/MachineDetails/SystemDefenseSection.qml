@@ -69,12 +69,24 @@ Flickable {
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
             }
-            Text {
-                visible: sysDefCol.isAcm && sysDefCol.supported
-                text: qsTr("Read-only — statistics + add/edit defer to Phase B.")
-                color: Colors.textFaint
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
+            RowLayout {
+                spacing: 8
+                Layout.fillWidth: true
+                Text {
+                    visible: sysDefCol.isAcm && sysDefCol.supported
+                    text: qsTr("Add / edit deferred to follow-up (#353).")
+                    color: Colors.textFaint
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeXs
+                    Layout.fillWidth: true
+                }
+                FlatButton {
+                    text: qsTr("Refresh stats")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeXs
+                    enabled: sysDefCol.isAcm && sysDefCol.supported
+                    onClicked: root.controller.refreshSystemDefenseStats()
+                }
             }
         }
 
@@ -94,8 +106,8 @@ Flickable {
                 Layout.fillWidth: true
 
                 Repeater {
-                    model: (controller.systemDefense
-                             && controller.systemDefense.policies) || []
+                    model: (root.controller.systemDefense
+                             && root.controller.systemDefense.policies) || []
                     delegate: RowLayout {
                         required property var modelData
                         Layout.fillWidth: true
@@ -123,6 +135,24 @@ Flickable {
                             font.pixelSize: Type.sizeXs
                             font.weight: Font.Medium
                         }
+                        FlatButton {
+                            text: qsTr("Delete")
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeXs
+                            onClicked: {
+                                systemDefenseConfirmDialog.pendingInstanceId =
+                                    parent.modelData.instanceId || "";
+                                systemDefenseConfirmDialog.pendingKind = "policy";
+                                systemDefenseConfirmDialog.ask(
+                                    qsTr("Delete policy"),
+                                    qsTr("Remove %1 from the AMT System Defense stack. Any port bindings are dropped on the device.")
+                                        .arg(parent.modelData.policyName
+                                             || parent.modelData.instanceId
+                                             || qsTr("the policy")),
+                                    qsTr("Delete"),
+                                    true);
+                            }
+                        }
                     }
                 }
             }
@@ -143,12 +173,17 @@ Flickable {
                 Layout.fillWidth: true
 
                 Repeater {
-                    model: (controller.systemDefense
-                             && controller.systemDefense.hdrFilters) || []
+                    model: (root.controller.systemDefense
+                             && root.controller.systemDefense.hdrFilters) || []
                     delegate: RowLayout {
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 10
+                        readonly property var stat: {
+                            const all = (root.controller.systemDefense
+                                          && root.controller.systemDefense.stats) || {};
+                            return all[modelData.instanceId];
+                        }
 
                         Text {
                             text: modelData.name || modelData.instanceId
@@ -174,6 +209,35 @@ Flickable {
                             font.family: Type.mono
                             font.pixelSize: Type.sizeXs
                         }
+                        Text {
+                            visible: parent.stat !== undefined
+                            text: parent.stat
+                                ? qsTr("pass %1 / drop %2")
+                                      .arg(parent.stat.packetsPassed)
+                                      .arg(parent.stat.packetsDropped)
+                                : ""
+                            color: Colors.textMuted
+                            font.family: Type.mono
+                            font.pixelSize: Type.sizeXs
+                        }
+                        FlatButton {
+                            text: qsTr("Delete")
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeXs
+                            onClicked: {
+                                systemDefenseConfirmDialog.pendingInstanceId =
+                                    parent.modelData.instanceId || "";
+                                systemDefenseConfirmDialog.pendingKind = "hdr";
+                                systemDefenseConfirmDialog.ask(
+                                    qsTr("Delete L2 filter"),
+                                    qsTr("Remove %1 from the AMT System Defense L2 filter set.")
+                                        .arg(parent.modelData.name
+                                             || parent.modelData.instanceId
+                                             || qsTr("the filter")),
+                                    qsTr("Delete"),
+                                    true);
+                            }
+                        }
                     }
                 }
             }
@@ -195,12 +259,17 @@ Flickable {
                 Layout.fillWidth: true
 
                 Repeater {
-                    model: (controller.systemDefense
-                             && controller.systemDefense.ipFilters) || []
+                    model: (root.controller.systemDefense
+                             && root.controller.systemDefense.ipFilters) || []
                     delegate: ColumnLayout {
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 1
+                        readonly property var stat: {
+                            const all = (root.controller.systemDefense
+                                          && root.controller.systemDefense.stats) || {};
+                            return all[modelData.instanceId];
+                        }
 
                         RowLayout {
                             spacing: 10
@@ -229,6 +298,35 @@ Flickable {
                                 color: Colors.textMuted
                                 font.family: Type.mono
                                 font.pixelSize: Type.sizeXs
+                            }
+                            Text {
+                                visible: parent.parent.stat !== undefined
+                                text: parent.parent.stat
+                                    ? qsTr("pass %1 / drop %2")
+                                          .arg(parent.parent.stat.packetsPassed)
+                                          .arg(parent.parent.stat.packetsDropped)
+                                    : ""
+                                color: Colors.textMuted
+                                font.family: Type.mono
+                                font.pixelSize: Type.sizeXs
+                            }
+                            FlatButton {
+                                text: qsTr("Delete")
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                                onClicked: {
+                                    systemDefenseConfirmDialog.pendingInstanceId =
+                                        parent.parent.modelData.instanceId || "";
+                                    systemDefenseConfirmDialog.pendingKind = "ip";
+                                    systemDefenseConfirmDialog.ask(
+                                        qsTr("Delete L3/L4 filter"),
+                                        qsTr("Remove %1 from the AMT System Defense L3/L4 filter set.")
+                                            .arg(parent.parent.modelData.name
+                                                 || parent.parent.modelData.instanceId
+                                                 || qsTr("the filter")),
+                                        qsTr("Delete"),
+                                        true);
+                                }
                             }
                         }
                         Text {
