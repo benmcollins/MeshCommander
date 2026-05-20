@@ -117,6 +117,23 @@ AppWindow {
         onCancelled: powerController.setSshConfig({})
     }
 
+    /// Shared confirmation prompt for the disruptive Power menu items
+    /// (Reset / Power off / Reset-to-PXE / ...). The pending action is
+    /// captured as a JS function and invoked on accept (#278).
+    ConfirmDialog {
+        id: confirmPower
+        property var pendingAction: null
+        function askFor(t, b, verb, fn) {
+            pendingAction = fn;
+            ask(t, b, verb, true);
+        }
+        onProceed: {
+            if (pendingAction) pendingAction();
+            pendingAction = null;
+        }
+        onRejected: pendingAction = null
+    }
+
     OptInPrompt {
         id: optInPrompt
         onSubmitted: function(code) { powerController.sendOptInCode(code); }
@@ -181,11 +198,46 @@ AppWindow {
 
                     Menu {
                         id: powerMenu
+                        // Reset/Off are disruptive — interrupt the OS,
+                        // can lose unsaved work. Gate with ConfirmDialog
+                        // (#278). "Power on …" variants only apply when
+                        // the machine is already off, so they're benign.
                         MenuItem { text: qsTr("Power on");           onTriggered: powerController.powerOn() }
-                        MenuItem { text: qsTr("Reset");              onTriggered: powerController.powerReset() }
-                        MenuItem { text: qsTr("Reset (graceful)");   onTriggered: powerController.powerResetGraceful() }
-                        MenuItem { text: qsTr("Power off (soft)");   onTriggered: powerController.powerOffSoft() }
-                        MenuItem { text: qsTr("Power off (hard)");   onTriggered: powerController.powerOffHard() }
+                        MenuItem {
+                            text: qsTr("Reset")
+                            onTriggered: confirmPower.askFor(
+                                qsTr("Reset \"%1\"?").arg(root.targetHost),
+                                qsTr("This hard-resets the target — unsaved "
+                                     + "work on the OS will be lost."),
+                                qsTr("Reset"),
+                                () => powerController.powerReset())
+                        }
+                        MenuItem {
+                            text: qsTr("Reset (graceful)")
+                            onTriggered: confirmPower.askFor(
+                                qsTr("Reset \"%1\" gracefully?").arg(root.targetHost),
+                                qsTr("Asks the OS to reboot. The OS may still "
+                                     + "decline (e.g. if a save prompt is open)."),
+                                qsTr("Reset"),
+                                () => powerController.powerResetGraceful())
+                        }
+                        MenuItem {
+                            text: qsTr("Power off (soft)")
+                            onTriggered: confirmPower.askFor(
+                                qsTr("Power off \"%1\"?").arg(root.targetHost),
+                                qsTr("Asks the OS to shut down."),
+                                qsTr("Power off"),
+                                () => powerController.powerOffSoft())
+                        }
+                        MenuItem {
+                            text: qsTr("Power off (hard)")
+                            onTriggered: confirmPower.askFor(
+                                qsTr("Hard power off \"%1\"?").arg(root.targetHost),
+                                qsTr("Cuts power without asking the OS — "
+                                     + "unsaved work will be lost."),
+                                qsTr("Power off"),
+                                () => powerController.powerOffHard())
+                        }
                         MenuSeparator {}
                         MenuItem {
                             visible: powerController.amtVersionMajor >= 10
@@ -201,15 +253,43 @@ AppWindow {
                         }
                         MenuSeparator { visible: powerController.amtVersionMajor >= 10; height: visible ? implicitHeight : 0 }
                         MenuItem { text: qsTr("Power on to BIOS Setup"); onTriggered: powerController.bootToBios(false) }
-                        MenuItem { text: qsTr("Reset to BIOS Setup");    onTriggered: powerController.bootToBios(true) }
+                        MenuItem {
+                            text: qsTr("Reset to BIOS Setup")
+                            onTriggered: confirmPower.askFor(
+                                qsTr("Reset \"%1\" to BIOS Setup?").arg(root.targetHost),
+                                qsTr("Hard-resets the target into the BIOS Setup screen."),
+                                qsTr("Reset"),
+                                () => powerController.bootToBios(true))
+                        }
                         MenuSeparator {}
                         MenuItem { text: qsTr("Power on to PXE");        onTriggered: powerController.bootToPxe(false) }
-                        MenuItem { text: qsTr("Reset to PXE");           onTriggered: powerController.bootToPxe(true) }
+                        MenuItem {
+                            text: qsTr("Reset to PXE")
+                            onTriggered: confirmPower.askFor(
+                                qsTr("Reset \"%1\" to PXE?").arg(root.targetHost),
+                                qsTr("Hard-resets the target into PXE network boot."),
+                                qsTr("Reset"),
+                                () => powerController.bootToPxe(true))
+                        }
                         MenuSeparator {}
                         MenuItem { text: qsTr("Power on to IDE-R CDROM"); onTriggered: powerController.bootToIderCdrom(false) }
-                        MenuItem { text: qsTr("Reset to IDE-R CDROM");    onTriggered: powerController.bootToIderCdrom(true) }
+                        MenuItem {
+                            text: qsTr("Reset to IDE-R CDROM")
+                            onTriggered: confirmPower.askFor(
+                                qsTr("Reset \"%1\" to IDE-R CDROM?").arg(root.targetHost),
+                                qsTr("Hard-resets the target into the redirected CD/DVD."),
+                                qsTr("Reset"),
+                                () => powerController.bootToIderCdrom(true))
+                        }
                         MenuItem { text: qsTr("Power on to IDE-R Floppy"); onTriggered: powerController.bootToIderFloppy(false) }
-                        MenuItem { text: qsTr("Reset to IDE-R Floppy");    onTriggered: powerController.bootToIderFloppy(true) }
+                        MenuItem {
+                            text: qsTr("Reset to IDE-R Floppy")
+                            onTriggered: confirmPower.askFor(
+                                qsTr("Reset \"%1\" to IDE-R Floppy?").arg(root.targetHost),
+                                qsTr("Hard-resets the target into the redirected floppy."),
+                                qsTr("Reset"),
+                                () => powerController.bootToIderFloppy(true))
+                        }
                     }
                 }
             }

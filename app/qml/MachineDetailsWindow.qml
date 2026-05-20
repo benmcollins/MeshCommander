@@ -115,6 +115,24 @@ AppWindow {
         onCancelled: controller.setSshConfig({})
     }
 
+    /// Shared confirmation prompt for the disruptive Power section
+    /// buttons (Reset / Power off / Reset-to-PXE / ...). The pending
+    /// action is captured as a JS function and invoked on accept. See
+    /// #278.
+    ConfirmDialog {
+        id: confirmPower
+        property var pendingAction: null
+        function askFor(t, b, verb, fn) {
+            pendingAction = fn;
+            ask(t, b, verb, true);
+        }
+        onProceed: {
+            if (pendingAction) pendingAction();
+            pendingAction = null;
+        }
+        onRejected: pendingAction = null
+    }
+
     SecureErasePrompt {
         id: secureErasePrompt
         tlsActive: root.machineTls
@@ -1415,22 +1433,41 @@ AppWindow {
                             Button {
                                 text: qsTr("Reset")
                                 enabled: !controller.busy
-                                onClicked: controller.powerReset()
+                                onClicked: confirmPower.askFor(
+                                    qsTr("Reset \"%1\"?").arg(root.machineHost),
+                                    qsTr("This hard-resets the target — "
+                                         + "unsaved work on the OS will be lost."),
+                                    qsTr("Reset"),
+                                    () => controller.powerReset())
                             }
                             Button {
                                 text: qsTr("Reset (graceful)")
                                 enabled: !controller.busy
-                                onClicked: controller.powerResetGraceful()
+                                onClicked: confirmPower.askFor(
+                                    qsTr("Reset \"%1\" gracefully?").arg(root.machineHost),
+                                    qsTr("Asks the OS to reboot. The OS may "
+                                         + "still decline."),
+                                    qsTr("Reset"),
+                                    () => controller.powerResetGraceful())
                             }
                             Button {
                                 text: qsTr("Power off (soft)")
                                 enabled: !controller.busy
-                                onClicked: controller.powerOffSoft()
+                                onClicked: confirmPower.askFor(
+                                    qsTr("Power off \"%1\"?").arg(root.machineHost),
+                                    qsTr("Asks the OS to shut down."),
+                                    qsTr("Power off"),
+                                    () => controller.powerOffSoft())
                             }
                             Button {
                                 text: qsTr("Power off (hard)")
                                 enabled: !controller.busy
-                                onClicked: controller.powerOffHard()
+                                onClicked: confirmPower.askFor(
+                                    qsTr("Hard power off \"%1\"?").arg(root.machineHost),
+                                    qsTr("Cuts power without asking the OS — "
+                                         + "unsaved work will be lost."),
+                                    qsTr("Power off"),
+                                    () => controller.powerOffHard())
                             }
 
                             Button {
@@ -1454,16 +1491,48 @@ AppWindow {
 
                                 Menu {
                                     id: bootMenu
+                                    // "Power on to X" only applies when the
+                                    // target is currently off — no in-flight
+                                    // OS to lose. "Reset to X" interrupts a
+                                    // running OS, so confirm. See #278.
                                     MenuItem { text: qsTr("Power on to BIOS Setup"); onTriggered: controller.bootToBios(false) }
-                                    MenuItem { text: qsTr("Reset to BIOS Setup");    onTriggered: controller.bootToBios(true) }
+                                    MenuItem {
+                                        text: qsTr("Reset to BIOS Setup")
+                                        onTriggered: confirmPower.askFor(
+                                            qsTr("Reset \"%1\" to BIOS Setup?").arg(root.machineHost),
+                                            qsTr("Hard-resets into the BIOS Setup screen."),
+                                            qsTr("Reset"),
+                                            () => controller.bootToBios(true))
+                                    }
                                     MenuSeparator {}
                                     MenuItem { text: qsTr("Power on to PXE");        onTriggered: controller.bootToPxe(false) }
-                                    MenuItem { text: qsTr("Reset to PXE");           onTriggered: controller.bootToPxe(true) }
+                                    MenuItem {
+                                        text: qsTr("Reset to PXE")
+                                        onTriggered: confirmPower.askFor(
+                                            qsTr("Reset \"%1\" to PXE?").arg(root.machineHost),
+                                            qsTr("Hard-resets into PXE network boot."),
+                                            qsTr("Reset"),
+                                            () => controller.bootToPxe(true))
+                                    }
                                     MenuSeparator {}
                                     MenuItem { text: qsTr("Power on to IDE-R CDROM"); onTriggered: controller.bootToIderCdrom(false) }
-                                    MenuItem { text: qsTr("Reset to IDE-R CDROM");    onTriggered: controller.bootToIderCdrom(true) }
+                                    MenuItem {
+                                        text: qsTr("Reset to IDE-R CDROM")
+                                        onTriggered: confirmPower.askFor(
+                                            qsTr("Reset \"%1\" to IDE-R CDROM?").arg(root.machineHost),
+                                            qsTr("Hard-resets into the redirected CD/DVD."),
+                                            qsTr("Reset"),
+                                            () => controller.bootToIderCdrom(true))
+                                    }
                                     MenuItem { text: qsTr("Power on to IDE-R Floppy"); onTriggered: controller.bootToIderFloppy(false) }
-                                    MenuItem { text: qsTr("Reset to IDE-R Floppy");    onTriggered: controller.bootToIderFloppy(true) }
+                                    MenuItem {
+                                        text: qsTr("Reset to IDE-R Floppy")
+                                        onTriggered: confirmPower.askFor(
+                                            qsTr("Reset \"%1\" to IDE-R Floppy?").arg(root.machineHost),
+                                            qsTr("Hard-resets into the redirected floppy."),
+                                            qsTr("Reset"),
+                                            () => controller.bootToIderFloppy(true))
+                                    }
 
                                     MenuSeparator { visible: controller.capSecureErase; height: visible ? implicitHeight : 0 }
                                     MenuItem {
@@ -1823,7 +1892,19 @@ AppWindow {
                                     text: isOn ? qsTr("Disable WiFi") : qsTr("Enable WiFi")
                                     font.family: Type.sans
                                     font.pixelSize: Type.sizeXs
-                                    onClicked: controller.setWifiPortEnabled(!isOn)
+                                    // Confirm on disable only (#278) — enable
+                                    // is a benign re-arm, disable hard-stops
+                                    // an active WiFi link.
+                                    onClicked: {
+                                        if (isOn) confirmPower.askFor(
+                                            qsTr("Disable WiFi on \"%1\"?").arg(root.machineHost),
+                                            qsTr("Stops AMT from using WiFi. "
+                                                 + "If the device only has a "
+                                                 + "WiFi link, you lose access."),
+                                            qsTr("Disable"),
+                                            () => controller.setWifiPortEnabled(false));
+                                        else controller.setWifiPortEnabled(true);
+                                    }
                                 }
                                 Item { Layout.fillWidth: true }
                                 FlatButton {
@@ -2163,7 +2244,22 @@ AppWindow {
                                     font.family: Type.sans
                                     font.pixelSize: Type.sizeXs
                                     enabled: controller.canModifyOptInPolicy && !controller.busy
-                                    onClicked: controller.setKvmOptInPolicyEnabled(!controller.kvmOptInPolicy)
+                                    // Disabling consent removes the security
+                                    // requirement that the target's local
+                                    // operator approve each KVM/SOL/IDE-R
+                                    // session — significant security change.
+                                    // Confirm on disable only (#278).
+                                    onClicked: {
+                                        if (controller.kvmOptInPolicy) confirmPower.askFor(
+                                            qsTr("Disable consent policy on \"%1\"?").arg(root.machineHost),
+                                            qsTr("After this, remote KVM / SOL "
+                                                 + "/ IDE-R sessions no longer "
+                                                 + "require a person at the "
+                                                 + "target to approve each connect."),
+                                            qsTr("Disable"),
+                                            () => controller.setKvmOptInPolicyEnabled(false));
+                                        else controller.setKvmOptInPolicyEnabled(true);
+                                    }
                                 }
                             }
                             Text {
