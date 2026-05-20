@@ -1516,120 +1516,21 @@ AppWindow {
                                     enabled: !controller.busy
                                     onClicked: bootMenu.popup()
 
-                                    Menu {
+                                    // BootMenu.qml owns the full item list
+                                    // so this window and SessionWindow can't
+                                    // drift (#299). Both pass `controller` +
+                                    // `confirmDialog`; we additionally hand
+                                    // over the four cap-gated prompts that
+                                    // only exist in this window.
+                                    BootMenu {
                                         id: bootMenu
-                                        // "Power on to X" only applies when the
-                                        // target is currently off — no in-flight
-                                        // OS to lose. "Reset to X" interrupts a
-                                        // running OS, so confirm. See #278.
-                                        MenuItem { text: qsTr("Power on to BIOS Setup"); onTriggered: controller.bootToBios(false) }
-                                        MenuItem {
-                                            text: qsTr("Reset to BIOS Setup")
-                                            onTriggered: confirmPower.askFor(
-                                                qsTr("Reset \"%1\" to BIOS Setup?").arg(root.machineHost),
-                                                qsTr("Hard-resets into the BIOS Setup screen."),
-                                                qsTr("Reset"),
-                                                () => controller.bootToBios(true))
-                                        }
-                                        MenuSeparator {}
-                                        MenuItem { text: qsTr("Power on to PXE");        onTriggered: controller.bootToPxe(false) }
-                                        MenuItem {
-                                            text: qsTr("Reset to PXE")
-                                            onTriggered: confirmPower.askFor(
-                                                qsTr("Reset \"%1\" to PXE?").arg(root.machineHost),
-                                                qsTr("Hard-resets into PXE network boot."),
-                                                qsTr("Reset"),
-                                                () => controller.bootToPxe(true))
-                                        }
-                                        MenuSeparator {}
-                                        MenuItem { text: qsTr("Power on to IDE-R CDROM"); onTriggered: controller.bootToIderCdrom(false) }
-                                        MenuItem {
-                                            text: qsTr("Reset to IDE-R CDROM")
-                                            onTriggered: confirmPower.askFor(
-                                                qsTr("Reset \"%1\" to IDE-R CDROM?").arg(root.machineHost),
-                                                qsTr("Hard-resets into the redirected CD/DVD."),
-                                                qsTr("Reset"),
-                                                () => controller.bootToIderCdrom(true))
-                                        }
-                                        MenuItem { text: qsTr("Power on to IDE-R Floppy"); onTriggered: controller.bootToIderFloppy(false) }
-                                        MenuItem {
-                                            text: qsTr("Reset to IDE-R Floppy")
-                                            onTriggered: confirmPower.askFor(
-                                                qsTr("Reset \"%1\" to IDE-R Floppy?").arg(root.machineHost),
-                                                qsTr("Hard-resets into the redirected floppy."),
-                                                qsTr("Reset"),
-                                                () => controller.bootToIderFloppy(true))
-                                        }
-
-                                        MenuSeparator { visible: controller.capSecureErase; height: visible ? implicitHeight : 0 }
-                                        MenuItem {
-                                            visible: controller.capSecureErase
-                                            height: visible ? implicitHeight : 0
-                                            text: qsTr("Power on to Secure Erase…")
-                                            onTriggered: secureErasePrompt.openFor(false)
-                                        }
-                                        MenuItem {
-                                            visible: controller.capSecureErase
-                                            height: visible ? implicitHeight : 0
-                                            text: qsTr("Reset to Secure Erase…")
-                                            onTriggered: secureErasePrompt.openFor(true)
-                                        }
-
-                                        MenuSeparator { visible: controller.capPlatformErase; height: visible ? implicitHeight : 0 }
-                                        MenuItem {
-                                            visible: controller.capPlatformErase
-                                            height: visible ? implicitHeight : 0
-                                            text: qsTr("Power on to Platform Erase…")
-                                            onTriggered: platformErasePrompt.openFor(false)
-                                        }
-                                        MenuItem {
-                                            visible: controller.capPlatformErase
-                                            height: visible ? implicitHeight : 0
-                                            text: qsTr("Reset to Platform Erase…")
-                                            onTriggered: platformErasePrompt.openFor(true)
-                                        }
-
-                                        MenuSeparator { visible: controller.capForceUefiHttpsBoot; height: visible ? implicitHeight : 0 }
-                                        MenuItem {
-                                            visible: controller.capForceUefiHttpsBoot
-                                            height: visible ? implicitHeight : 0
-                                            text: qsTr("Power on to HTTPS URL…")
-                                            onTriggered: httpsBootPrompt.openFor(false)
-                                        }
-                                        MenuItem {
-                                            visible: controller.capForceUefiHttpsBoot
-                                            height: visible ? implicitHeight : 0
-                                            text: qsTr("Reset to HTTPS URL…")
-                                            onTriggered: httpsBootPrompt.openFor(true)
-                                        }
-
-                                        // One-Click Recovery (#170). Single
-                                        // entry point — the prompt picks
-                                        // which of WinRE / Local PBA /
-                                        // HTTPS-with-pinning to fire based
-                                        // on the per-flavor capability bits.
-                                        MenuSeparator {
-                                            visible: controller.capForceWinReBoot
-                                                  || controller.capForceUefiLocalPbaBoot
-                                                  || controller.capForceUefiHttpsBoot
-                                            height: visible ? implicitHeight : 0
-                                        }
-                                        MenuItem {
-                                            visible: controller.capForceWinReBoot
-                                                  || controller.capForceUefiLocalPbaBoot
-                                                  || controller.capForceUefiHttpsBoot
-                                            height: visible ? implicitHeight : 0
-                                            text: qsTr("Power on to recovery…")
-                                            onTriggered: ocrPrompt.openFor(false)
-                                        }
-                                        MenuItem {
-                                            visible: controller.capForceWinReBoot
-                                                  || controller.capForceUefiLocalPbaBoot
-                                                  || controller.capForceUefiHttpsBoot
-                                            height: visible ? implicitHeight : 0
-                                            text: qsTr("Reset to recovery…")
-                                            onTriggered: ocrPrompt.openFor(true)
-                                        }
+                                        controller: controller
+                                        targetHost: root.machineHost
+                                        confirmDialog: confirmPower
+                                        secureErasePrompt: secureErasePrompt
+                                        platformErasePrompt: platformErasePrompt
+                                        httpsBootPrompt: httpsBootPrompt
+                                        ocrPrompt: ocrPrompt
                                     }
                                 }
 

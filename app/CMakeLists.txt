@@ -151,6 +151,7 @@ qt_add_qml_module(qumesh_appcore
         qml/SetupBinWindow.qml
         qml/BatchProgressDialog.qml
         qml/AccentButton.qml
+        qml/BootMenu.qml
         qml/AppMark.qml
         qml/AppWindow.qml
         qml/CertPinFlash.qml
