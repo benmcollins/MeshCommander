@@ -329,6 +329,13 @@ AppWindow {
         }
     }
 
+    IpHeadersFilterDialog {
+        id: ipHeadersFilterDialog
+        onConfirmed: function(fields) {
+            controller.addSystemDefenseIpFilter(fields);
+        }
+    }
+
     ConfirmDialog {
         id: systemDefenseConfirmDialog
         property string pendingInstanceId: ""
@@ -989,6 +996,7 @@ AppWindow {
                         anchors.fill: parent
                         controller: controller
                         hdr8021FilterDialog: hdr8021FilterDialog
+                        ipHeadersFilterDialog: ipHeadersFilterDialog
                     }
                 }
 

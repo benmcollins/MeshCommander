@@ -41,6 +41,9 @@ private slots:
     void unsubscribeEnvelopeEmbedsBothEprs();
     void addHdr8021FilterEnvelopeShape();
     void addHdr8021FilterOmitsRateLimitDataWhenNotRateLimit();
+    void encodeIPv4ForFilterProducesUppercaseHex();
+    void addIpHeadersFilterEnvelopeShape();
+    void addIpHeadersFilterOmitsOptionalFieldsWhenUnset();
 };
 
 namespace {
@@ -764,6 +767,94 @@ void TestSoapEnvelope::addHdr8021FilterOmitsRateLimitDataWhenNotRateLimit()
     // The stray 999 must NOT leak onto the wire.
     QVERIFY(!env.contains(">999<"));
     QVERIFY(!env.contains("FilterProfileData"));
+}
+
+void TestSoapEnvelope::encodeIPv4ForFilterProducesUppercaseHex()
+{
+    // Locks the on-wire byte order against accidental endianness
+    // swap. AMT wants the bytes in the same order the dotted-quad
+    // reads (a.b.c.d → AABBCCDD).
+    QCOMPARE(encodeIPv4ForFilter(QStringLiteral("10.0.0.5")),
+             QStringLiteral("0A000005"));
+    QCOMPARE(encodeIPv4ForFilter(QStringLiteral("255.255.255.255")),
+             QStringLiteral("FFFFFFFF"));
+    QCOMPARE(encodeIPv4ForFilter(QStringLiteral("0.0.0.0")),
+             QStringLiteral("00000000"));
+    // Malformed input → empty (caller skips the field).
+    QVERIFY(encodeIPv4ForFilter(QStringLiteral("10.0.0")).isEmpty());
+    QVERIFY(encodeIPv4ForFilter(QStringLiteral("10.0.0.256")).isEmpty());
+    QVERIFY(encodeIPv4ForFilter(QStringLiteral("not an ip")).isEmpty());
+}
+
+void TestSoapEnvelope::addIpHeadersFilterEnvelopeShape()
+{
+    IpHeadersFilter f;
+    f.name = QStringLiteral("Allow port 16992");
+    f.ipVersion = 4;
+    f.filterProfile = 3;          // Allow
+    f.filterDirection = 1;        // Rx
+    f.protocol = 6;               // TCP
+    f.dstPort = 16992;
+    f.srcAddress = QStringLiteral("10.0.0.5");
+    f.actionEventOnMatch = false;
+
+    const QByteArray env = buildAddIpHeadersFilterEnvelopeForTesting(f);
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Create action + resource.
+    QVERIFY(env.contains("http://schemas.xmlsoap.org/ws/2004/09/transfer/Create"));
+    QVERIFY(env.contains("AMT_IPHeadersFilter"));
+
+    // Verbatim field names from the legacy reference.
+    QVERIFY(env.contains(">Allow port 16992<"));
+    QVERIFY(env.contains("HdrIPVersion"));
+    QVERIFY(env.contains(">4<"));             // ipVersion
+    QVERIFY(env.contains("FilterProfile"));
+    QVERIFY(env.contains(">3<"));             // Allow
+    QVERIFY(env.contains("FilterDirection"));
+    QVERIFY(env.contains("HdrProtocolID8"));
+    QVERIFY(env.contains(">6<"));             // TCP
+    // Port range — single port goes on both Start and End.
+    QVERIFY(env.contains("HdrDestPortStart"));
+    QVERIFY(env.contains("HdrDestPortEnd"));
+    QVERIFY(env.contains(">16992<"));
+    // Source IPv4 → uppercase hex; AMT echoes back this form.
+    QVERIFY(env.contains("HdrSrcAddress"));
+    QVERIFY(env.contains(">0A000005<"));
+    // No destination address was set; the field must be omitted.
+    QVERIFY(!env.contains("HdrDestAddress"));
+}
+
+void TestSoapEnvelope::addIpHeadersFilterOmitsOptionalFieldsWhenUnset()
+{
+    // Bare-minimum L3 filter — no IPs, no ports, no protocol. AMT
+    // rejects empty scalars, so the optional fields must be omitted
+    // entirely.
+    IpHeadersFilter f;
+    f.name = QStringLiteral("Drop all v6 inbound");
+    f.ipVersion = 6;
+    f.filterProfile = 4;          // Drop
+    f.filterDirection = 1;        // Rx
+    // protocol, srcAddress, dstAddress, srcPort, dstPort all unset.
+
+    const QByteArray env = buildAddIpHeadersFilterEnvelopeForTesting(f);
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    QVERIFY(env.contains(">Drop all v6 inbound<"));
+    QVERIFY(env.contains(">6<"));   // ipVersion = 6
+    QVERIFY(env.contains(">4<"));   // FilterProfile = Drop
+    // None of the optional fields appear.
+    QVERIFY(!env.contains("HdrProtocolID8"));
+    QVERIFY(!env.contains("HdrSrcAddress"));
+    QVERIFY(!env.contains("HdrDestAddress"));
+    QVERIFY(!env.contains("HdrSrcPortStart"));
+    QVERIFY(!env.contains("HdrDestPortStart"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)

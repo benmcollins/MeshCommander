@@ -16,6 +16,7 @@ Flickable {
 
     required property MachineDetailsController controller
     required property var hdr8021FilterDialog
+    required property var ipHeadersFilterDialog
 
     contentWidth: width
     contentHeight: sysDefCol.implicitHeight + 48
@@ -270,16 +271,38 @@ Flickable {
             title: qsTr("L3/L4 FILTERS (IP / ports)")
             visible: sysDefCol.isAcm
                   && sysDefCol.supported
-                  && controller.systemDefense
-                  && (controller.systemDefense.ipFilters || []).length > 0
+                  && !!root.controller.systemDefense
             Layout.fillWidth: true
             Layout.leftMargin: 24
             Layout.rightMargin: 24
             Layout.bottomMargin: 24
 
             ColumnLayout {
-                spacing: 4
+                spacing: 6
                 Layout.fillWidth: true
+
+                RowLayout {
+                    spacing: 8
+                    Layout.fillWidth: true
+                    Text {
+                        text: ((root.controller.systemDefense
+                                  && root.controller.systemDefense.ipFilters) || []).length === 0
+                            ? qsTr("No L3/L4 filters configured.")
+                            : ""
+                        color: Colors.textMuted
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                    }
+                    Item { Layout.fillWidth: true }
+                    FlatButton {
+                        text: qsTr("Add L3/L4 filter")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        onClicked: root.ipHeadersFilterDialog.openForAdd()
+                    }
+                }
 
                 Repeater {
                     model: (root.controller.systemDefense
