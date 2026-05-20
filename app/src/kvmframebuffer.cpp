@@ -16,6 +16,7 @@ void KvmFramebuffer::resize(int w, int h)
     m_image.fill(Qt::black);
     ++m_version;
     emit resized();
+    emit versionChanged();
     emit tileApplied(QRect(0, 0, w, h));
 }
 
@@ -25,6 +26,7 @@ void KvmFramebuffer::applyTile(int x, int y, const QImage &tile)
     QPainter p(&m_image);
     p.drawImage(x, y, tile);
     ++m_version;
+    emit versionChanged();
     emit tileApplied(QRect(x, y, tile.width(), tile.height()));
 }
 
@@ -33,6 +35,7 @@ void KvmFramebuffer::clear()
     if (m_image.isNull()) return;
     m_image.fill(Qt::black);
     ++m_version;
+    emit versionChanged();
     emit tileApplied(QRect(0, 0, m_image.width(), m_image.height()));
 }
 
