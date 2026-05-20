@@ -449,6 +449,30 @@ struct AgentPresenceResult
 void getAgentPresence(WsmanClient *client,
                       std::function<void(AgentPresenceResult)> callback);
 
+/// Invoke `AMT_AgentPresenceService.RegisterAgent` with an embedded
+/// `AMT_AgentPresenceWatchdog`. `watchdog.deviceIdGuid` is the GUID
+/// string the dialog generates (or the user types); the builder
+/// packs it back into the base-64 raw-16-bytes wire format. The
+/// read-only state fields on the struct are ignored. See #348.
+void registerWatchdogAgent(WsmanClient *client,
+                            const AgentPresenceWatchdog &watchdog,
+                            std::function<void(InvokeResult)> callback);
+
+/// Test-only seam: hand back the bytes the `RegisterAgent` envelope
+/// builder would send for `watchdog`, without round-tripping through
+/// a `WsmanClient`. Used by `wsman/tests/test_soap_envelope.cpp` to
+/// lock in the on-wire shape.
+[[nodiscard]] QByteArray buildRegisterAgentEnvelopeForTesting(
+    const AgentPresenceWatchdog &watchdog,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:register-agent-test"));
+
+/// WS-Transfer Delete on `AMT_AgentPresenceWatchdog` keyed by
+/// `DeviceID` (base-64-encoded raw 16 GUID bytes). See #348.
+void deleteAgentPresenceWatchdog(WsmanClient *client,
+                                   const QString &deviceIdGuid,
+                                   std::function<void(InvokeResult)> callback);
+
 /// One row from `CIM_FilterCollection` — a named event-filter the
 /// firmware exposes; subscriptions reference it by `instanceId`.
 struct EventFilter

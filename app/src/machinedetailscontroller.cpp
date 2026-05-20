@@ -1394,6 +1394,135 @@ void MachineDetailsController::refreshAgentPresence()
         });
 }
 
+namespace {
+
+/// Pull the controller-shaped QVariantMap into a wsman watchdog struct.
+/// Centralised so add / replace stay consistent on field names.
+qumesh::wsman::AgentPresenceWatchdog watchdogFromFields(const QVariantMap &f)
+{
+    qumesh::wsman::AgentPresenceWatchdog w;
+    w.deviceIdGuid       = f.value(QStringLiteral("deviceIdGuid")).toString().trimmed();
+    w.description        = f.value(QStringLiteral("description")).toString().trimmed();
+    bool ok = false;
+    const int me = f.value(QStringLiteral("monitoredEntityCode")).toInt(&ok);
+    w.monitoredEntityCode = ok ? me : -1;
+    w.startupIntervalSec = f.value(QStringLiteral("startupIntervalSec")).toInt();
+    w.timeoutIntervalSec = f.value(QStringLiteral("timeoutIntervalSec")).toInt();
+    return w;
+}
+
+} // namespace
+
+void MachineDetailsController::addAgentPresenceWatchdog(const QVariantMap &fields)
+{
+    setLastError({});
+    const auto w = watchdogFromFields(fields);
+    if (w.deviceIdGuid.isEmpty()) {
+        setLastError(QStringLiteral("Add watchdog: DeviceID is required."));
+        return;
+    }
+    if (w.timeoutIntervalSec <= 0) {
+        setLastError(QStringLiteral("Add watchdog: timeout must be > 0 seconds."));
+        return;
+    }
+    // Block at the firmware ceiling so we don't fire a request the
+    // device is just going to reject. The cap comes from
+    // AMT_AgentPresenceCapabilities (read by refreshAgentPresence).
+    const int cap = m_agentPresence.value(QStringLiteral("maxTotalAgents")).toInt();
+    const int current = m_agentPresence.value(QStringLiteral("watchdogs")).toList().size();
+    if (cap > 0 && current >= cap) {
+        setLastError(QStringLiteral("Add watchdog: at the firmware ceiling (%1).").arg(cap));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Add watchdog: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::registerWatchdogAgent(m_client, w,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Add watchdog: failed.")
+                    : QStringLiteral("Add watchdog: %1").arg(r.error));
+                return;
+            }
+            refreshAgentPresence();
+        });
+}
+
+void MachineDetailsController::deleteAgentPresenceWatchdog(const QString &deviceIdGuid)
+{
+    setLastError({});
+    if (deviceIdGuid.isEmpty()) {
+        setLastError(QStringLiteral("Delete watchdog: missing DeviceID."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Delete watchdog: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteAgentPresenceWatchdog(m_client, deviceIdGuid,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete watchdog: failed.")
+                    : QStringLiteral("Delete watchdog: %1").arg(r.error));
+                return;
+            }
+            refreshAgentPresence();
+        });
+}
+
+void MachineDetailsController::replaceAgentPresenceWatchdog(const QString &oldDeviceIdGuid,
+                                                              const QVariantMap &fields)
+{
+    setLastError({});
+    if (oldDeviceIdGuid.isEmpty()) {
+        // No prior row — fall through to plain add.
+        addAgentPresenceWatchdog(fields);
+        return;
+    }
+    const auto w = watchdogFromFields(fields);
+    if (w.deviceIdGuid.isEmpty() || w.timeoutIntervalSec <= 0) {
+        setLastError(QStringLiteral("Save watchdog: DeviceID and timeout (> 0) are required."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Save watchdog: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteAgentPresenceWatchdog(m_client, oldDeviceIdGuid,
+        [this, w](qumesh::wsman::InvokeResult delRes) {
+            if (!delRes.ok) {
+                decInflight();
+                setLastError(delRes.error.isEmpty()
+                    ? QStringLiteral("Save watchdog: failed to delete previous row.")
+                    : QStringLiteral("Save watchdog: %1").arg(delRes.error));
+                return;
+            }
+            qumesh::wsman::registerWatchdogAgent(m_client, w,
+                [this](qumesh::wsman::InvokeResult addRes) {
+                    decInflight();
+                    if (!addRes.ok) {
+                        setLastError(addRes.error.isEmpty()
+                            ? QStringLiteral("Save watchdog: previous row was removed but the new one could not be added.")
+                            : QStringLiteral("Save watchdog: previous row removed; RegisterAgent: %1").arg(addRes.error));
+                        refreshAgentPresence();
+                        return;
+                    }
+                    refreshAgentPresence();
+                });
+        });
+}
+
 void MachineDetailsController::refreshEventSubscriptions()
 {
     if (deferIfSshConnecting(PendingEventSubscriptions)) return;

@@ -59,6 +59,9 @@ constexpr char kAgentPresenceCapabilitiesResource[] =
 constexpr char kAgentPresenceWatchdogResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AgentPresenceWatchdog";
 
+constexpr char kAgentPresenceServiceResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AgentPresenceService";
+
 constexpr char kFilterCollectionResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_FilterCollection";
 
@@ -1267,6 +1270,28 @@ QString decodeWatchdogDeviceId(const QString &b64)
          + QString::fromLatin1(hex.constData() + 20, 12);
 }
 
+/// Inverse of `decodeWatchdogDeviceId`: take the standard 8-4-4-4-12
+/// GUID string and produce the base-64-of-raw-16-bytes form the
+/// firmware expects on `DeviceID`. Returns empty on malformed input.
+/// Round-trips with `decodeWatchdogDeviceId` for any well-formed GUID
+/// (no endianness swap — the firmware reports and accepts the bytes
+/// in the same big-endian-ish hex order).
+QString encodeWatchdogDeviceId(const QString &guid)
+{
+    QString hex;
+    hex.reserve(32);
+    for (QChar c : guid) {
+        if (c == QLatin1Char('-') || c == QLatin1Char('{') || c == QLatin1Char('}'))
+            continue;
+        if (!c.isLetterOrNumber()) return {};
+        hex.append(c.toLower());
+    }
+    if (hex.size() != 32) return {};
+    const QByteArray raw = QByteArray::fromHex(hex.toLatin1());
+    if (raw.size() != 16) return {};
+    return QString::fromLatin1(raw.toBase64());
+}
+
 } // namespace
 
 void getAgentPresence(WsmanClient *client,
@@ -1365,6 +1390,170 @@ void getAgentPresence(WsmanClient *client,
             }
             acc->maybeFire();
         });
+}
+
+namespace {
+
+/// Build an `AMT_AgentPresenceService.RegisterAgent` envelope by hand.
+/// The method input wraps an embedded `AMT_AgentPresenceWatchdog` in
+/// an `AgentTemplate` element. We populate only the fields a Phase B
+/// register needs: DeviceID, MonitoredEntityDescription,
+/// MonitoredEntity, StartupInterval, TimeoutInterval. State fields
+/// are firmware-managed and rejected on the write path.
+QByteArray buildRegisterAgentEnvelope(const AgentPresenceWatchdog &w,
+                                       const QString &to,
+                                       const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter writer(&out);
+    writer.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    const QString service = QString::fromLatin1(kAgentPresenceServiceResource);
+    const QString watchdog = QString::fromLatin1(kAgentPresenceWatchdogResource);
+    const QString action = service + QStringLiteral("/RegisterAgent");
+
+    writer.writeStartDocument();
+    writer.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    writer.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    writer.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    writer.writeNamespace(service,                             QStringLiteral("r"));
+    writer.writeNamespace(watchdog,                            QStringLiteral("p"));
+
+    writer.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header — keyed at the singleton AgentPresenceService.
+    writer.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    writer.writeTextElement(QString::fromLatin1(kNsAddressing),
+                             QStringLiteral("Action"), action);
+    writer.writeTextElement(QString::fromLatin1(kNsAddressing),
+                             QStringLiteral("To"), to);
+    writer.writeTextElement(QString::fromLatin1(kNsWsman),
+                             QStringLiteral("ResourceURI"), service);
+    writer.writeTextElement(QString::fromLatin1(kNsAddressing),
+                             QStringLiteral("MessageID"), messageId);
+    writer.writeStartElement(QString::fromLatin1(kNsAddressing),
+                             QStringLiteral("ReplyTo"));
+    writer.writeTextElement(QString::fromLatin1(kNsAddressing),
+                             QStringLiteral("Address"),
+                             QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    writer.writeEndElement(); // ReplyTo
+    writer.writeStartElement(QString::fromLatin1(kNsWsman),
+                             QStringLiteral("SelectorSet"));
+    for (const auto &kv : std::initializer_list<std::pair<QString, QString>>{
+             { QStringLiteral("Name"),                    QStringLiteral("Intel(r) AMT Agent Presence Service") },
+             { QStringLiteral("SystemCreationClassName"), QStringLiteral("CIM_ComputerSystem") },
+             { QStringLiteral("SystemName"),              QStringLiteral("Intel(r) AMT") },
+             { QStringLiteral("CreationClassName"),       QStringLiteral("AMT_AgentPresenceService") },
+         }) {
+        writer.writeStartElement(QString::fromLatin1(kNsWsman),
+                                  QStringLiteral("Selector"));
+        writer.writeAttribute(QStringLiteral("Name"), kv.first);
+        writer.writeCharacters(kv.second);
+        writer.writeEndElement(); // Selector
+    }
+    writer.writeEndElement(); // SelectorSet
+    writer.writeEndElement(); // Header
+
+    // Body
+    writer.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    writer.writeStartElement(service, QStringLiteral("RegisterAgent_INPUT"));
+    writer.writeStartElement(service, QStringLiteral("AgentTemplate"));
+
+    // Embedded AMT_AgentPresenceWatchdog under the watchdog namespace.
+    writer.writeTextElement(watchdog, QStringLiteral("DeviceID"),
+                             encodeWatchdogDeviceId(w.deviceIdGuid));
+    if (!w.description.isEmpty()) {
+        writer.writeTextElement(watchdog, QStringLiteral("MonitoredEntityDescription"),
+                                 w.description);
+    }
+    if (w.monitoredEntityCode >= 0) {
+        writer.writeTextElement(watchdog, QStringLiteral("MonitoredEntity"),
+                                 QString::number(w.monitoredEntityCode));
+    }
+    writer.writeTextElement(watchdog, QStringLiteral("StartupInterval"),
+                             QString::number(w.startupIntervalSec));
+    writer.writeTextElement(watchdog, QStringLiteral("TimeoutInterval"),
+                             QString::number(w.timeoutIntervalSec));
+
+    writer.writeEndElement(); // AgentTemplate
+    writer.writeEndElement(); // RegisterAgent_INPUT
+    writer.writeEndElement(); // Body
+
+    writer.writeEndElement(); // Envelope
+    writer.writeEndDocument();
+    return out;
+}
+
+} // namespace
+
+void registerWatchdogAgent(WsmanClient *client,
+                            const AgentPresenceWatchdog &watchdog,
+                            std::function<void(InvokeResult)> callback)
+{
+    if (encodeWatchdogDeviceId(watchdog.deviceIdGuid).isEmpty()) {
+        callback({ false, QStringLiteral("RegisterAgent: DeviceID must be a 16-byte GUID"), -1 });
+        return;
+    }
+    if (watchdog.timeoutIntervalSec <= 0) {
+        callback({ false, QStringLiteral("RegisterAgent: TimeoutInterval must be > 0"), -1 });
+        return;
+    }
+    const QByteArray env = buildRegisterAgentEnvelope(watchdog,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            if (rv.isEmpty()) {
+                // Some AMT versions return an EPR with no ReturnValue
+                // on success. Treat that as success too.
+                if (body.contains("AgentRef")
+                    || body.contains("RegisterAgent_OUTPUT")) {
+                    r.ok = true;
+                    r.returnValue = 0;
+                    return;
+                }
+                r.error = QStringLiteral("RegisterAgent response had no ReturnValue");
+                return;
+            }
+            bool conv = false;
+            r.returnValue = rv.toInt(&conv);
+            r.ok = conv && r.returnValue == 0;
+            if (!r.ok && r.error.isEmpty())
+                r.error = QStringLiteral("RegisterAgent returned %1").arg(rv);
+        },
+        std::move(callback));
+}
+
+QByteArray buildRegisterAgentEnvelopeForTesting(const AgentPresenceWatchdog &watchdog,
+                                                  const QString &to,
+                                                  const QString &messageId)
+{
+    return buildRegisterAgentEnvelope(watchdog, to, messageId);
+}
+
+void deleteAgentPresenceWatchdog(WsmanClient *client,
+                                   const QString &deviceIdGuid,
+                                   std::function<void(InvokeResult)> callback)
+{
+    const QString encoded = encodeWatchdogDeviceId(deviceIdGuid);
+    if (encoded.isEmpty()) {
+        callback({ false, QStringLiteral("DeleteWatchdog: DeviceID must be a 16-byte GUID"), -1 });
+        return;
+    }
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("DeviceID"), encoded);
+    const QByteArray env = buildDeleteEnvelope(
+        QString::fromLatin1(kAgentPresenceWatchdogResource), selectors,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
 }
 
 QString listenerDeliveryModeLabel(int code)

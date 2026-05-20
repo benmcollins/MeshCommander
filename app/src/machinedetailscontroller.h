@@ -588,6 +588,24 @@ public:
     /// Enumerate AMT_AgentPresenceWatchdog + read
     /// AMT_AgentPresenceCapabilities for the Watchdogs pane. See #164.
     Q_INVOKABLE void refreshAgentPresence();
+    /// Invoke `AMT_AgentPresenceService.RegisterAgent` with an
+    /// embedded `AMT_AgentPresenceWatchdog`. `fields` carries
+    /// `deviceIdGuid` (string), `description` (string),
+    /// `monitoredEntityCode` (int), `startupIntervalSec` (int),
+    /// `timeoutIntervalSec` (int). The controller blocks the call
+    /// if adding would exceed `AMT_AgentPresenceCapabilities.MaxTotalAgents`.
+    /// On success refreshes the section. See #348.
+    Q_INVOKABLE void addAgentPresenceWatchdog(const QVariantMap &fields);
+    /// WS-Transfer Delete on `AMT_AgentPresenceWatchdog` keyed by
+    /// `deviceIdGuid`. The firmware cascades the watchdog's
+    /// `AMT_AgentPresenceWatchdogAction` rows. On success refreshes
+    /// the section. See #348.
+    Q_INVOKABLE void deleteAgentPresenceWatchdog(const QString &deviceIdGuid);
+    /// Edit-as-replace: delete the watchdog keyed by `oldDeviceIdGuid`,
+    /// and on success fire RegisterAgent with `fields`. AMT has no
+    /// in-place modify for the watchdog class. See #348.
+    Q_INVOKABLE void replaceAgentPresenceWatchdog(const QString &oldDeviceIdGuid,
+                                                    const QVariantMap &fields);
     /// Enumerate CIM_FilterCollection + CIM_ListenerDestination +
     /// CIM_FilterCollectionSubscription. See #163.
     Q_INVOKABLE void refreshEventSubscriptions();
