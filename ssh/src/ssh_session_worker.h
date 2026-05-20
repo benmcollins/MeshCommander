@@ -27,7 +27,6 @@ public:
     ~SshSessionWorker() override;
 
     ssh_session rawSession() const { return m_session; }
-    QMutex &sessionMutex() { return m_sessionMutex; }
 
     /// Cancel-flag for the non-blocking libssh poll loop. Safe to call
     /// from any thread (it's a plain atomic). `~SshSession` flips this
@@ -79,11 +78,20 @@ private:
     int waitForLibssh(const std::function<int()> &call, int timeoutMs = 0);
 
     ssh_session m_session = nullptr;
-    QMutex m_sessionMutex;
     SshSession::Params m_params;
     bool m_awaitingHostKeyTrust = false;
     QString m_pendingHostKeyFingerprint;
     QString m_pendingHostKeyType;
+    /// Narrow mutex around `m_pendingHostKeyFingerprint` and
+    /// `m_pendingHostKeyType` only — the rest of the worker's state
+    /// is worker-thread-local. `pendingFingerprint()` /
+    /// `pendingKeyType()` are direct method calls from the UI thread
+    /// and need synchronization to coexist with the worker's writes
+    /// in `verifyHostKey()`. Pre-#272 a coarser `m_sessionMutex`
+    /// covered the entire `open()` body — including the multi-second
+    /// libssh poll loop — and `pendingFingerprint()` from QML would
+    /// block until the connect attempt finished. See #272.
+    mutable QMutex m_pendingHostKeyMutex;
     std::atomic<bool> m_stopRequested{false};
 };
 
