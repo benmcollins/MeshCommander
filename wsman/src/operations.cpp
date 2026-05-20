@@ -2973,6 +2973,144 @@ QByteArray buildAddIpHeadersFilterEnvelopeForTesting(const IpHeadersFilter &filt
     return buildAddIpHeadersFilterEnvelope(filter, to, messageId);
 }
 
+int extractFilterHandleFromInstanceId(const QString &instanceId)
+{
+    // Walk back from the end picking up digits; stop at the first
+    // non-digit. AMT formats both L2 and L3 filter InstanceIDs as
+    // `"...<text> <handle>"`, but exact prefix varies by AMT version
+    // (and by class), so a tail-parse is the most portable.
+    int i = instanceId.size();
+    while (i > 0 && instanceId.at(i - 1).isDigit()) --i;
+    if (i == instanceId.size()) return -1;
+    bool ok = false;
+    const int h = instanceId.mid(i).toInt(&ok);
+    return ok ? h : -1;
+}
+
+namespace {
+
+/// Build a WS-Transfer Create envelope for `AMT_SystemDefensePolicy`.
+/// `FilterCreationHandles` goes on the wire as **repeated** elements
+/// (one per handle), not a single space-separated string — verified
+/// against the legacy NW.js MeshCommander reference. Empty handle
+/// list is valid (a policy with no filters; only the Tx/Rx defaults
+/// fire). All six default-action booleans are emitted unconditionally
+/// since the firmware needs the full state, not a "if-true" mask.
+QByteArray buildAddSystemDefensePolicyEnvelope(const SystemDefensePolicy &p,
+                                                  const QString &to,
+                                                  const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    constexpr char kNsTransfer[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer";
+    const QString resource = QString::fromLatin1(kSystemDefensePolicyResource);
+    const QString action =
+        QString::fromLatin1(kNsTransfer) + QStringLiteral("/Create");
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(resource,                            QStringLiteral("r"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeEndElement(); // Header
+
+    // Body — new instance under the AMT_SystemDefensePolicy namespace.
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resource, QStringLiteral("AMT_SystemDefensePolicy"));
+
+    w.writeTextElement(resource, QStringLiteral("InstanceID"),
+                        QStringLiteral("0"));
+    w.writeTextElement(resource, QStringLiteral("PolicyName"), p.policyName);
+    w.writeTextElement(resource, QStringLiteral("PolicyPrecedence"),
+                        QString::number(p.priority));
+
+    const auto boolStr = [](bool b) {
+        return b ? QStringLiteral("true") : QStringLiteral("false");
+    };
+    w.writeTextElement(resource, QStringLiteral("TxDefaultCount"),
+                        boolStr(p.txDefaultCount));
+    w.writeTextElement(resource, QStringLiteral("TxDefaultDrop"),
+                        boolStr(p.txDefaultDrop));
+    w.writeTextElement(resource, QStringLiteral("TxDefaultMatchEvent"),
+                        boolStr(p.txDefaultMatchEvent));
+    w.writeTextElement(resource, QStringLiteral("RxDefaultCount"),
+                        boolStr(p.rxDefaultCount));
+    w.writeTextElement(resource, QStringLiteral("RxDefaultDrop"),
+                        boolStr(p.rxDefaultDrop));
+    w.writeTextElement(resource, QStringLiteral("RxDefaultMatchEvent"),
+                        boolStr(p.rxDefaultMatchEvent));
+
+    // Multi-valued — one repeated element per handle. AMT joins them
+    // into the FilterCreationHandles[] array on receive.
+    for (int h : p.filterCreationHandles) {
+        w.writeTextElement(resource, QStringLiteral("FilterCreationHandles"),
+                            QString::number(h));
+    }
+
+    w.writeEndElement(); // AMT_SystemDefensePolicy
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+} // namespace
+
+void addSystemDefensePolicy(WsmanClient *client,
+                              const SystemDefensePolicy &policy,
+                              std::function<void(InvokeResult)> callback)
+{
+    if (policy.policyName.isEmpty()) {
+        callback({ false, QStringLiteral("AddSystemDefensePolicy: name is required"), -1 });
+        return;
+    }
+    const QByteArray env = buildAddSystemDefensePolicyEnvelope(policy,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            if (body.contains("CreateResponse")
+                || body.contains("AMT_SystemDefensePolicy")) {
+                r.ok = true;
+                r.returnValue = 0;
+                return;
+            }
+            r.error = QStringLiteral("AddSystemDefensePolicy response had no CreateResponse");
+        },
+        std::move(callback));
+}
+
+QByteArray buildAddSystemDefensePolicyEnvelopeForTesting(const SystemDefensePolicy &policy,
+                                                              const QString &to,
+                                                              const QString &messageId)
+{
+    return buildAddSystemDefensePolicyEnvelope(policy, to, messageId);
+}
+
 void setPowerScheme(WsmanClient *client, const QString &instanceId,
                     std::function<void(InvokeResult)> callback)
 {

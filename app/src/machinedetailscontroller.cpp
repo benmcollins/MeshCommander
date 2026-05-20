@@ -2067,6 +2067,53 @@ void MachineDetailsController::deleteSystemDefenseIpFilter(const QString &instan
         });
 }
 
+void MachineDetailsController::addSystemDefensePolicyAction(const QVariantMap &fields)
+{
+    setLastError({});
+    qumesh::wsman::SystemDefensePolicy p;
+    p.policyName = fields.value(QStringLiteral("policyName")).toString().trimmed();
+    p.priority   = fields.value(QStringLiteral("priority"), 0).toInt();
+    p.txDefaultCount      = fields.value(QStringLiteral("txDefaultCount")).toBool();
+    p.txDefaultDrop       = fields.value(QStringLiteral("txDefaultDrop")).toBool();
+    p.txDefaultMatchEvent = fields.value(QStringLiteral("txDefaultMatchEvent")).toBool();
+    p.rxDefaultCount      = fields.value(QStringLiteral("rxDefaultCount")).toBool();
+    p.rxDefaultDrop       = fields.value(QStringLiteral("rxDefaultDrop")).toBool();
+    p.rxDefaultMatchEvent = fields.value(QStringLiteral("rxDefaultMatchEvent")).toBool();
+
+    // Dialog hands picked filters as InstanceID strings; pull the
+    // trailing integer handle out of each. IDs without a trailing
+    // digit get silently dropped (defence in depth — the picker
+    // shouldn't surface those rows in the first place).
+    for (const QVariant &v :
+         fields.value(QStringLiteral("filterInstanceIds")).toList()) {
+        const int h = qumesh::wsman::extractFilterHandleFromInstanceId(
+            v.toString());
+        if (h >= 0) p.filterCreationHandles.append(h);
+    }
+
+    if (p.policyName.isEmpty()) {
+        setLastError(QStringLiteral("Add policy: name is required."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Add policy: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::addSystemDefensePolicy(m_client, p,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Add policy: failed.")
+                    : QStringLiteral("Add policy: %1").arg(r.error));
+                return;
+            }
+            refreshSystemDefense();
+        });
+}
+
 void MachineDetailsController::addSystemDefenseIpFilter(const QVariantMap &fields)
 {
     setLastError({});

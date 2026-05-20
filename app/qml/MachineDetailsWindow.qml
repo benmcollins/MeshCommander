@@ -336,6 +336,14 @@ AppWindow {
         }
     }
 
+    SystemDefensePolicyDialog {
+        id: systemDefensePolicyDialog
+        controller: controller
+        onConfirmed: function(fields) {
+            controller.addSystemDefensePolicyAction(fields);
+        }
+    }
+
     ConfirmDialog {
         id: systemDefenseConfirmDialog
         property string pendingInstanceId: ""
@@ -997,6 +1005,7 @@ AppWindow {
                         controller: controller
                         hdr8021FilterDialog: hdr8021FilterDialog
                         ipHeadersFilterDialog: ipHeadersFilterDialog
+                        systemDefensePolicyDialog: systemDefensePolicyDialog
                     }
                 }
 

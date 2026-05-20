@@ -656,6 +656,20 @@ struct SystemDefensePolicy
     bool rxEnabled = false;
     /// Default policy that catches all otherwise-unmatched packets.
     bool defaultPolicy = false;
+    /// Create-side only — per-direction default actions on a packet
+    /// that doesn't match any contained filter. AMT splits this into
+    /// six independent flags (legacy MeshCommander reference). See #357.
+    bool txDefaultCount = false;
+    bool txDefaultDrop = false;
+    bool txDefaultMatchEvent = false;
+    bool rxDefaultCount = false;
+    bool rxDefaultDrop = false;
+    bool rxDefaultMatchEvent = false;
+    /// Create-side only — integer handles of the L2 / L3 filters
+    /// participating in this policy. Each handle is the trailing
+    /// integer of a filter's `InstanceID`. Serialised on the wire as
+    /// a sequence of repeated `<r:FilterCreationHandles>` elements.
+    QList<int> filterCreationHandles;
 };
 
 /// One `AMT_Hdr8021Filter` (L2) row — VLAN / ethertype / 802.1 priority.
@@ -792,6 +806,27 @@ void addIpHeadersFilter(WsmanClient *client, const IpHeadersFilter &filter,
     const IpHeadersFilter &filter,
     const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
     const QString &messageId = QStringLiteral("uuid:add-ipheaders-test"));
+
+/// WS-Transfer Create of a new `AMT_SystemDefensePolicy`. Wraps an
+/// arbitrary number of `FilterCreationHandles` integer references
+/// into a single envelope (one repeated element per handle), with
+/// six independent Tx/Rx default-action flags. See #357.
+void addSystemDefensePolicy(WsmanClient *client,
+                              const SystemDefensePolicy &policy,
+                              std::function<void(InvokeResult)> callback);
+
+/// Test-only seam for `addSystemDefensePolicy`.
+[[nodiscard]] QByteArray buildAddSystemDefensePolicyEnvelopeForTesting(
+    const SystemDefensePolicy &policy,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:add-sd-policy-test"));
+
+/// Extract the trailing integer handle from a System Defense filter's
+/// `InstanceID` (e.g. `"Intel(r) AMT:IP Filter Set:Handle 5"` → `5`,
+/// `"Intel(r) AMT:Hdr 8021 Filter Set 7"` → `7`). Returns -1 if no
+/// trailing digits are present. Exposed for tests + the policy
+/// dialog's filter-picker. See #357.
+[[nodiscard]] int extractFilterHandleFromInstanceId(const QString &instanceId);
 
 /// Encode a dotted-quad IPv4 address (e.g. `10.0.0.5`) into the
 /// 8-char uppercase hex form AMT puts on the wire (e.g. `0A000005`).
