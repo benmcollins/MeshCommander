@@ -130,6 +130,7 @@ qt_add_qml_module(qumesh_appcore
         qml/EventSubscriptionDialog.qml
         qml/Hdr8021FilterDialog.qml
         qml/IpHeadersFilterDialog.qml
+        qml/SystemDefensePolicyDialog.qml
         qml/WakeAlarmDialog.qml
         qml/WatchdogDialog.qml
         qml/Wired8021xDialog.qml

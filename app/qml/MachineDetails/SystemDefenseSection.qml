@@ -17,6 +17,7 @@ Flickable {
     required property MachineDetailsController controller
     required property var hdr8021FilterDialog
     required property var ipHeadersFilterDialog
+    required property var systemDefensePolicyDialog
 
     contentWidth: width
     contentHeight: sysDefCol.implicitHeight + 48
@@ -96,16 +97,38 @@ Flickable {
             title: qsTr("POLICIES")
             visible: sysDefCol.isAcm
                   && sysDefCol.supported
-                  && controller.systemDefense
-                  && (controller.systemDefense.policies || []).length > 0
+                  && !!root.controller.systemDefense
             accent: Colors.accent
             Layout.fillWidth: true
             Layout.leftMargin: 24
             Layout.rightMargin: 24
 
             ColumnLayout {
-                spacing: 4
+                spacing: 6
                 Layout.fillWidth: true
+
+                RowLayout {
+                    spacing: 8
+                    Layout.fillWidth: true
+                    Text {
+                        text: ((root.controller.systemDefense
+                                  && root.controller.systemDefense.policies) || []).length === 0
+                            ? qsTr("No policies configured.")
+                            : ""
+                        color: Colors.textMuted
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                    }
+                    Item { Layout.fillWidth: true }
+                    FlatButton {
+                        text: qsTr("Add policy")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        onClicked: root.systemDefensePolicyDialog.openForAdd()
+                    }
+                }
 
                 Repeater {
                     model: (root.controller.systemDefense

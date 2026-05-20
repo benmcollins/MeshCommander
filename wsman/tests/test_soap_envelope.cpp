@@ -44,6 +44,9 @@ private slots:
     void encodeIPv4ForFilterProducesUppercaseHex();
     void addIpHeadersFilterEnvelopeShape();
     void addIpHeadersFilterOmitsOptionalFieldsWhenUnset();
+    void extractFilterHandleFromInstanceIdParsesTrailingInt();
+    void addSystemDefensePolicyEnvelopeShape();
+    void addSystemDefensePolicyEnvelopeRepeatsFilterHandles();
 };
 
 namespace {
@@ -855,6 +858,86 @@ void TestSoapEnvelope::addIpHeadersFilterOmitsOptionalFieldsWhenUnset()
     QVERIFY(!env.contains("HdrDestAddress"));
     QVERIFY(!env.contains("HdrSrcPortStart"));
     QVERIFY(!env.contains("HdrDestPortStart"));
+}
+
+void TestSoapEnvelope::extractFilterHandleFromInstanceIdParsesTrailingInt()
+{
+    // L2 + L3 filter InstanceID formats both terminate in the
+    // numeric handle. The exact prefix varies by AMT version /
+    // class, so the extractor walks back from the tail rather than
+    // matching a known prefix.
+    QCOMPARE(extractFilterHandleFromInstanceId(
+                 QStringLiteral("Intel(r) AMT:IP Filter Set:Handle 5")), 5);
+    QCOMPARE(extractFilterHandleFromInstanceId(
+                 QStringLiteral("Intel(r) AMT:Hdr 8021 Filter 17")), 17);
+    QCOMPARE(extractFilterHandleFromInstanceId(QStringLiteral("Handle 0")), 0);
+    // No trailing digits → -1 (caller drops the row).
+    QCOMPARE(extractFilterHandleFromInstanceId(QStringLiteral("no-handle")), -1);
+    QCOMPARE(extractFilterHandleFromInstanceId(QString()), -1);
+}
+
+void TestSoapEnvelope::addSystemDefensePolicyEnvelopeShape()
+{
+    SystemDefensePolicy p;
+    p.policyName = QStringLiteral("default-drop");
+    p.priority = 5;
+    p.txDefaultCount = true;
+    p.txDefaultDrop = true;
+    p.txDefaultMatchEvent = false;
+    p.rxDefaultCount = false;
+    p.rxDefaultDrop = true;
+    p.rxDefaultMatchEvent = true;
+
+    const QByteArray env = buildAddSystemDefensePolicyEnvelopeForTesting(p);
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Create action + resource.
+    QVERIFY(env.contains("http://schemas.xmlsoap.org/ws/2004/09/transfer/Create"));
+    QVERIFY(env.contains("AMT_SystemDefensePolicy"));
+
+    // Verbatim field names from the legacy reference + values.
+    QVERIFY(env.contains(">default-drop<"));
+    QVERIFY(env.contains("PolicyPrecedence"));
+    QVERIFY(env.contains(">5<"));
+    // All six default-action flags must be emitted unconditionally.
+    QVERIFY(env.contains("TxDefaultCount"));
+    QVERIFY(env.contains("TxDefaultDrop"));
+    QVERIFY(env.contains("TxDefaultMatchEvent"));
+    QVERIFY(env.contains("RxDefaultCount"));
+    QVERIFY(env.contains("RxDefaultDrop"));
+    QVERIFY(env.contains("RxDefaultMatchEvent"));
+
+    // No FilterCreationHandles in an empty-filter policy. AMT
+    // accepts this (a policy that only kicks in on defaults).
+    QVERIFY(!env.contains("FilterCreationHandles"));
+}
+
+void TestSoapEnvelope::addSystemDefensePolicyEnvelopeRepeatsFilterHandles()
+{
+    SystemDefensePolicy p;
+    p.policyName = QStringLiteral("dmz-restrict");
+    p.priority = 10;
+    // Three filter handles — must hit the wire as three separate
+    // <r:FilterCreationHandles> elements, not a single comma- or
+    // space-joined string. That's the legacy MeshCommander shape.
+    p.filterCreationHandles = { 7, 12, 33 };
+
+    const QByteArray env = buildAddSystemDefensePolicyEnvelopeForTesting(p);
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Each handle gets its own repeated element. Count occurrences
+    // of the closing tag — three handles = three closing tags.
+    QCOMPARE(env.count(QByteArray("</r:FilterCreationHandles>")), 3);
+    // Sanity: each value lands inside the elements.
+    QVERIFY(env.contains(">7<"));
+    QVERIFY(env.contains(">12<"));
+    QVERIFY(env.contains(">33<"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)

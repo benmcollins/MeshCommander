@@ -681,6 +681,15 @@ public:
     /// Each optional matcher is omitted from the wire when unset.
     /// On success refreshes the section. See #358.
     Q_INVOKABLE void addSystemDefenseIpFilter(const QVariantMap &fields);
+    /// WS-Transfer Create of a new `AMT_SystemDefensePolicy`. `fields`
+    /// carries `policyName` (string), `priority` (int, default 0),
+    /// the six default-action booleans
+    /// `txDefaultCount` / `txDefaultDrop` / `txDefaultMatchEvent` /
+    /// `rxDefaultCount` / `rxDefaultDrop` / `rxDefaultMatchEvent`,
+    /// and `filterInstanceIds` — a QStringList of L2/L3 filter
+    /// InstanceIDs (the controller extracts the trailing handle).
+    /// On success refreshes the section. See #357.
+    Q_INVOKABLE void addSystemDefensePolicyAction(const QVariantMap &fields);
     /// WS-Transfer Delete on `AMT_IPHeadersFilter`. See #346.
     Q_INVOKABLE void deleteSystemDefenseIpFilter(const QString &instanceId);
     /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.
