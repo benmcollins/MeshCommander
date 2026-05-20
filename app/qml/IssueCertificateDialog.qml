@@ -59,19 +59,15 @@ Dialog {
         defaultSuffix: "csr"
         nameFilters: [qsTr("PEM CSR (*.csr *.pem)"), qsTr("All files (*)")]
         onAccepted: {
-            // QML's FileDialog doesn't give us a write helper; spool
-            // the CSR via a temporary `XMLHttpRequest` PUT to the
-            // local file path. Falls back to a clipboard hint if the
-            // write fails — see the Copy button which is always there.
+            // Route the write through the controller's
+            // `writeTextToPath()` (QFile on the C++ side). Pre-#298
+            // this used `XMLHttpRequest("PUT", file://…, false)` —
+            // synchronous, GUI-thread-blocking, and noisy on failure.
             const url = saveCsrDialog.selectedFile.toString();
-            const xhr = new XMLHttpRequest();
-            xhr.open("PUT", url, false);
-            xhr.send(root.csrPem);
-            if (xhr.status === 0 || xhr.status === 200) {
+            if (root.controller.writeTextToPath(url, root.csrPem)) {
                 statusBar.text = qsTr("Saved CSR to %1").arg(Paths.urlToLocalFile(url));
             } else {
-                statusBar.text = qsTr("Couldn't save (status %1); use Copy instead.")
-                    .arg(xhr.status);
+                statusBar.text = qsTr("Couldn't save; use Copy instead.");
             }
         }
     }
