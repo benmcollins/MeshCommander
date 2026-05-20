@@ -131,6 +131,33 @@ Rectangle {
 
             ScrollBar.vertical: ScrollBar {}
 
+            // Keyboard activation for the focused row (#280). Return /
+            // Space open the machine details; Del / Backspace queue a
+            // delete confirm. Arrow-key navigation was already wired via
+            // keyNavigationEnabled but had no terminal action.
+            Keys.onReturnPressed: function(event) {
+                if (currentIndex >= 0 && !root.selectMode) {
+                    root.openDetailsRequested(currentIndex);
+                    event.accepted = true;
+                }
+            }
+            Keys.onEnterPressed: function(event) {
+                if (currentIndex >= 0 && !root.selectMode) {
+                    root.openDetailsRequested(currentIndex);
+                    event.accepted = true;
+                }
+            }
+            Keys.onSpacePressed: function(event) {
+                if (currentIndex >= 0) {
+                    if (root.selectMode) root.toggleSelected(currentIndex);
+                    else root.openDetailsRequested(currentIndex);
+                    event.accepted = true;
+                }
+            }
+            // Del / Backspace deletion lives with the destructive-
+            // confirm work (#278); not wired here to avoid an
+            // unconfirmed delete path on this branch.
+
             // Stagger entrance for the first paint and any subsequent
             // inserts. Items fade in + slide up slightly so a fresh
             // model doesn't all appear at once.
@@ -163,6 +190,8 @@ Rectangle {
                 required property string host
 
                 readonly property bool isSelected: root._selectedSet.has(rowItem.index)
+                readonly property string displayName:
+                    rowItem.name.length > 0 ? rowItem.name : qsTr("Unnamed")
 
                 width: list.width
                 height: 48
@@ -173,6 +202,17 @@ Rectangle {
                            : (hoverHandler.hovered ? Colors.elevated : "transparent"))
 
                 Behavior on color { ColorAnimation { duration: Motion.fast } }
+
+                // Make the delegate addressable to screen readers (#280).
+                // Pre-#280 the row had no Accessible.role and no name,
+                // so VoiceOver / NVDA read nothing — the dense list was
+                // invisible to AX. Anchor the role + a concatenated
+                // name (machine label + host) on the delegate root.
+                Accessible.role: Accessible.ListItem
+                Accessible.name: rowItem.displayName + ", " + rowItem.host
+                Accessible.selected: list.currentIndex === rowItem.index
+                Accessible.selectable: true
+                Accessible.onPressAction: root.openDetailsRequested(rowItem.index)
 
                 HoverHandler { id: hoverHandler }
                 TapHandler {
