@@ -94,6 +94,38 @@ Dialog {
     implicitHeight: Math.min(formColumn.implicitHeight + 80,
                               (parent ? parent.height : 720) * 0.85)
 
+    /// Centralised submit so the AccentButton and the Enter-key
+    /// handler stay in sync — #279.
+    function submitIfReady() {
+        if (root.draftName.length === 0 || root.draftHost.length === 0) return;
+        let savedRow = root.row;
+        if (root.isNew) {
+            savedRow = ComputerModel.addComputer(root.draftName, root.draftHost,
+                root.draftUser, root.draftPass, root.draftTls);
+            if (savedRow < 0) return;
+        } else if (root.row >= 0) {
+            const idx = ComputerModel.index(root.row, 0);
+            ComputerModel.setData(idx, root.draftName, ComputerModel.NameRole);
+            ComputerModel.setData(idx, root.draftHost, ComputerModel.HostRole);
+            ComputerModel.setData(idx, root.draftUser, ComputerModel.UserRole);
+            ComputerModel.setData(idx, root.draftPass, ComputerModel.PassRole);
+            ComputerModel.setData(idx, root.draftTls, ComputerModel.TlsRole);
+        }
+        ComputerModel.setSshConfig(savedRow, {
+            "enabled": root.draftSshEnabled,
+            "host": root.draftSshHost,
+            "port": root.draftSshPort,
+            "user": root.draftSshUser,
+            "authMode": root.draftSshAuthMode,
+            "password": root.draftSshPassword,
+            "keyPath": root.draftSshKeyPath,
+            "keyPassphrase": root.draftSshKeyPassphrase,
+            "compression": root.draftSshCompression,
+        });
+        root.computerSaved(savedRow);
+        root.accept();
+    }
+
     contentItem: ScrollView {
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -102,6 +134,9 @@ Dialog {
     ColumnLayout {
         id: formColumn
         width: parent ? parent.width : 0
+
+        Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+        Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
         spacing: 14
 
         Section {
@@ -480,36 +515,8 @@ Dialog {
                 text: root.isNew ? qsTr("Add machine") : qsTr("Save changes")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
-enabled: root.draftName.length > 0 && root.draftHost.length > 0
-                onClicked: {
-                    let savedRow = root.row;
-                    if (root.isNew) {
-                        savedRow = ComputerModel.addComputer(root.draftName,
-                            root.draftHost,
-                            root.draftUser, root.draftPass, root.draftTls);
-                        if (savedRow < 0) return;
-                    } else if (root.row >= 0) {
-                        const idx = ComputerModel.index(root.row, 0);
-                        ComputerModel.setData(idx, root.draftName, ComputerModel.NameRole);
-                        ComputerModel.setData(idx, root.draftHost, ComputerModel.HostRole);
-                        ComputerModel.setData(idx, root.draftUser, ComputerModel.UserRole);
-                        ComputerModel.setData(idx, root.draftPass, ComputerModel.PassRole);
-                        ComputerModel.setData(idx, root.draftTls, ComputerModel.TlsRole);
-                    }
-                    ComputerModel.setSshConfig(savedRow, {
-                        "enabled": root.draftSshEnabled,
-                        "host": root.draftSshHost,
-                        "port": root.draftSshPort,
-                        "user": root.draftSshUser,
-                        "authMode": root.draftSshAuthMode,
-                        "password": root.draftSshPassword,
-                        "keyPath": root.draftSshKeyPath,
-                        "keyPassphrase": root.draftSshKeyPassphrase,
-                        "compression": root.draftSshCompression,
-                    });
-                    root.computerSaved(savedRow);
-                    root.accept();
-                }
+                enabled: root.draftName.length > 0 && root.draftHost.length > 0
+                onClicked: root.submitIfReady()
             }
         }
     }

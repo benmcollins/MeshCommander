@@ -40,8 +40,22 @@ Dialog {
     standardButtons: Dialog.NoButton
     implicitWidth: 480
 
+    /// Centralised primary-action gate so the AccentButton's onClicked
+    /// and the Keys.onReturnPressed handler stay in lockstep — #279.
+    function submitIfReady() {
+        if (root.draftUser.length === 0) return;
+        root.credentialsConfirmed(root.draftUser, root.draftPassword, root.useTls);
+        root.accept();
+    }
+
     contentItem: ColumnLayout {
         spacing: 14
+
+        // Enter / Return submits the form (#279). Bound at the
+        // contentItem level so the ColumnLayout receives the key
+        // event when focus is in any of its TextFields.
+        Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+        Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
         Section {
             title: qsTr("CREDENTIALS")
@@ -132,12 +146,7 @@ Dialog {
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 enabled: root.draftUser.length > 0
-                onClicked: {
-                    root.credentialsConfirmed(root.draftUser,
-                                              root.draftPassword,
-                                              root.useTls);
-                    root.accept();
-                }
+                onClicked: root.submitIfReady()
             }
         }
     }

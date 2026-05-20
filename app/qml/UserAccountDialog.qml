@@ -163,6 +163,17 @@ Dialog {
         root.accept();
     }
 
+    /// Centralised primary-action gate so the AccentButton and the
+    /// Enter-key handler stay in sync — #279. Returns true if the
+    /// form would be acceptable (matches AccentButton's enabled
+    /// condition).
+    function submitIfReady() {
+        if (root.draftUsername.length === 0) return;
+        if (root.isAdd ? !root.passwordsAgree()
+                       : (root.draftPassword.length > 0 && !root.passwordsAgree())) return;
+        root.commit();
+    }
+
     contentItem: ScrollView {
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -172,6 +183,9 @@ Dialog {
             id: formColumn
             width: parent ? parent.width : 0
             spacing: 14
+
+            Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+            Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
             Section {
                 title: qsTr("IDENTITY")
@@ -346,7 +360,7 @@ Dialog {
                         if (root.draftPassword.length === 0) return true;
                         return root.passwordsAgree();
                     }
-                    onClicked: root.commit()
+                    onClicked: root.submitIfReady()
                 }
             }
         }
