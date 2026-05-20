@@ -85,8 +85,19 @@ AppWindow {
         title: qsTr("Add variable")
         modal: true
         anchors.centerIn: parent
-        standardButtons: Dialog.Ok | Dialog.Cancel
+        standardButtons: Dialog.NoButton
         property int recordIndex: -1
+
+        function submit() {
+            if (recordIndex < 0 || catalogPicker.currentIndex < 0) return;
+            const entry = root.catalog[catalogPicker.currentIndex];
+            const idx = controller.addVariable(recordIndex, entry.moduleId, entry.varId);
+            if (idx < 0) {
+                errorBar.text = qsTr("Couldn't add variable %1/%2")
+                    .arg(entry.moduleId).arg(entry.varId);
+            }
+            addVarDialog.accept();
+        }
 
         contentItem: ColumnLayout {
             spacing: 8
@@ -125,15 +136,24 @@ AppWindow {
                     }
                 }
             }
-        }
-
-        onAccepted: {
-            if (recordIndex < 0 || catalogPicker.currentIndex < 0) return;
-            const entry = root.catalog[catalogPicker.currentIndex];
-            const idx = controller.addVariable(recordIndex, entry.moduleId, entry.varId);
-            if (idx < 0) {
-                errorBar.text = qsTr("Couldn't add variable %1/%2")
-                    .arg(entry.moduleId).arg(entry.varId);
+            RowLayout {
+                spacing: 8
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                Item { Layout.fillWidth: true }
+                FlatButton {
+                    text: qsTr("Cancel")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    onClicked: addVarDialog.reject()
+                }
+                AccentButton {
+                    text: qsTr("Add")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    enabled: catalogPicker.currentIndex >= 0
+                    onClicked: addVarDialog.submit()
+                }
             }
         }
     }
