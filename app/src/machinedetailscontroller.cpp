@@ -2067,6 +2067,81 @@ void MachineDetailsController::deleteSystemDefenseIpFilter(const QString &instan
         });
 }
 
+void MachineDetailsController::addSystemDefenseIpFilter(const QVariantMap &fields)
+{
+    setLastError({});
+    qumesh::wsman::IpHeadersFilter f;
+    f.name               = fields.value(QStringLiteral("name")).toString().trimmed();
+    bool ok = false;
+    f.ipVersion          = fields.value(QStringLiteral("ipVersion")).toInt(&ok);
+    if (!ok) f.ipVersion = -1;
+    ok = false;
+    f.filterProfile      = fields.value(QStringLiteral("filterProfile")).toInt(&ok);
+    if (!ok) f.filterProfile = -1;
+    f.filterProfileData  = fields.value(QStringLiteral("filterProfileData")).toInt();
+    ok = false;
+    f.filterDirection    = fields.value(QStringLiteral("filterDirection")).toInt(&ok);
+    if (!ok) f.filterDirection = -1;
+    f.actionEventOnMatch = fields.value(QStringLiteral("actionEventOnMatch")).toBool();
+    f.srcAddress         = fields.value(QStringLiteral("srcAddress")).toString().trimmed();
+    f.dstAddress         = fields.value(QStringLiteral("dstAddress")).toString().trimmed();
+    // Optional numeric matchers default to -1 = "not set" = field
+    // omitted on the wire (AMT rejects empty scalars on Create).
+    ok = false;
+    f.protocol           = fields.value(QStringLiteral("protocol"), -1).toInt(&ok);
+    if (!ok) f.protocol = -1;
+    ok = false;
+    f.srcPort            = fields.value(QStringLiteral("srcPort"), -1).toInt(&ok);
+    if (!ok) f.srcPort = -1;
+    ok = false;
+    f.srcPortEnd         = fields.value(QStringLiteral("srcPortEnd"), -1).toInt(&ok);
+    if (!ok) f.srcPortEnd = -1;
+    ok = false;
+    f.dstPort            = fields.value(QStringLiteral("dstPort"), -1).toInt(&ok);
+    if (!ok) f.dstPort = -1;
+    ok = false;
+    f.dstPortEnd         = fields.value(QStringLiteral("dstPortEnd"), -1).toInt(&ok);
+    if (!ok) f.dstPortEnd = -1;
+
+    if (f.name.isEmpty()) {
+        setLastError(QStringLiteral("Add L3/L4 filter: name is required."));
+        return;
+    }
+    if (f.ipVersion != 4 && f.ipVersion != 6) {
+        setLastError(QStringLiteral("Add L3/L4 filter: IP version must be 4 or 6."));
+        return;
+    }
+    if (f.filterProfile < 0 || f.filterProfile > 4) {
+        setLastError(QStringLiteral("Add L3/L4 filter: action must be one of Allow / Drop / Rate Limit."));
+        return;
+    }
+    if (f.filterDirection != 0 && f.filterDirection != 1) {
+        setLastError(QStringLiteral("Add L3/L4 filter: direction must be Tx or Rx."));
+        return;
+    }
+    if (f.filterProfile == 2 && f.filterProfileData <= 0) {
+        setLastError(QStringLiteral("Add L3/L4 filter: rate limit must be > 0 packets/second."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Add L3/L4 filter: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::addIpHeadersFilter(m_client, f,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Add L3/L4 filter: failed.")
+                    : QStringLiteral("Add L3/L4 filter: %1").arg(r.error));
+                return;
+            }
+            refreshSystemDefense();
+        });
+}
+
 void MachineDetailsController::addSystemDefenseHdrFilter(const QVariantMap &fields)
 {
     setLastError({});

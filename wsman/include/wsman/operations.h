@@ -684,12 +684,25 @@ struct IpHeadersFilter
 {
     QString instanceId;
     QString name;
-    int filterDirection = -1;
+    int filterDirection = -1;       ///< 0=tx (out), 1=rx (in).
+    /// Hex string on the wire (`HdrSrcAddress`). Read side surfaces
+    /// it verbatim; write side rebuilds from dotted-quad / colon-hex.
     QString srcAddress;
     QString dstAddress;
-    int protocol = -1;              ///< IPv4 protocol number, -1 if any.
-    int srcPort = -1;
-    int dstPort = -1;
+    int protocol = -1;              ///< IPv4 protocol number (`HdrProtocolID8`); -1 if any.
+    int srcPort = -1;               ///< `HdrSrcPortStart`.
+    int dstPort = -1;               ///< `HdrDestPortStart`.
+    /// Create-side only — IP version. 4 = IPv4, 6 = IPv6. Read side
+    /// leaves at -1. See #358.
+    int ipVersion = -1;
+    /// Create-side only — see Hdr8021Filter.
+    int filterProfile = -1;
+    int filterProfileData = 0;
+    bool actionEventOnMatch = false;
+    /// Create-side only — `HdrSrcPortEnd` / `HdrDestPortEnd`. -1
+    /// reuses the start value for a single-port match.
+    int srcPortEnd = -1;
+    int dstPortEnd = -1;
 };
 
 /// One `AMT_NetworkFilter` sub-rule reference.
@@ -764,6 +777,28 @@ void addHdr8021Filter(WsmanClient *client, const Hdr8021Filter &filter,
     const Hdr8021Filter &filter,
     const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
     const QString &messageId = QStringLiteral("uuid:add-hdr8021-test"));
+
+/// WS-Transfer Create of a new `AMT_IPHeadersFilter`. IP version,
+/// protocol, address, and port fields are all optional — any
+/// unspecified field is omitted from the wire so AMT's strict-mode
+/// validation doesn't reject it. The struct's address fields
+/// (`srcAddress` / `dstAddress`) accept dotted-quad / colon-hex
+/// input; the builder converts them to the wire hex form. See #358.
+void addIpHeadersFilter(WsmanClient *client, const IpHeadersFilter &filter,
+                         std::function<void(InvokeResult)> callback);
+
+/// Test-only seam for `addIpHeadersFilter`.
+[[nodiscard]] QByteArray buildAddIpHeadersFilterEnvelopeForTesting(
+    const IpHeadersFilter &filter,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:add-ipheaders-test"));
+
+/// Encode a dotted-quad IPv4 address (e.g. `10.0.0.5`) into the
+/// 8-char uppercase hex form AMT puts on the wire (e.g. `0A000005`).
+/// Returns an empty string on malformed input. Exposed in the
+/// header so the tests can lock the round-trip; production code
+/// only ever calls `addIpHeadersFilter`. See #358.
+[[nodiscard]] QString encodeIPv4ForFilter(const QString &dottedQuad);
 
 /// WS-Transfer Delete on `AMT_IPHeadersFilter` keyed by `InstanceID`.
 /// See #346.

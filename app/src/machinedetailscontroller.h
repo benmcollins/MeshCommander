@@ -672,6 +672,15 @@ public:
     /// `filterDirection` (int, 0=Tx / 1=Rx), `actionEventOnMatch`
     /// (bool). On success refreshes the section. See #353.
     Q_INVOKABLE void addSystemDefenseHdrFilter(const QVariantMap &fields);
+    /// WS-Transfer Create of a new `AMT_IPHeadersFilter`. `fields`
+    /// carries `name`, `ipVersion` (4|6), `filterProfile` (0..4),
+    /// `filterProfileData`, `filterDirection` (0|1),
+    /// `actionEventOnMatch`, and the optional matchers `protocol`,
+    /// `srcAddress` / `dstAddress` (dotted-quad for v4, colon-hex
+    /// for v6), `srcPort` / `srcPortEnd`, `dstPort` / `dstPortEnd`.
+    /// Each optional matcher is omitted from the wire when unset.
+    /// On success refreshes the section. See #358.
+    Q_INVOKABLE void addSystemDefenseIpFilter(const QVariantMap &fields);
     /// WS-Transfer Delete on `AMT_IPHeadersFilter`. See #346.
     Q_INVOKABLE void deleteSystemDefenseIpFilter(const QString &instanceId);
     /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.

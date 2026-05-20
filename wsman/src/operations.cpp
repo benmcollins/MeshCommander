@@ -2767,6 +2767,212 @@ QByteArray buildAddHdr8021FilterEnvelopeForTesting(const Hdr8021Filter &filter,
     return buildAddHdr8021FilterEnvelope(filter, to, messageId);
 }
 
+QString encodeIPv4ForFilter(const QString &dottedQuad)
+{
+    const QStringList parts = dottedQuad.split(QLatin1Char('.'));
+    if (parts.size() != 4) return {};
+    QByteArray raw;
+    raw.reserve(4);
+    for (const QString &part : parts) {
+        bool ok = false;
+        const int v = part.toInt(&ok);
+        if (!ok || v < 0 || v > 255) return {};
+        raw.append(static_cast<char>(v));
+    }
+    return QString::fromLatin1(raw.toHex().toUpper());
+}
+
+namespace {
+
+/// Encode whatever address form the dialog gave us into the hex
+/// string AMT expects on the wire. Returns empty for empty input
+/// (caller omits the field entirely). For IPv6 the input is the
+/// colon-hex form and we strip the colons + uppercase; the legacy
+/// MeshCommander does the same.
+QString encodeFilterAddress(const QString &input, int ipVersion)
+{
+    const QString trimmed = input.trimmed();
+    if (trimmed.isEmpty()) return {};
+    if (ipVersion == 4)
+        return encodeIPv4ForFilter(trimmed);
+    if (ipVersion == 6) {
+        QString hex;
+        hex.reserve(32);
+        for (QChar c : trimmed) {
+            if (c == QLatin1Char(':')) continue;
+            if (!c.isLetterOrNumber()) return {};
+            hex.append(c.toUpper());
+        }
+        return hex.size() == 32 ? hex : QString{};
+    }
+    return {};
+}
+
+/// Build a WS-Transfer Create envelope for `AMT_IPHeadersFilter`.
+/// Field shape matches the legacy NW.js MeshCommander reference
+/// (`c25301e^:legacy/source/Commander.htm`, `AddDefenseFilterOk`
+/// IPv4 / IPv6 branch). Address + port + protocol fields are all
+/// optional; each one is omitted from the wire when empty so AMT's
+/// strict validation doesn't trip on an empty scalar.
+QByteArray buildAddIpHeadersFilterEnvelope(const IpHeadersFilter &f,
+                                              const QString &to,
+                                              const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    constexpr char kNsTransfer[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer";
+    const QString resource = QString::fromLatin1(kIpHeadersFilterResource);
+    const QString action =
+        QString::fromLatin1(kNsTransfer) + QStringLiteral("/Create");
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(resource,                            QStringLiteral("r"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeEndElement(); // Header
+
+    // Body — new instance, all under the AMT_IPHeadersFilter namespace.
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resource, QStringLiteral("AMT_IPHeadersFilter"));
+
+    w.writeTextElement(resource, QStringLiteral("InstanceID"),
+                        QStringLiteral("0"));
+    w.writeTextElement(resource, QStringLiteral("Name"), f.name);
+    w.writeTextElement(resource, QStringLiteral("CreationClassName"),
+                        QStringLiteral("0"));
+    w.writeTextElement(resource, QStringLiteral("SystemName"),
+                        QStringLiteral("0"));
+    w.writeTextElement(resource, QStringLiteral("SystemCreationClassName"),
+                        QStringLiteral("0"));
+    w.writeTextElement(resource, QStringLiteral("HdrIPVersion"),
+                        QString::number(f.ipVersion));
+    w.writeTextElement(resource, QStringLiteral("FilterProfile"),
+                        QString::number(f.filterProfile));
+    w.writeTextElement(resource, QStringLiteral("FilterDirection"),
+                        QString::number(f.filterDirection));
+    w.writeTextElement(resource, QStringLiteral("ActionEventOnMatch"),
+                        f.actionEventOnMatch
+                            ? QStringLiteral("true")
+                            : QStringLiteral("false"));
+    if (f.filterProfile == 2 /* Rate Limit */) {
+        w.writeTextElement(resource, QStringLiteral("FilterProfileData"),
+                            QString::number(f.filterProfileData));
+    }
+    if (f.protocol >= 0) {
+        w.writeTextElement(resource, QStringLiteral("HdrProtocolID8"),
+                            QString::number(f.protocol));
+    }
+    const QString srcHex = encodeFilterAddress(f.srcAddress, f.ipVersion);
+    if (!srcHex.isEmpty()) {
+        w.writeTextElement(resource, QStringLiteral("HdrSrcAddress"), srcHex);
+    }
+    const QString dstHex = encodeFilterAddress(f.dstAddress, f.ipVersion);
+    if (!dstHex.isEmpty()) {
+        w.writeTextElement(resource, QStringLiteral("HdrDestAddress"), dstHex);
+    }
+    if (f.srcPort >= 0) {
+        w.writeTextElement(resource, QStringLiteral("HdrSrcPortStart"),
+                            QString::number(f.srcPort));
+        const int end = f.srcPortEnd >= 0 ? f.srcPortEnd : f.srcPort;
+        w.writeTextElement(resource, QStringLiteral("HdrSrcPortEnd"),
+                            QString::number(end));
+    }
+    if (f.dstPort >= 0) {
+        w.writeTextElement(resource, QStringLiteral("HdrDestPortStart"),
+                            QString::number(f.dstPort));
+        const int end = f.dstPortEnd >= 0 ? f.dstPortEnd : f.dstPort;
+        w.writeTextElement(resource, QStringLiteral("HdrDestPortEnd"),
+                            QString::number(end));
+    }
+
+    w.writeEndElement(); // AMT_IPHeadersFilter
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+} // namespace
+
+void addIpHeadersFilter(WsmanClient *client, const IpHeadersFilter &filter,
+                         std::function<void(InvokeResult)> callback)
+{
+    if (filter.name.isEmpty()) {
+        callback({ false, QStringLiteral("AddIpHeadersFilter: name is required"), -1 });
+        return;
+    }
+    if (filter.ipVersion != 4 && filter.ipVersion != 6) {
+        callback({ false, QStringLiteral("AddIpHeadersFilter: IP version must be 4 or 6"), -1 });
+        return;
+    }
+    if (filter.filterProfile < 0 || filter.filterProfile > 4) {
+        callback({ false, QStringLiteral("AddIpHeadersFilter: filter profile out of range"), -1 });
+        return;
+    }
+    if (filter.filterDirection != 0 && filter.filterDirection != 1) {
+        callback({ false, QStringLiteral("AddIpHeadersFilter: direction must be 0 (Tx) or 1 (Rx)"), -1 });
+        return;
+    }
+    // If the operator supplied an address, the builder needs to be
+    // able to encode it. Catch malformed input before firing.
+    if (!filter.srcAddress.trimmed().isEmpty()
+        && encodeFilterAddress(filter.srcAddress, filter.ipVersion).isEmpty()) {
+        callback({ false, QStringLiteral("AddIpHeadersFilter: source address malformed"), -1 });
+        return;
+    }
+    if (!filter.dstAddress.trimmed().isEmpty()
+        && encodeFilterAddress(filter.dstAddress, filter.ipVersion).isEmpty()) {
+        callback({ false, QStringLiteral("AddIpHeadersFilter: destination address malformed"), -1 });
+        return;
+    }
+    const QByteArray env = buildAddIpHeadersFilterEnvelope(filter,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            if (body.contains("CreateResponse")
+                || body.contains("AMT_IPHeadersFilter")) {
+                r.ok = true;
+                r.returnValue = 0;
+                return;
+            }
+            r.error = QStringLiteral("AddIpHeadersFilter response had no CreateResponse");
+        },
+        std::move(callback));
+}
+
+QByteArray buildAddIpHeadersFilterEnvelopeForTesting(const IpHeadersFilter &filter,
+                                                         const QString &to,
+                                                         const QString &messageId)
+{
+    return buildAddIpHeadersFilterEnvelope(filter, to, messageId);
+}
+
 void setPowerScheme(WsmanClient *client, const QString &instanceId,
                     std::function<void(InvokeResult)> callback)
 {
