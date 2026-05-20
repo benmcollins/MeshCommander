@@ -2067,6 +2067,62 @@ void MachineDetailsController::deleteSystemDefenseIpFilter(const QString &instan
         });
 }
 
+void MachineDetailsController::addSystemDefenseHdrFilter(const QVariantMap &fields)
+{
+    setLastError({});
+    qumesh::wsman::Hdr8021Filter f;
+    f.name               = fields.value(QStringLiteral("name")).toString().trimmed();
+    bool ok = false;
+    f.etherType          = fields.value(QStringLiteral("etherType")).toInt(&ok);
+    if (!ok) f.etherType = -1;
+    ok = false;
+    f.filterProfile      = fields.value(QStringLiteral("filterProfile")).toInt(&ok);
+    if (!ok) f.filterProfile = -1;
+    f.filterProfileData  = fields.value(QStringLiteral("filterProfileData")).toInt();
+    ok = false;
+    f.filterDirection    = fields.value(QStringLiteral("filterDirection")).toInt(&ok);
+    if (!ok) f.filterDirection = -1;
+    f.actionEventOnMatch = fields.value(QStringLiteral("actionEventOnMatch")).toBool();
+
+    if (f.name.isEmpty()) {
+        setLastError(QStringLiteral("Add L2 filter: name is required."));
+        return;
+    }
+    if (f.etherType < 0) {
+        setLastError(QStringLiteral("Add L2 filter: ethertype is required."));
+        return;
+    }
+    if (f.filterProfile < 0 || f.filterProfile > 4) {
+        setLastError(QStringLiteral("Add L2 filter: action must be one of Allow / Drop / Rate Limit."));
+        return;
+    }
+    if (f.filterDirection != 0 && f.filterDirection != 1) {
+        setLastError(QStringLiteral("Add L2 filter: direction must be Tx or Rx."));
+        return;
+    }
+    if (f.filterProfile == 2 && f.filterProfileData <= 0) {
+        setLastError(QStringLiteral("Add L2 filter: rate limit must be > 0 packets/second."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Add L2 filter: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::addHdr8021Filter(m_client, f,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Add L2 filter: failed.")
+                    : QStringLiteral("Add L2 filter: %1").arg(r.error));
+                return;
+            }
+            refreshSystemDefense();
+        });
+}
+
 QString MachineDetailsController::readTextFromPath(const QString &pathOrUrl) const
 {
     // Accept either a plain path or a file:// URL — QML's FileDialog

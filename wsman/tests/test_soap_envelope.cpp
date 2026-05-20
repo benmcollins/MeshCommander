@@ -39,6 +39,8 @@ private slots:
     void subscribeEnvelopeShape();
     void subscribeEnvelopeIncludesWsTrustCredentialsWhenUserSet();
     void unsubscribeEnvelopeEmbedsBothEprs();
+    void addHdr8021FilterEnvelopeShape();
+    void addHdr8021FilterOmitsRateLimitDataWhenNotRateLimit();
 };
 
 namespace {
@@ -692,6 +694,76 @@ void TestSoapEnvelope::unsubscribeEnvelopeEmbedsBothEprs()
     // expects to identify each EPR.
     QVERIFY(env.contains("Name=\"Filter\"") || env.contains("Name='Filter'"));
     QVERIFY(env.contains("Name=\"Handler\"") || env.contains("Name='Handler'"));
+}
+
+void TestSoapEnvelope::addHdr8021FilterEnvelopeShape()
+{
+    // Rate-limit filter — exercises the conditional FilterProfileData
+    // emission and locks the verbatim field names confirmed against
+    // the legacy NW.js MeshCommander reference.
+    Hdr8021Filter f;
+    f.name = QStringLiteral("Block ARP storm");
+    f.etherType = 2054;          // ARP
+    f.filterProfile = 2;          // Rate Limit
+    f.filterProfileData = 100;    // packets/sec
+    f.filterDirection = 1;        // Rx
+    f.actionEventOnMatch = true;
+
+    const QByteArray env = buildAddHdr8021FilterEnvelopeForTesting(f);
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // WS-Transfer Create action + the AMT_Hdr8021Filter resource URI.
+    QVERIFY(env.contains("http://schemas.xmlsoap.org/ws/2004/09/transfer/Create"));
+    QVERIFY(env.contains("AMT_Hdr8021Filter"));
+
+    // Body wraps the new instance under the resource namespace.
+    QVERIFY(env.contains(">Block ARP storm<"));
+    // Ethertype must be sent under HdrProtocolID8021 (not "EtherType").
+    QVERIFY(env.contains("HdrProtocolID8021"));
+    QVERIFY(env.contains(">2054<"));
+    // Profile / direction / event flag values.
+    QVERIFY(env.contains("FilterProfile"));
+    QVERIFY(env.contains(">2<"));      // filterProfile
+    QVERIFY(env.contains("FilterDirection"));
+    QVERIFY(env.contains(">1<"));      // direction = Rx
+    QVERIFY(env.contains("ActionEventOnMatch"));
+    QVERIFY(env.contains(">true<"));
+    // Rate-limit data MUST be present on this filter.
+    QVERIFY(env.contains("FilterProfileData"));
+    QVERIFY(env.contains(">100<"));
+    // Creation-class placeholders go on the wire as "0" — firmware
+    // fills the real values in on the round-trip.
+    QVERIFY(env.contains("CreationClassName"));
+}
+
+void TestSoapEnvelope::addHdr8021FilterOmitsRateLimitDataWhenNotRateLimit()
+{
+    // FilterProfile != 2 → no FilterProfileData on the wire. AMT
+    // rejects FilterProfileData on a Drop/Allow filter, so this
+    // omission is load-bearing.
+    Hdr8021Filter f;
+    f.name = QStringLiteral("Drop unknown");
+    f.etherType = 2048;          // IP
+    f.filterProfile = 4;          // Drop
+    f.filterProfileData = 999;    // would be ignored even if present
+    f.filterDirection = 0;        // Tx
+    f.actionEventOnMatch = false;
+
+    const QByteArray env = buildAddHdr8021FilterEnvelopeForTesting(f);
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    QVERIFY(env.contains(">Drop unknown<"));
+    QVERIFY(env.contains(">2048<"));   // ethertype
+    QVERIFY(env.contains(">4<"));      // FilterProfile = Drop
+    // The stray 999 must NOT leak onto the wire.
+    QVERIFY(!env.contains(">999<"));
+    QVERIFY(!env.contains("FilterProfileData"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)

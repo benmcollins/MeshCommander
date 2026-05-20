@@ -322,6 +322,13 @@ AppWindow {
         }
     }
 
+    Hdr8021FilterDialog {
+        id: hdr8021FilterDialog
+        onConfirmed: function(fields) {
+            controller.addSystemDefenseHdrFilter(fields);
+        }
+    }
+
     ConfirmDialog {
         id: systemDefenseConfirmDialog
         property string pendingInstanceId: ""
@@ -981,6 +988,7 @@ AppWindow {
                     sourceComponent: SystemDefenseSection {
                         anchors.fill: parent
                         controller: controller
+                        hdr8021FilterDialog: hdr8021FilterDialog
                     }
                 }
 

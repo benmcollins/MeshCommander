@@ -2475,8 +2475,12 @@ void getSystemDefense(WsmanClient *client,
                     QStringLiteral("VLANTag")).toInt(&conv);
                 if (!conv) f.vlanTag = -1;
                 conv = false;
+                // Field on the wire is `HdrProtocolID8021`, not
+                // `EtherType` — the earlier `EtherType` scrape never
+                // matched anything and the L2-row chip rendered empty
+                // for every filter. See #353.
                 f.etherType = findScalar(it,
-                    QStringLiteral("EtherType")).toInt(&conv);
+                    QStringLiteral("HdrProtocolID8021")).toInt(&conv);
                 if (!conv) f.etherType = -1;
                 conv = false;
                 f.priority = findScalar(it,
@@ -2623,6 +2627,144 @@ void deleteIpHeadersFilter(WsmanClient *client, const QString &instanceId,
     deleteByInstanceId(client, kIpHeadersFilterResource,
                         QStringLiteral("DeleteIPHeadersFilter"), instanceId,
                         std::move(callback));
+}
+
+namespace {
+
+/// Build a WS-Transfer Create envelope for `AMT_Hdr8021Filter`. Field
+/// shape mirrors the legacy NW.js MeshCommander
+/// (`c25301e^:legacy/source/Commander.htm` — `AddDefenseFilterOk`):
+/// the three creation-class scalars (`InstanceID`, `CreationClassName`,
+/// `SystemName`, `SystemCreationClassName`) are sent as `"0"` and the
+/// firmware fills them in; the user-controlled fields go straight on
+/// the wire under the AMT_Hdr8021Filter namespace. `FilterProfileData`
+/// is omitted unless `filterProfile == 2` (Rate Limit) — sending it
+/// on a non-rate-limit filter is what trips AMT's strict-mode
+/// validation. See #353.
+QByteArray buildAddHdr8021FilterEnvelope(const Hdr8021Filter &f,
+                                            const QString &to,
+                                            const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    constexpr char kNsTransfer[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer";
+    const QString resource = QString::fromLatin1(kHdr8021FilterResource);
+    const QString action =
+        QString::fromLatin1(kNsTransfer) + QStringLiteral("/Create");
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(resource,                            QStringLiteral("r"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeEndElement(); // Header
+
+    // Body — new instance, all under the AMT_Hdr8021Filter namespace.
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resource, QStringLiteral("AMT_Hdr8021Filter"));
+
+    w.writeTextElement(resource, QStringLiteral("InstanceID"),
+                        QStringLiteral("0"));
+    w.writeTextElement(resource, QStringLiteral("Name"), f.name);
+    w.writeTextElement(resource, QStringLiteral("CreationClassName"),
+                        QStringLiteral("0"));
+    w.writeTextElement(resource, QStringLiteral("SystemName"),
+                        QStringLiteral("0"));
+    w.writeTextElement(resource, QStringLiteral("SystemCreationClassName"),
+                        QStringLiteral("0"));
+    w.writeTextElement(resource, QStringLiteral("HdrProtocolID8021"),
+                        QString::number(f.etherType));
+    w.writeTextElement(resource, QStringLiteral("FilterProfile"),
+                        QString::number(f.filterProfile));
+    w.writeTextElement(resource, QStringLiteral("FilterDirection"),
+                        QString::number(f.filterDirection));
+    w.writeTextElement(resource, QStringLiteral("ActionEventOnMatch"),
+                        f.actionEventOnMatch
+                            ? QStringLiteral("true")
+                            : QStringLiteral("false"));
+    if (f.filterProfile == 2 /* Rate Limit */) {
+        w.writeTextElement(resource, QStringLiteral("FilterProfileData"),
+                            QString::number(f.filterProfileData));
+    }
+
+    w.writeEndElement(); // AMT_Hdr8021Filter
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+} // namespace
+
+void addHdr8021Filter(WsmanClient *client, const Hdr8021Filter &filter,
+                       std::function<void(InvokeResult)> callback)
+{
+    if (filter.name.isEmpty()) {
+        callback({ false, QStringLiteral("AddHdr8021Filter: name is required"), -1 });
+        return;
+    }
+    if (filter.etherType < 0) {
+        callback({ false, QStringLiteral("AddHdr8021Filter: ethertype is required"), -1 });
+        return;
+    }
+    if (filter.filterProfile < 0 || filter.filterProfile > 4) {
+        callback({ false, QStringLiteral("AddHdr8021Filter: filter profile out of range"), -1 });
+        return;
+    }
+    if (filter.filterDirection != 0 && filter.filterDirection != 1) {
+        callback({ false, QStringLiteral("AddHdr8021Filter: direction must be 0 (Tx) or 1 (Rx)"), -1 });
+        return;
+    }
+    const QByteArray env = buildAddHdr8021FilterEnvelope(filter,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            // CreateResponse echoes the EPR of the new row; we
+            // don't need to parse the InstanceID since the section
+            // re-enumerates on success. Absence of a fault tag is
+            // enough to call it a success — the run-request layer
+            // already maps SOAP faults into r.error.
+            if (body.contains("CreateResponse")
+                || body.contains("AMT_Hdr8021Filter")) {
+                r.ok = true;
+                r.returnValue = 0;
+                return;
+            }
+            r.error = QStringLiteral("AddHdr8021Filter response had no CreateResponse");
+        },
+        std::move(callback));
+}
+
+QByteArray buildAddHdr8021FilterEnvelopeForTesting(const Hdr8021Filter &filter,
+                                                       const QString &to,
+                                                       const QString &messageId)
+{
+    return buildAddHdr8021FilterEnvelope(filter, to, messageId);
 }
 
 void setPowerScheme(WsmanClient *client, const QString &instanceId,

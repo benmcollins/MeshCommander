@@ -2419,7 +2419,7 @@ void TestWsmanClient::getSystemDefenseEnumeratesAllFourFilterClasses()
                              "<c:InstanceID>L2-IPv4</c:InstanceID>"
                              "<c:Name>Match-IPv4</c:Name>"
                              "<c:FilterDirection>1</c:FilterDirection>"
-                             "<c:EtherType>2048</c:EtherType>"
+                             "<c:HdrProtocolID8021>2048</c:HdrProtocolID8021>"
                              "</c:AMT_Hdr8021Filter>"
                              "</wsen:Items>"
                              "<wsen:EndOfSequence/>"
