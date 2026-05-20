@@ -15,6 +15,7 @@ ColumnLayout {
     id: root
 
     required property MachineDetailsController controller
+    required property var wakeAlarmDialog
 
     spacing: 8
 
@@ -26,29 +27,40 @@ ColumnLayout {
         Layout.leftMargin: 24
         Layout.rightMargin: 24
 
-        Text {
-            text: qsTr("WAKE ALARMS")
-            color: Colors.textMuted
-            font.family: Type.sans
-            font.pixelSize: Type.sizeXs
-            font.letterSpacing: 2
-            font.weight: Font.Medium
-        }
-        Text {
-            text: controller.wakeAlarms.length === 0
-                ? qsTr("No wake alarms registered.")
-                : qsTr("%1 alarm%2 scheduled")
-                      .arg(controller.wakeAlarms.length)
-                      .arg(controller.wakeAlarms.length === 1 ? "" : "s")
-            color: Colors.text
-            font.family: Type.sans
-            font.pixelSize: 20
-        }
-        Text {
-            text: qsTr("Read-only — Add / Edit / Delete arrives in Phase B.")
-            color: Colors.textFaint
-            font.family: Type.sans
-            font.pixelSize: Type.sizeXs
+        RowLayout {
+            spacing: 12
+            Layout.fillWidth: true
+
+            ColumnLayout {
+                spacing: 4
+                Layout.fillWidth: true
+
+                Text {
+                    text: qsTr("WAKE ALARMS")
+                    color: Colors.textMuted
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeXs
+                    font.letterSpacing: 2
+                    font.weight: Font.Medium
+                }
+                Text {
+                    text: root.controller.wakeAlarms.length === 0
+                        ? qsTr("No wake alarms registered.")
+                        : qsTr("%1 alarm%2 scheduled")
+                              .arg(root.controller.wakeAlarms.length)
+                              .arg(root.controller.wakeAlarms.length === 1 ? "" : "s")
+                    color: Colors.text
+                    font.family: Type.sans
+                    font.pixelSize: 20
+                }
+            }
+
+            AccentButton {
+                text: qsTr("Add alarm")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                onClicked: root.wakeAlarmDialog.openForAdd()
+            }
         }
     }
 
@@ -59,7 +71,7 @@ ColumnLayout {
         Layout.rightMargin: 24
         Layout.bottomMargin: 24
         clip: true
-        model: controller.wakeAlarms
+        model: root.controller.wakeAlarms
         ScrollBar.vertical: ScrollBar {}
         spacing: 6
 
@@ -116,6 +128,30 @@ ColumnLayout {
                             font.family: Type.sans
                             font.pixelSize: Type.sizeXs
                             font.letterSpacing: 1
+                        }
+                    }
+
+                    FlatButton {
+                        text: qsTr("Edit")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        onClicked: root.wakeAlarmDialog.openForEdit(alarmCol.parent.modelData)
+                    }
+                    FlatButton {
+                        text: qsTr("Delete")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        onClicked: {
+                            wakeAlarmConfirmDialog.pendingInstanceId =
+                                alarmCol.parent.modelData.instanceId || "";
+                            wakeAlarmConfirmDialog.ask(
+                                qsTr("Delete alarm"),
+                                qsTr("Remove %1 from the AMT alarm clock. The wake will not fire.")
+                                    .arg(alarmCol.parent.modelData.elementName
+                                         || alarmCol.parent.modelData.instanceId
+                                         || qsTr("the alarm")),
+                                qsTr("Delete"),
+                                true);
                         }
                     }
                 }

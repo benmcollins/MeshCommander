@@ -594,6 +594,22 @@ public:
     /// Enumerate IPS_AlarmClockOccurrence for the Wake alarms pane.
     /// See #161 phase A.
     Q_INVOKABLE void refreshWakeAlarms();
+    /// Invoke `AMT_AlarmClockService.AddAlarm` with an embedded
+    /// `IPS_AlarmClockOccurrence`. `fields` carries `elementName`
+    /// (string), `startTimeIso` (ISO-8601 datetime), `intervalIso`
+    /// (ISO-8601 duration or empty), and `deleteOnCompletion` (bool).
+    /// On success refreshes the section. See #347.
+    Q_INVOKABLE void addWakeAlarm(const QVariantMap &fields);
+    /// WS-Transfer Delete on `IPS_AlarmClockOccurrence` keyed by
+    /// `instanceId`. On success refreshes the section. See #347.
+    Q_INVOKABLE void deleteWakeAlarm(const QString &instanceId);
+    /// Edit-as-replace: delete the row keyed by `oldInstanceId`, and
+    /// on success fire `AddAlarm` with `fields`. AMT has no in-place
+    /// modify for `IPS_AlarmClockOccurrence`, so the controller chains
+    /// the two operations and surfaces only one error banner if either
+    /// step fails. See #347.
+    Q_INVOKABLE void replaceWakeAlarm(const QString &oldInstanceId,
+                                       const QVariantMap &fields);
     /// Fire one WSMAN Get or Enumerate against `classOrUri`. `kind` is
     /// the string `"get"` or `"enumerate"`. `selectors` is a key→value
     /// map applied to Get only. Result lands in `wsmanBrowseResult`.

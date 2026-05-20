@@ -270,6 +270,27 @@ AppWindow {
         controller: controller
     }
 
+    WakeAlarmDialog {
+        id: wakeAlarmDialog
+        onConfirmed: function(editingInstanceId, fields) {
+            if (editingInstanceId.length > 0)
+                controller.replaceWakeAlarm(editingInstanceId, fields);
+            else
+                controller.addWakeAlarm(fields);
+        }
+    }
+
+    ConfirmDialog {
+        id: wakeAlarmConfirmDialog
+        property string pendingInstanceId: ""
+        onProceed: {
+            if (pendingInstanceId.length > 0)
+                controller.deleteWakeAlarm(pendingInstanceId);
+            pendingInstanceId = "";
+        }
+        onRejected: pendingInstanceId = ""
+    }
+
     Wired8021xDialog {
         id: wired8021xDialog
         controller: controller
@@ -867,6 +888,7 @@ AppWindow {
                     sourceComponent: WakeAlarmsSection {
                         anchors.fill: parent
                         controller: controller
+                        wakeAlarmDialog: wakeAlarmDialog
                     }
                 }
 

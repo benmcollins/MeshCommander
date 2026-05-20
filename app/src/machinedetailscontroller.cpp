@@ -1536,6 +1536,119 @@ void MachineDetailsController::refreshWakeAlarms()
         });
 }
 
+void MachineDetailsController::addWakeAlarm(const QVariantMap &fields)
+{
+    setLastError({});
+    qumesh::wsman::WakeAlarm a;
+    a.elementName        = fields.value(QStringLiteral("elementName")).toString().trimmed();
+    a.startTimeIso       = fields.value(QStringLiteral("startTimeIso")).toString().trimmed();
+    a.intervalIso        = fields.value(QStringLiteral("intervalIso")).toString().trimmed();
+    a.deleteOnCompletion = fields.value(QStringLiteral("deleteOnCompletion")).toBool();
+
+    if (a.elementName.isEmpty()) {
+        setLastError(QStringLiteral("Add alarm: name is required."));
+        return;
+    }
+    if (a.startTimeIso.isEmpty()) {
+        setLastError(QStringLiteral("Add alarm: start time is required."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Add alarm: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::addWakeAlarm(m_client, a,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Add alarm: failed.")
+                    : QStringLiteral("Add alarm: %1").arg(r.error));
+                return;
+            }
+            refreshWakeAlarms();
+        });
+}
+
+void MachineDetailsController::deleteWakeAlarm(const QString &instanceId)
+{
+    setLastError({});
+    if (instanceId.isEmpty()) {
+        setLastError(QStringLiteral("Delete alarm: missing instance ID."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Delete alarm: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteWakeAlarm(m_client, instanceId,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete alarm: failed.")
+                    : QStringLiteral("Delete alarm: %1").arg(r.error));
+                return;
+            }
+            refreshWakeAlarms();
+        });
+}
+
+void MachineDetailsController::replaceWakeAlarm(const QString &oldInstanceId,
+                                                 const QVariantMap &fields)
+{
+    setLastError({});
+    if (oldInstanceId.isEmpty()) {
+        // No prior row — fall through to plain add.
+        addWakeAlarm(fields);
+        return;
+    }
+    qumesh::wsman::WakeAlarm a;
+    a.elementName        = fields.value(QStringLiteral("elementName")).toString().trimmed();
+    a.startTimeIso       = fields.value(QStringLiteral("startTimeIso")).toString().trimmed();
+    a.intervalIso        = fields.value(QStringLiteral("intervalIso")).toString().trimmed();
+    a.deleteOnCompletion = fields.value(QStringLiteral("deleteOnCompletion")).toBool();
+    if (a.elementName.isEmpty() || a.startTimeIso.isEmpty()) {
+        setLastError(QStringLiteral("Save alarm: name and start time are required."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Save alarm: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteWakeAlarm(m_client, oldInstanceId,
+        [this, a](qumesh::wsman::InvokeResult delRes) {
+            if (!delRes.ok) {
+                decInflight();
+                setLastError(delRes.error.isEmpty()
+                    ? QStringLiteral("Save alarm: failed to delete previous row.")
+                    : QStringLiteral("Save alarm: %1").arg(delRes.error));
+                return;
+            }
+            qumesh::wsman::addWakeAlarm(m_client, a,
+                [this](qumesh::wsman::InvokeResult addRes) {
+                    decInflight();
+                    if (!addRes.ok) {
+                        // The old row is gone at this point; surface
+                        // the failure so the operator knows to re-add
+                        // by hand if AMT rejected the new shape.
+                        setLastError(addRes.error.isEmpty()
+                            ? QStringLiteral("Save alarm: previous row was removed but the new one could not be added.")
+                            : QStringLiteral("Save alarm: previous row removed; AddAlarm: %1").arg(addRes.error));
+                        refreshWakeAlarms();
+                        return;
+                    }
+                    refreshWakeAlarms();
+                });
+        });
+}
+
 void MachineDetailsController::wsmanBrowse(const QString &classOrUri,
                                            const QString &kind,
                                            const QVariantMap &selectors)
