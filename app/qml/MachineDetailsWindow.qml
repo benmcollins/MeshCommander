@@ -312,6 +312,35 @@ AppWindow {
         onRejected: pendingDeviceIdGuid = ""
     }
 
+    EventSubscriptionDialog {
+        id: eventSubscriptionDialog
+        controller: controller
+        onConfirmed: function(filterInstanceId, deliveryMode,
+                              notifyUrl, user, pass) {
+            controller.subscribeToEventFilter(filterInstanceId, deliveryMode,
+                                                notifyUrl, user, pass);
+        }
+    }
+
+    ConfirmDialog {
+        id: eventSubscriptionConfirmDialog
+        property string pendingFilterInstanceId: ""
+        property string pendingListenerName: ""
+        onProceed: {
+            if (pendingFilterInstanceId.length > 0
+                && pendingListenerName.length > 0) {
+                controller.unsubscribeFromEventFilter(
+                    pendingFilterInstanceId, pendingListenerName);
+            }
+            pendingFilterInstanceId = "";
+            pendingListenerName = "";
+        }
+        onRejected: {
+            pendingFilterInstanceId = "";
+            pendingListenerName = "";
+        }
+    }
+
     Wired8021xDialog {
         id: wired8021xDialog
         controller: controller
@@ -901,6 +930,7 @@ AppWindow {
                     sourceComponent: EventSubscriptionsSection {
                         anchors.fill: parent
                         controller: controller
+                        eventSubscriptionDialog: eventSubscriptionDialog
                     }
                 }
 

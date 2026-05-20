@@ -68,6 +68,12 @@ constexpr char kFilterCollectionResource[] =
 constexpr char kListenerDestinationResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ListenerDestination";
 
+/// The WSManagement-flavoured listener destination class. Subscribe
+/// returns one of these as the auto-created handler, and Unsubscribe
+/// has to reference it back through an EPR.
+constexpr char kListenerDestinationWSManagementResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ListenerDestinationWSManagement";
+
 constexpr char kFilterCollectionSubscriptionResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_FilterCollectionSubscription";
 
@@ -1687,6 +1693,351 @@ void getEventSubscriptions(WsmanClient *client,
             }
             acc->maybeFire();
         });
+}
+
+namespace {
+
+constexpr char kNsEventing[] =
+    "http://schemas.xmlsoap.org/ws/2004/08/eventing";
+
+/// Map our enum to the URI AMT expects in the Delivery `Mode` attr.
+QString deliveryModeUri(EventDeliveryMode m)
+{
+    return m == EventDeliveryMode::PushWithAck
+        ? QStringLiteral("http://schemas.dmtf.org/wbem/wsman/1/wsman/PushWithAck")
+        : QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/eventing/DeliveryModes/Push");
+}
+
+/// Build the WS-Eventing Subscribe envelope. ResourceURI is the
+/// `CIM_FilterCollection` we're subscribing to; the filter row's
+/// `InstanceID` goes into the SelectorSet. If `user` and `pass` are
+/// both non-empty we emit a WS-Trust UsernameToken issued-tokens
+/// block plus the `w:Auth` profile element, mirroring how the legacy
+/// MeshCommander pushed HTTP basic auth credentials through to the
+/// listener.
+QByteArray buildSubscribeEnvelope(const QString &filterInstanceId,
+                                    EventDeliveryMode deliveryMode,
+                                    const QString &notifyUrl,
+                                    const QString &user,
+                                    const QString &pass,
+                                    const QString &to,
+                                    const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    constexpr char kNsTrust[] = "http://schemas.xmlsoap.org/ws/2005/02/trust";
+    constexpr char kNsWsse[] =
+        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd";
+    const QString resource = QString::fromLatin1(kFilterCollectionResource);
+    const QString action = QString::fromLatin1(kNsEventing) + QStringLiteral("/Subscribe");
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(QString::fromLatin1(kNsEventing),   QStringLiteral("e"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("SelectorSet"));
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("InstanceID"));
+    w.writeCharacters(filterInstanceId);
+    w.writeEndElement(); // Selector
+    w.writeEndElement(); // SelectorSet
+
+    // WS-Trust issued-tokens block — only emitted when both user and
+    // pass are supplied. The firmware uses this to forward HTTP basic
+    // auth to the listener side; without it the listener gets the
+    // notifications unauthenticated.
+    const bool withAuth = !user.isEmpty() && !pass.isEmpty();
+    if (withAuth) {
+        w.writeNamespace(QString::fromLatin1(kNsTrust), QStringLiteral("t"));
+        w.writeNamespace(QString::fromLatin1(kNsWsse),  QStringLiteral("se"));
+        w.writeStartElement(QString::fromLatin1(kNsTrust),
+                             QStringLiteral("IssuedTokens"));
+        w.writeStartElement(QString::fromLatin1(kNsTrust),
+                             QStringLiteral("RequestSecurityTokenResponse"));
+        w.writeTextElement(QString::fromLatin1(kNsTrust),
+                             QStringLiteral("TokenType"),
+                             QStringLiteral("http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#UsernameToken"));
+        w.writeStartElement(QString::fromLatin1(kNsTrust),
+                             QStringLiteral("RequestedSecurityToken"));
+        w.writeStartElement(QString::fromLatin1(kNsWsse),
+                             QStringLiteral("UsernameToken"));
+        w.writeTextElement(QString::fromLatin1(kNsWsse),
+                             QStringLiteral("Username"), user);
+        w.writeStartElement(QString::fromLatin1(kNsWsse),
+                             QStringLiteral("Password"));
+        w.writeAttribute(QStringLiteral("Type"),
+                          QStringLiteral("http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#PasswordText"));
+        w.writeCharacters(pass);
+        w.writeEndElement(); // Password
+        w.writeEndElement(); // UsernameToken
+        w.writeEndElement(); // RequestedSecurityToken
+        w.writeEndElement(); // RequestSecurityTokenResponse
+        w.writeEndElement(); // IssuedTokens
+    }
+    w.writeEndElement(); // Header
+
+    // Body
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(QString::fromLatin1(kNsEventing),
+                         QStringLiteral("Subscribe"));
+    w.writeStartElement(QString::fromLatin1(kNsEventing),
+                         QStringLiteral("Delivery"));
+    w.writeAttribute(QStringLiteral("Mode"), deliveryModeUri(deliveryMode));
+    w.writeStartElement(QString::fromLatin1(kNsEventing),
+                         QStringLiteral("NotifyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"), notifyUrl);
+    w.writeEndElement(); // NotifyTo
+    if (withAuth) {
+        // Profile marker — partners the WS-Trust block in the header.
+        w.writeStartElement(QString::fromLatin1(kNsWsman),
+                             QStringLiteral("Auth"));
+        w.writeAttribute(QStringLiteral("Profile"),
+                          QStringLiteral("http://schemas.dmtf.org/wbem/wsman/1/wsman/secprofile/http/basic"));
+        w.writeEndElement(); // Auth
+    }
+    w.writeEndElement(); // Delivery
+    w.writeEndElement(); // Subscribe
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+/// Build a WS-Eventing Unsubscribe envelope. The CIM subscription
+/// row is keyed by two EPR-valued selectors (Filter and Handler),
+/// each of which is an embedded EPR pointing at the originating
+/// row. We hand-write the EPR XML rather than going through a
+/// generic helper because the existing builder doesn't support
+/// nested EPRs as selector content.
+QByteArray buildUnsubscribeEnvelope(const QString &filterInstanceId,
+                                       const QString &listenerName,
+                                       const QString &to,
+                                       const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    const QString resource = QString::fromLatin1(kFilterCollectionSubscriptionResource);
+    const QString action = QString::fromLatin1(kNsEventing) + QStringLiteral("/Unsubscribe");
+    const QString filterResource = QString::fromLatin1(kFilterCollectionResource);
+    const QString handlerResource =
+        QString::fromLatin1(kListenerDestinationWSManagementResource);
+    const QString anonRole =
+        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous");
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(QString::fromLatin1(kNsEventing),   QStringLiteral("e"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"), anonRole);
+    w.writeEndElement(); // ReplyTo
+
+    // SelectorSet with two EPR-valued selectors. Each selector's
+    // text content is an embedded EPR.
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("SelectorSet"));
+
+    // Filter selector: EPR → CIM_FilterCollection { InstanceID }.
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("Filter"));
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("EndpointReference"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"), anonRole);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReferenceParameters"));
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), filterResource);
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("SelectorSet"));
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("InstanceID"));
+    w.writeCharacters(filterInstanceId);
+    w.writeEndElement(); // Selector (inner)
+    w.writeEndElement(); // SelectorSet (inner)
+    w.writeEndElement(); // ReferenceParameters
+    w.writeEndElement(); // EndpointReference
+    w.writeEndElement(); // Selector (Filter)
+
+    // Handler selector: EPR → CIM_ListenerDestinationWSManagement
+    // with the standard 4-key tuple. CreationClassName is
+    // "CIM_ListenerDestinationWSMAN" (not …WSManagement) — that's
+    // the legacy convention and matches what AMT echoes back on
+    // enumeration.
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("Handler"));
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("EndpointReference"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"), anonRole);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReferenceParameters"));
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), handlerResource);
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("SelectorSet"));
+    for (const auto &kv : std::initializer_list<std::pair<QString, QString>>{
+             { QStringLiteral("CreationClassName"),       QStringLiteral("CIM_ListenerDestinationWSMAN") },
+             { QStringLiteral("Name"),                    listenerName },
+             { QStringLiteral("SystemCreationClassName"), QStringLiteral("CIM_ComputerSystem") },
+             { QStringLiteral("SystemName"),              QStringLiteral("Intel(r) AMT") },
+         }) {
+        w.writeStartElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("Selector"));
+        w.writeAttribute(QStringLiteral("Name"), kv.first);
+        w.writeCharacters(kv.second);
+        w.writeEndElement(); // Selector (inner)
+    }
+    w.writeEndElement(); // SelectorSet (inner)
+    w.writeEndElement(); // ReferenceParameters
+    w.writeEndElement(); // EndpointReference
+    w.writeEndElement(); // Selector (Handler)
+
+    w.writeEndElement(); // SelectorSet (outer)
+    w.writeEndElement(); // Header
+
+    // Body
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeEmptyElement(QString::fromLatin1(kNsEventing),
+                         QStringLiteral("Unsubscribe"));
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+} // namespace
+
+void subscribeToEventFilter(WsmanClient *client,
+                              const QString &filterInstanceId,
+                              EventDeliveryMode deliveryMode,
+                              const QString &notifyUrl,
+                              const QString &user,
+                              const QString &pass,
+                              std::function<void(InvokeResult)> callback)
+{
+    if (filterInstanceId.isEmpty()) {
+        callback({ false, QStringLiteral("Subscribe: filter is required"), -1 });
+        return;
+    }
+    if (notifyUrl.isEmpty()) {
+        callback({ false, QStringLiteral("Subscribe: notify URL is required"), -1 });
+        return;
+    }
+    const QByteArray env = buildSubscribeEnvelope(filterInstanceId, deliveryMode,
+        notifyUrl, user, pass,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            // WS-Eventing SubscribeResponse contains a SubscriptionManager
+            // EPR + an Expires element; presence of either is enough to
+            // treat the call as successful. AMT also returns plain SOAP
+            // faults on failure which `runRequest` surfaces via `error`.
+            if (body.contains("SubscribeResponse")
+                || body.contains("SubscriptionManager")) {
+                r.ok = true;
+                r.returnValue = 0;
+                return;
+            }
+            r.error = QStringLiteral("Subscribe response had no SubscriptionManager");
+        },
+        std::move(callback));
+}
+
+QByteArray buildSubscribeEnvelopeForTesting(const QString &filterInstanceId,
+                                              EventDeliveryMode deliveryMode,
+                                              const QString &notifyUrl,
+                                              const QString &user,
+                                              const QString &pass,
+                                              const QString &to,
+                                              const QString &messageId)
+{
+    return buildSubscribeEnvelope(filterInstanceId, deliveryMode,
+                                    notifyUrl, user, pass, to, messageId);
+}
+
+void unsubscribeFromEventFilter(WsmanClient *client,
+                                  const QString &filterInstanceId,
+                                  const QString &listenerName,
+                                  std::function<void(InvokeResult)> callback)
+{
+    if (filterInstanceId.isEmpty() || listenerName.isEmpty()) {
+        callback({ false, QStringLiteral("Unsubscribe: filter and listener are required"), -1 });
+        return;
+    }
+    const QByteArray env = buildUnsubscribeEnvelope(filterInstanceId, listenerName,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            // WS-Eventing UnsubscribeResponse is empty on success; the
+            // runRequest layer already trips into `error` on a SOAP
+            // fault, so reaching here means the subscription is gone.
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+QByteArray buildUnsubscribeEnvelopeForTesting(const QString &filterInstanceId,
+                                                const QString &listenerName,
+                                                const QString &to,
+                                                const QString &messageId)
+{
+    return buildUnsubscribeEnvelope(filterInstanceId, listenerName, to, messageId);
 }
 
 namespace {

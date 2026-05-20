@@ -36,6 +36,9 @@ private slots:
     void addAlarmEnvelopeOmitsIntervalForOneShot();
     void registerAgentEnvelopeShape();
     void registerAgentEnvelopeRoundTripsGuid();
+    void subscribeEnvelopeShape();
+    void subscribeEnvelopeIncludesWsTrustCredentialsWhenUserSet();
+    void unsubscribeEnvelopeEmbedsBothEprs();
 };
 
 namespace {
@@ -609,6 +612,86 @@ void TestSoapEnvelope::registerAgentEnvelopeRoundTripsGuid()
     // The bare GUID string must NOT appear on the wire — that would
     // mean we sent the hex form instead of the base-64-raw form.
     QVERIFY(!env.contains("01234567-89ab-cdef-0123-456789abcdef"));
+}
+
+void TestSoapEnvelope::subscribeEnvelopeShape()
+{
+    // No-auth Subscribe — locks the basic on-wire shape against
+    // regressions in the WS-Eventing block.
+    const QByteArray env = buildSubscribeEnvelopeForTesting(
+        QStringLiteral("Intel(r) AMT:System Defense:DefaultFilter"),
+        EventDeliveryMode::PushWithAck,
+        QStringLiteral("https://listener.example/notify"),
+        QString(), QString());
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // WS-Eventing Subscribe action + correct resource + filter selector.
+    QVERIFY(env.contains("http://schemas.xmlsoap.org/ws/2004/08/eventing/Subscribe"));
+    QVERIFY(env.contains("CIM_FilterCollection"));
+    QVERIFY(env.contains("Intel(r) AMT:System Defense:DefaultFilter"));
+    // Delivery mode (PushWithAck → dmtf.org URI) + notify URL.
+    QVERIFY(env.contains("dmtf.org/wbem/wsman/1/wsman/PushWithAck"));
+    QVERIFY(env.contains("https://listener.example/notify"));
+    // No WS-Trust block when user/pass are empty.
+    QVERIFY(!env.contains("IssuedTokens"));
+    QVERIFY(!env.contains("UsernameToken"));
+}
+
+void TestSoapEnvelope::subscribeEnvelopeIncludesWsTrustCredentialsWhenUserSet()
+{
+    const QByteArray env = buildSubscribeEnvelopeForTesting(
+        QStringLiteral("Intel(r) AMT:System Defense:DefaultFilter"),
+        EventDeliveryMode::Push,
+        QStringLiteral("https://listener.example/notify"),
+        QStringLiteral("alice"),
+        QStringLiteral("hunter2"));
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Push (not PushWithAck) → xmlsoap.org URI.
+    QVERIFY(env.contains("xmlsoap.org/ws/2004/08/eventing/DeliveryModes/Push"));
+    // WS-Trust block carries the credentials.
+    QVERIFY(env.contains("IssuedTokens"));
+    QVERIFY(env.contains("UsernameToken"));
+    QVERIFY(env.contains(">alice<"));
+    QVERIFY(env.contains(">hunter2<"));
+    // And the partner Auth profile marker shows up under Delivery.
+    QVERIFY(env.contains("Auth Profile=") || env.contains("Auth "));
+    QVERIFY(env.contains("secprofile/http/basic"));
+}
+
+void TestSoapEnvelope::unsubscribeEnvelopeEmbedsBothEprs()
+{
+    const QByteArray env = buildUnsubscribeEnvelopeForTesting(
+        QStringLiteral("Intel(r) AMT:System Defense:DefaultFilter"),
+        QStringLiteral("Intel(r) AMT:Subscription Manager 0"));
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // WS-Eventing Unsubscribe action on the join class.
+    QVERIFY(env.contains("http://schemas.xmlsoap.org/ws/2004/08/eventing/Unsubscribe"));
+    QVERIFY(env.contains("CIM_FilterCollectionSubscription"));
+
+    // Body is the empty <e:Unsubscribe/> element.
+    QVERIFY(env.contains("Unsubscribe"));
+
+    // Both EPRs appear with their resource URIs + the right key values.
+    QVERIFY(env.contains("CIM_FilterCollection<"));
+    QVERIFY(env.contains("Intel(r) AMT:System Defense:DefaultFilter"));
+    QVERIFY(env.contains("CIM_ListenerDestinationWSManagement"));
+    QVERIFY(env.contains("CIM_ListenerDestinationWSMAN"));
+    QVERIFY(env.contains("Intel(r) AMT:Subscription Manager 0"));
+    // Selector names "Filter" and "Handler" are what the firmware
+    // expects to identify each EPR.
+    QVERIFY(env.contains("Name=\"Filter\"") || env.contains("Name='Filter'"));
+    QVERIFY(env.contains("Name=\"Handler\"") || env.contains("Name='Handler'"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)
