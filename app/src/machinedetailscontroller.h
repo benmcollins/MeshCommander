@@ -14,6 +14,8 @@
 
 #include <QVariantMap>
 
+#include <functional>
+
 class QTimer;
 
 namespace qumesh::ssh { class SshSession; }
@@ -847,11 +849,14 @@ private:
     bool m_sshConnecting = false;
     [[nodiscard]] bool deferIfSshConnecting(PendingRefresh kind);
     void runPendingRefreshes();
-    /// Remember which top-level fetch was in flight when the trust
-    /// prompt fired, so we can resume it once the user accepts. -1
-    /// means "the section the user is currently looking at".
-    enum class PendingOp { None, Overview, Power, Network, Time };
-    PendingOp m_pendingOp = PendingOp::None;
+    /// Remember which top-level fetch was in flight when the TLS
+    /// trust prompt fired, so we can resume it once the user
+    /// accepts. Every refresh* entry point stores a self-referential
+    /// lambda here; `trustPendingCert(true)` moves-takes it and
+    /// invokes. Pre-#276 this was a 4-value enum that left ~14
+    /// refresh methods unwired — accepting Trust on those did
+    /// nothing visible. See #276.
+    std::function<void()> m_pendingTrustResume;
 
     qumesh::wsman::WsmanClient *m_client = nullptr;
     QString m_host;

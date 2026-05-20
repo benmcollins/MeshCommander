@@ -296,6 +296,7 @@ void MachineDetailsController::close()
         emit awaitingTrustChanged();
         emit pendingCertChanged();
     }
+    m_pendingTrustResume = nullptr;
     emit closeRequested();
 }
 
@@ -314,15 +315,15 @@ void MachineDetailsController::trustPendingCert(bool persist)
     emit pendingCertChanged();
     if (persist && !fp.isEmpty()) emit trustedFingerprintAdded(fp);
 
-    // Resume whatever fetch was in flight when the prompt fired. If we
-    // weren't tracking one specifically, restart the overview — that's
-    // the section we open on first connect.
-    switch (m_pendingOp) {
-    case PendingOp::Overview: m_pendingOp = PendingOp::None; refreshOverview(); break;
-    case PendingOp::Power:    m_pendingOp = PendingOp::None; refreshPower();    break;
-    case PendingOp::Network:  m_pendingOp = PendingOp::None; refreshNetwork();  break;
-    case PendingOp::Time:     m_pendingOp = PendingOp::None; refreshTime();     break;
-    case PendingOp::None:     refreshOverview(); break;
+    // Resume whatever fetch was in flight when the prompt fired.
+    // Move-take so a re-entry through the resumed refresh (which
+    // re-sets m_pendingTrustResume to itself) doesn't loop.
+    if (auto fn = std::move(m_pendingTrustResume)) {
+        fn();
+    } else {
+        // No fetch was in flight — restart the overview, which is the
+        // section we open on first connect.
+        refreshOverview();
     }
 }
 
@@ -361,7 +362,7 @@ void MachineDetailsController::refreshOverview()
         return;
     }
     setLastError({});
-    m_pendingOp = PendingOp::Overview;
+    m_pendingTrustResume = [this]{ refreshOverview(); };
 
     // identify — no credentials required.
     incInflight();
@@ -559,6 +560,7 @@ void MachineDetailsController::refreshOptInStatus()
     if (deferIfSshConnecting(PendingOverview)) return;
     rebuildEndpoint();
     if (m_host.isEmpty()) return;
+    m_pendingTrustResume = [this]{ refreshOptInStatus(); };
     incInflight();
     qumesh::wsman::getOptInStatus(m_client,
         [this](qumesh::wsman::OptInServiceResult r) {
@@ -732,7 +734,7 @@ void MachineDetailsController::refreshNetwork()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
-    m_pendingOp = PendingOp::Network;
+    m_pendingTrustResume = [this]{ refreshNetwork(); };
     incInflight();
     qumesh::wsman::getEthernetSettings(m_client,
         [this](qumesh::wsman::EthernetSettingsResult r) {
@@ -800,7 +802,7 @@ void MachineDetailsController::refreshTime()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
-    m_pendingOp = PendingOp::Time;
+    m_pendingTrustResume = [this]{ refreshTime(); };
     incInflight();
     qumesh::wsman::getTimeSettings(m_client,
         [this](qumesh::wsman::TimeSettingsResult r) {
@@ -867,6 +869,7 @@ void MachineDetailsController::refreshEventLog()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshEventLog(); };
     incInflight();
     qumesh::wsman::enumerateEventLog(m_client,
         [this](qumesh::wsman::EventLogResult r) {
@@ -901,6 +904,7 @@ void MachineDetailsController::refreshHardware()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshHardware(); };
     incInflight();
     qumesh::wsman::getHardwareInventory(m_client,
         [this](qumesh::wsman::HardwareInventoryResult r) {
@@ -997,6 +1001,7 @@ void MachineDetailsController::refreshWireless()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshWireless(); };
     incInflight();
     qumesh::wsman::getWireless(m_client,
         [this](qumesh::wsman::WirelessResult r) {
@@ -1353,6 +1358,7 @@ void MachineDetailsController::refreshAgentPresence()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshAgentPresence(); };
     incInflight();
     qumesh::wsman::getAgentPresence(m_client,
         [this](qumesh::wsman::AgentPresenceResult r) {
@@ -1394,6 +1400,7 @@ void MachineDetailsController::refreshEventSubscriptions()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshEventSubscriptions(); };
     incInflight();
     qumesh::wsman::getEventSubscriptions(m_client,
         [this](qumesh::wsman::EventSubscriptionsResult r) {
@@ -1494,6 +1501,7 @@ void MachineDetailsController::refreshWakeAlarms()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshWakeAlarms(); };
     incInflight();
     qumesh::wsman::getWakeAlarms(m_client,
         [this](qumesh::wsman::WakeAlarmsResult r) {
@@ -1567,6 +1575,7 @@ void MachineDetailsController::refreshSystemDefense()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshSystemDefense(); };
     incInflight();
     qumesh::wsman::getSystemDefense(m_client,
         [this](qumesh::wsman::SystemDefenseResult r) {
@@ -1947,6 +1956,7 @@ void MachineDetailsController::refreshRemoteAccess()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshRemoteAccess(); };
     incInflight();
     qumesh::wsman::getRemoteAccess(m_client,
         [this](qumesh::wsman::RemoteAccessResult r) {
@@ -2395,6 +2405,7 @@ void MachineDetailsController::refreshDeviceCerts()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshDeviceCerts(); };
     incInflight();
     qumesh::wsman::getDeviceCertStore(m_client,
         [this](qumesh::wsman::DeviceCertResult r) {
@@ -2500,6 +2511,7 @@ void MachineDetailsController::refreshActiveSessions()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshActiveSessions(); };
     incInflight();
     qumesh::wsman::getActiveSessions(m_client,
         [this](qumesh::wsman::ActiveSessionsResult r) {
@@ -2538,6 +2550,7 @@ void MachineDetailsController::refreshAuditLog()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshAuditLog(); };
     // Kick the state read and the records walk in parallel; QML only
     // re-renders once both have completed by binding to the single
     // `auditLogChanged` signal that each emits.
@@ -2597,6 +2610,7 @@ void MachineDetailsController::refreshUserAccounts()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
+    m_pendingTrustResume = [this]{ refreshUserAccounts(); };
     incInflight();
     qumesh::wsman::enumerateUserAccounts(m_client,
         [this](qumesh::wsman::UserAccountsResult r) {
@@ -2873,7 +2887,7 @@ void MachineDetailsController::refreshPower()
         setLastError(QStringLiteral("Host is empty — cannot refresh."));
         return;
     }
-    m_pendingOp = PendingOp::Power;
+    m_pendingTrustResume = [this]{ refreshPower(); };
     incInflight();
     qumesh::wsman::getPowerState(m_client, [this](qumesh::wsman::PowerStateResult r) {
         if (r.ok) {
@@ -2898,6 +2912,7 @@ void MachineDetailsController::refreshPowerSchemes()
     if (deferIfSshConnecting(PendingPower)) return;
     rebuildEndpoint();
     if (m_host.isEmpty()) return;
+    m_pendingTrustResume = [this]{ refreshPowerSchemes(); };
     incInflight();
     qumesh::wsman::getPowerSchemes(m_client,
         [this](qumesh::wsman::PowerSchemesResult r) {
