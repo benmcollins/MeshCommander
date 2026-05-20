@@ -98,6 +98,14 @@ constexpr char kNetworkFilterResource[] =
 constexpr char kActiveFilterStatisticsResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_ActiveFilterStatistics";
 
+constexpr char kNetworkPortSystemDefensePolicyResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_NetworkPortSystemDefensePolicy";
+
+/// The Ethernet-port DMTF class — referenced by the Antecedent EPR
+/// when binding a System Defense policy to a port. See #359.
+constexpr char kEthernetPortResource[] =
+    "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_EthernetPort";
+
 constexpr char kBootSettingDataResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/"
     "AMT_BootSettingData";
@@ -2406,22 +2414,24 @@ ActiveFilterStatRow parseActiveFilterStat(const QByteArray &itemXml)
 void getSystemDefense(WsmanClient *client,
                       std::function<void(SystemDefenseResult)> callback)
 {
-    // Five parallel enumerates. The firmware returns SOAP fault on
+    // Six parallel enumerates. The firmware returns SOAP fault on
     // every class for non-ACM / pre-AMT-6 boxes; treat consistent
-    // failure across all four core classes (excluding stats, which
-    // some pre-stats firmware drops separately) as "not supported"
-    // rather than an error.
+    // failure across all four *core* classes (excluding stats and
+    // the port-binding join, which some firmware drops separately)
+    // as "not supported" rather than an error.
     struct Acc {
         SystemDefenseResult r;
-        bool gotPolicies = false;
-        bool gotHdr      = false;
-        bool gotIp       = false;
-        bool gotSub      = false;
-        bool gotStats    = false;
-        int faulted      = 0;
+        bool gotPolicies     = false;
+        bool gotHdr          = false;
+        bool gotIp           = false;
+        bool gotSub          = false;
+        bool gotStats        = false;
+        bool gotPortBindings = false;
+        int faulted          = 0;
         std::function<void(SystemDefenseResult)> cb;
         void maybeFire() {
-            if (!gotPolicies || !gotHdr || !gotIp || !gotSub || !gotStats) return;
+            if (!gotPolicies || !gotHdr || !gotIp || !gotSub
+                || !gotStats || !gotPortBindings) return;
             if (faulted == 4) {
                 r.supported = false;
                 r.ok = true;
@@ -2552,6 +2562,26 @@ void getSystemDefense(WsmanClient *client,
                 ActiveFilterStatRow s = parseActiveFilterStat(it);
                 if (!s.filterInstanceId.isEmpty())
                     acc->r.stats.append(std::move(s));
+            }
+            acc->maybeFire();
+        });
+
+    // Port-policy bindings — also best-effort. Each row links a
+    // CIM_EthernetPort via the Antecedent EPR to an
+    // AMT_SystemDefensePolicy via the Dependent EPR; both nested
+    // SelectorSets contain a single scalar selector we want
+    // (Antecedent.DeviceID + Dependent.InstanceID).
+    enumerateAll(client, kNetworkPortSystemDefensePolicyResource,
+        [acc](QList<QByteArray> items, QString /*err*/) {
+            acc->gotPortBindings = true;
+            for (const QByteArray &it : items) {
+                PortPolicyBinding b;
+                b.portDeviceId = extractEprSelector(it,
+                    QStringLiteral("Antecedent"), QStringLiteral("DeviceID"));
+                b.policyInstanceId = extractEprSelector(it,
+                    QStringLiteral("Dependent"), QStringLiteral("InstanceID"));
+                if (!b.portDeviceId.isEmpty() && !b.policyInstanceId.isEmpty())
+                    acc->r.portBindings.append(std::move(b));
             }
             acc->maybeFire();
         });
@@ -3109,6 +3139,271 @@ QByteArray buildAddSystemDefensePolicyEnvelopeForTesting(const SystemDefensePoli
                                                               const QString &messageId)
 {
     return buildAddSystemDefensePolicyEnvelope(policy, to, messageId);
+}
+
+namespace {
+
+/// Write an embedded WS-Addressing EPR pointing at the Ethernet port
+/// identified by `portIndex`. AMT names the port `"Intel(r) AMT
+/// Ethernet Port <N>"` and keys it on `CreationClassName` +
+/// `DeviceID`. Used both by the Create body (where the EPR is the
+/// value of the `Antecedent` element) and by the Delete selector
+/// set (where it's the content of a Selector named `Antecedent`).
+void writeEthernetPortEpr(QXmlStreamWriter &w, int portIndex,
+                            const QString &nsAddressing, const QString &nsWsman)
+{
+    const QString anonRole =
+        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous");
+    w.writeStartElement(nsAddressing, QStringLiteral("EndpointReference"));
+    w.writeTextElement(nsAddressing, QStringLiteral("Address"), anonRole);
+    w.writeStartElement(nsAddressing, QStringLiteral("ReferenceParameters"));
+    w.writeTextElement(nsWsman, QStringLiteral("ResourceURI"),
+                        QString::fromLatin1(kEthernetPortResource));
+    w.writeStartElement(nsWsman, QStringLiteral("SelectorSet"));
+    w.writeStartElement(nsWsman, QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("CreationClassName"));
+    w.writeCharacters(QStringLiteral("CIM_EthernetPort"));
+    w.writeEndElement(); // Selector
+    w.writeStartElement(nsWsman, QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("DeviceID"));
+    w.writeCharacters(QStringLiteral("Intel(r) AMT Ethernet Port %1").arg(portIndex));
+    w.writeEndElement(); // Selector
+    w.writeEndElement(); // SelectorSet
+    w.writeEndElement(); // ReferenceParameters
+    w.writeEndElement(); // EndpointReference
+}
+
+/// EPR pointing at the system defense policy by its InstanceID. Same
+/// shape as the Ethernet-port EPR — used for the `Dependent` element.
+void writeSystemDefensePolicyEpr(QXmlStreamWriter &w,
+                                    const QString &policyInstanceId,
+                                    const QString &nsAddressing,
+                                    const QString &nsWsman)
+{
+    const QString anonRole =
+        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous");
+    w.writeStartElement(nsAddressing, QStringLiteral("EndpointReference"));
+    w.writeTextElement(nsAddressing, QStringLiteral("Address"), anonRole);
+    w.writeStartElement(nsAddressing, QStringLiteral("ReferenceParameters"));
+    w.writeTextElement(nsWsman, QStringLiteral("ResourceURI"),
+                        QString::fromLatin1(kSystemDefensePolicyResource));
+    w.writeStartElement(nsWsman, QStringLiteral("SelectorSet"));
+    w.writeStartElement(nsWsman, QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("InstanceID"));
+    w.writeCharacters(policyInstanceId);
+    w.writeEndElement(); // Selector
+    w.writeEndElement(); // SelectorSet
+    w.writeEndElement(); // ReferenceParameters
+    w.writeEndElement(); // EndpointReference
+}
+
+QByteArray buildBindSystemDefensePolicyEnvelope(int portIndex,
+                                                   const QString &policyInstanceId,
+                                                   const QString &to,
+                                                   const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    constexpr char kNsTransfer[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer";
+    const QString resource = QString::fromLatin1(kNetworkPortSystemDefensePolicyResource);
+    const QString action =
+        QString::fromLatin1(kNsTransfer) + QStringLiteral("/Create");
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+    w.writeNamespace(resource,                            QStringLiteral("r"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+    w.writeEndElement(); // Header
+
+    // Body — new join row. Antecedent + Dependent are EPRs.
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(resource,
+                         QStringLiteral("AMT_NetworkPortSystemDefensePolicy"));
+
+    w.writeStartElement(resource, QStringLiteral("Antecedent"));
+    writeEthernetPortEpr(w, portIndex,
+                          QString::fromLatin1(kNsAddressing),
+                          QString::fromLatin1(kNsWsman));
+    w.writeEndElement(); // Antecedent
+
+    w.writeStartElement(resource, QStringLiteral("Dependent"));
+    writeSystemDefensePolicyEpr(w, policyInstanceId,
+                                  QString::fromLatin1(kNsAddressing),
+                                  QString::fromLatin1(kNsWsman));
+    w.writeEndElement(); // Dependent
+
+    w.writeEndElement(); // AMT_NetworkPortSystemDefensePolicy
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+QByteArray buildUnbindSystemDefensePolicyEnvelope(int portIndex,
+                                                     const QString &policyInstanceId,
+                                                     const QString &to,
+                                                     const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    constexpr char kNsTransfer[] = "http://schemas.xmlsoap.org/ws/2004/09/transfer";
+    const QString resource = QString::fromLatin1(kNetworkPortSystemDefensePolicyResource);
+    const QString action =
+        QString::fromLatin1(kNsTransfer) + QStringLiteral("/Delete");
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap),       QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddressing), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman),      QStringLiteral("w"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), resource);
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddressing),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+
+    // SelectorSet — both selectors are EPR-valued (same shape as
+    // the WS-Eventing Unsubscribe from #352).
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("SelectorSet"));
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("Antecedent"));
+    writeEthernetPortEpr(w, portIndex,
+                          QString::fromLatin1(kNsAddressing),
+                          QString::fromLatin1(kNsWsman));
+    w.writeEndElement(); // Selector (Antecedent)
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("Dependent"));
+    writeSystemDefensePolicyEpr(w, policyInstanceId,
+                                  QString::fromLatin1(kNsAddressing),
+                                  QString::fromLatin1(kNsWsman));
+    w.writeEndElement(); // Selector (Dependent)
+    w.writeEndElement(); // SelectorSet
+    w.writeEndElement(); // Header
+
+    // Body — empty for WS-Transfer Delete.
+    w.writeEmptyElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+} // namespace
+
+void bindSystemDefensePolicyToPort(WsmanClient *client,
+                                      int portIndex,
+                                      const QString &policyInstanceId,
+                                      std::function<void(InvokeResult)> callback)
+{
+    if (portIndex < 0) {
+        callback({ false, QStringLiteral("BindPolicy: port index must be >= 0"), -1 });
+        return;
+    }
+    if (policyInstanceId.isEmpty()) {
+        callback({ false, QStringLiteral("BindPolicy: policy InstanceID is required"), -1 });
+        return;
+    }
+    const QByteArray env = buildBindSystemDefensePolicyEnvelope(portIndex,
+        policyInstanceId,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            if (body.contains("CreateResponse")
+                || body.contains("AMT_NetworkPortSystemDefensePolicy")) {
+                r.ok = true;
+                r.returnValue = 0;
+                return;
+            }
+            r.error = QStringLiteral("BindPolicy response had no CreateResponse");
+        },
+        std::move(callback));
+}
+
+void unbindSystemDefensePolicyFromPort(WsmanClient *client,
+                                          int portIndex,
+                                          const QString &policyInstanceId,
+                                          std::function<void(InvokeResult)> callback)
+{
+    if (portIndex < 0 || policyInstanceId.isEmpty()) {
+        callback({ false, QStringLiteral("UnbindPolicy: port index and policy are required"), -1 });
+        return;
+    }
+    const QByteArray env = buildUnbindSystemDefensePolicyEnvelope(portIndex,
+        policyInstanceId,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            // WS-Transfer Delete returns an empty body on success;
+            // any SOAP fault is already mapped to r.error by runRequest.
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+QByteArray buildBindSystemDefensePolicyEnvelopeForTesting(int portIndex,
+                                                                const QString &policyInstanceId,
+                                                                const QString &to,
+                                                                const QString &messageId)
+{
+    return buildBindSystemDefensePolicyEnvelope(portIndex, policyInstanceId,
+                                                  to, messageId);
+}
+
+QByteArray buildUnbindSystemDefensePolicyEnvelopeForTesting(int portIndex,
+                                                                  const QString &policyInstanceId,
+                                                                  const QString &to,
+                                                                  const QString &messageId)
+{
+    return buildUnbindSystemDefensePolicyEnvelope(portIndex, policyInstanceId,
+                                                    to, messageId);
 }
 
 void setPowerScheme(WsmanClient *client, const QString &instanceId,

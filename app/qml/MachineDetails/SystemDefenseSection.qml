@@ -137,6 +137,15 @@ Flickable {
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 10
+                        /// `portDeviceId` of whichever port currently
+                        /// has this policy bound (one binding per
+                        /// policy at most). Empty when unbound.
+                        readonly property string boundPort: {
+                            const all = (root.controller.systemDefense
+                                          && root.controller.systemDefense.portBindings) || {};
+                            const m = all[modelData.instanceId];
+                            return (m && m.portDeviceId) || "";
+                        }
 
                         Text {
                             text: modelData.policyName || modelData.instanceId
@@ -159,6 +168,45 @@ Flickable {
                             font.family: Type.sans
                             font.pixelSize: Type.sizeXs
                             font.weight: Font.Medium
+                        }
+                        Text {
+                            visible: parent.boundPort.length > 0
+                            text: qsTr("bound: %1").arg(parent.boundPort)
+                            color: Colors.accent
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeXs
+                            font.weight: Font.Medium
+                        }
+                        FlatButton {
+                            text: qsTr("Bind…")
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeXs
+                            visible: parent.boundPort.length === 0
+                            onClicked: {
+                                portBindingPrompt.openForBind(
+                                    parent.modelData.instanceId,
+                                    parent.modelData.policyName || parent.modelData.instanceId);
+                            }
+                        }
+                        FlatButton {
+                            text: qsTr("Unbind")
+                            font.family: Type.sans
+                            font.pixelSize: Type.sizeXs
+                            visible: parent.boundPort.length > 0
+                            onClicked: {
+                                // The DeviceID ends in the port index;
+                                // tail-extract it (same trick the
+                                // wsman extractFilterHandle helper uses).
+                                const id = parent.boundPort;
+                                let idx = id.length;
+                                while (idx > 0 && id.charCodeAt(idx - 1) >= 48
+                                                && id.charCodeAt(idx - 1) <= 57) idx--;
+                                const portIndex = idx < id.length
+                                    ? parseInt(id.substring(idx), 10) : -1;
+                                if (portIndex >= 0)
+                                    root.controller.unbindSystemDefensePolicy(
+                                        portIndex, parent.modelData.instanceId);
+                            }
                         }
                         FlatButton {
                             text: qsTr("Delete")
