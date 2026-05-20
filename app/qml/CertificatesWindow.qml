@@ -20,6 +20,19 @@ AppWindow {
 
     property int selectedRow: -1
 
+    // Selection is a row index, not a row identity — once the model
+    // shrinks or resets, the stale index can either point at the wrong
+    // cert or past the end. Wire up to model signals so the highlight,
+    // Export, and Delete buttons all go back to their "no row" state.
+    Connections {
+        target: CertModel
+        function onModelReset() { root.selectedRow = -1; }
+        function onRowsRemoved() {
+            if (root.selectedRow >= CertModel.rowCount())
+                root.selectedRow = -1;
+        }
+    }
+
     FileDialog {
         id: importDialog
         title: qsTr("Import certificate")
@@ -259,7 +272,7 @@ Layout.alignment: Qt.AlignHCenter
                             text: qsTr("PRIVATE KEY")
                             color: Colors.on
                             font.family: Type.sans
-                            font.pixelSize: 9
+                            font.pixelSize: Type.sizeXs
                             font.letterSpacing: 1
                             font.weight: Font.Medium
                         }

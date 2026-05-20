@@ -181,7 +181,7 @@ Item {
                 text: qsTr("Save screenshot")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeXs
-                enabled: term.width > 0 && term.height > 0
+                enabled: controller.state === SolController.Connected
                 onClicked: root.openScreenshotDialog()
             }
 

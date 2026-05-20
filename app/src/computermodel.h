@@ -60,6 +60,11 @@ struct Computer
 class ComputerModel : public QAbstractListModel
 {
     Q_OBJECT
+    /// Row count surfaced as a Q_PROPERTY with NOTIFY so QML bindings
+    /// (TitleBar's machine count, etc.) refresh when the model
+    /// mutates. `rowCount()` alone isn't reactive — QML won't re-eval
+    /// bindings that call methods, so we layer a property on top.
+    Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
 public:
     enum Role : int {
         IdRole = Qt::UserRole + 1,
@@ -120,6 +125,9 @@ public:
 
     /// Read-only accessor for tests / dialog state.
     [[nodiscard]] Computer at(int row) const;
+
+signals:
+    void countChanged();
 
 private:
     [[nodiscard]] bool persist();

@@ -2672,7 +2672,7 @@ AppWindow {
                                                 text: qsTr("CILA")
                                                 color: Colors.standby
                                                 font.family: Type.sans
-                                                font.pixelSize: 9
+                                                font.pixelSize: Type.sizeXs
                                                 font.weight: Font.Medium
                                                 font.letterSpacing: 1
                                             }
@@ -3041,7 +3041,7 @@ AppWindow {
                                                         text: qsTr("TRUSTED ROOT")
                                                         color: Colors.accent
                                                         font.family: Type.sans
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Type.sizeXs
                                                         font.weight: Font.Medium
                                                         font.letterSpacing: 1
                                                     }
@@ -3050,7 +3050,7 @@ AppWindow {
                                                         text: qsTr("KEY")
                                                         color: Colors.standby
                                                         font.family: Type.sans
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Type.sizeXs
                                                         font.weight: Font.Medium
                                                         font.letterSpacing: 1
                                                     }
@@ -3059,7 +3059,7 @@ AppWindow {
                                                         text: qsTr("ACTIVE")
                                                         color: Colors.text
                                                         font.family: Type.sans
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Type.sizeXs
                                                         font.weight: Font.Medium
                                                         font.letterSpacing: 1
                                                     }
@@ -3519,7 +3519,7 @@ AppWindow {
                                             text: qsTr("ADMIN")
                                             color: Colors.accent
                                             font.family: Type.sans
-                                            font.pixelSize: 9
+                                            font.pixelSize: Type.sizeXs
                                             font.weight: Font.Medium
                                             font.letterSpacing: 1
                                         }
@@ -3528,7 +3528,7 @@ AppWindow {
                                             text: qsTr("KERBEROS")
                                             color: Colors.textMuted
                                             font.family: Type.sans
-                                            font.pixelSize: 9
+                                            font.pixelSize: Type.sizeXs
                                             font.weight: Font.Medium
                                             font.letterSpacing: 1
                                         }
@@ -3537,7 +3537,7 @@ AppWindow {
                                             text: qsTr("DISABLED")
                                             color: Colors.standby
                                             font.family: Type.sans
-                                            font.pixelSize: 9
+                                            font.pixelSize: Type.sizeXs
                                             font.weight: Font.Medium
                                             font.letterSpacing: 1
                                         }

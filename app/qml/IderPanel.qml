@@ -226,6 +226,7 @@ Item {
             Item { Layout.fillWidth: true }
 
             Button {
+                id: mountBtn
                 text: controller.state === IderController.Disconnected
                       || controller.state === IderController.Failed
                     ? qsTr("Mount")
@@ -233,6 +234,8 @@ Item {
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 enabled: controller.isoPath.length > 0
+                ToolTip.visible: hovered && !enabled
+                ToolTip.text: qsTr("Pick an ISO above")
                 onClicked: {
                     if (controller.state === IderController.Disconnected
                         || controller.state === IderController.Failed) {

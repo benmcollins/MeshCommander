@@ -49,9 +49,9 @@ Rectangle {
         }
 
         Text {
-            text: ComputerModel.rowCount() === 1
+            text: ComputerModel.count === 1
                   ? qsTr("1 machine")
-                  : qsTr("%1 machines").arg(ComputerModel.rowCount())
+                  : qsTr("%1 machines").arg(ComputerModel.count)
             color: Colors.textMuted
             font.family: Type.mono
             font.pixelSize: Type.sizeXs
