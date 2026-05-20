@@ -25,6 +25,14 @@ namespace qumesh::wsman {
 
 namespace {
 
+/// Upper bound on a single WSMAN HTTP reply body. AMT's largest
+/// legitimate enumerations (audit log, event log, cert dump) are
+/// well under 4 MB even with thousands of rows — 32 MB is two orders
+/// of magnitude over and exists purely as an OOM guard against a
+/// hostile or buggy responder (Content-Length: 9_999_999_999 or a
+/// runaway chunked stream). See #271.
+constexpr qint64 kWsmanMaxBodyBytes = 32LL * 1024LL * 1024LL;
+
 /// Match the formatting used elsewhere: uppercase hex, colon-separated.
 QString fingerprintFor(const QSslCertificate &cert)
 {
@@ -701,6 +709,12 @@ void readMore(WsmanReply *reply, WsmanClient *client,
                 finishReply(reply, rd, QStringLiteral("Bad Content-Length"));
                 return;
             }
+            if (rd.expectedBody > kWsmanMaxBodyBytes) {
+                finishReply(reply, rd,
+                    QStringLiteral("Content-Length %1 exceeds %2-byte cap")
+                        .arg(rd.expectedBody).arg(kWsmanMaxBodyBytes));
+                return;
+            }
         } else {
             // No Content-Length, no chunked → read until close.
             rd.state = WsmanReply::Private::ReadingBodyContentLength;
@@ -710,6 +724,15 @@ void readMore(WsmanReply *reply, WsmanClient *client,
 
     if (rd.state == WsmanReply::Private::ReadingBodyContentLength) {
         if (rd.expectedBody == -2) {
+            // Read-to-close path: cap the running body so a peer that
+            // streams forever (no Content-Length, no chunked) can't
+            // exhaust process memory. See #271.
+            if (rd.body.size() + rd.responseBuffer.size() > kWsmanMaxBodyBytes) {
+                finishReply(reply, rd,
+                    QStringLiteral("Reply body exceeds %1-byte cap")
+                        .arg(kWsmanMaxBodyBytes));
+                return;
+            }
             rd.body.append(rd.responseBuffer);
             rd.responseBuffer.clear();
             if (rd.socket->state() != QAbstractSocket::ConnectedState) {
@@ -758,6 +781,15 @@ void readMore(WsmanReply *reply, WsmanClient *client,
             if (rd.responseBuffer.isEmpty()) return;
             const qint64 take = qMin<qint64>(rd.currentChunkRemaining,
                                              rd.responseBuffer.size());
+            // Cap the running body across all chunks — a malicious
+            // peer can send arbitrarily many small chunks and OOM us
+            // otherwise. See #271.
+            if (rd.body.size() + take > kWsmanMaxBodyBytes) {
+                finishReply(reply, rd,
+                    QStringLiteral("Reply body exceeds %1-byte cap")
+                        .arg(kWsmanMaxBodyBytes));
+                return;
+            }
             rd.body.append(rd.responseBuffer.left(take));
             rd.responseBuffer.remove(0, take);
             rd.currentChunkRemaining -= take;

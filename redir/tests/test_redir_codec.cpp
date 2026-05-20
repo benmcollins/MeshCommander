@@ -27,6 +27,7 @@ private slots:
     void parseAuthQueryReplyBitmap();
     void parseAuthChallenge();
     void parseAuthSuccess();
+    void parseAuthReplyRejectsOversizedDataLen();
     void computeDigestKnownVector();
     void makeClientNonceIs32HexChars();
 
@@ -224,6 +225,52 @@ void TestRedirCodec::parseAuthSuccess()
     int consumed = 0;
     QVERIFY(tryParseAuthReply(buf, &reply, &consumed));
     QCOMPARE(reply.status, quint8(0));
+}
+
+void TestRedirCodec::parseAuthReplyRejectsOversizedDataLen()
+{
+    // #271 — a 4 GB wire-supplied dataLen used to sign-overflow the
+    // `static_cast<int>` size check, slip past the bounds test, and
+    // trigger an OOB read at `buffer.sliced()`. The cap now rejects
+    // any dataLen above kAuthReplyMaxData (64 KB) before the slice.
+    // Header: 0x14 status=0 _ _ authType=4 then u32 LE length.
+    QByteArray frame;
+    frame.append(char(0x14));
+    frame.append(char(0));
+    frame.append(char(0));
+    frame.append(char(0));
+    frame.append(char(4));
+    // length = 0xFFFFFFFF — would sign-overflow on the old code.
+    frame.append(char(0xFF));
+    frame.append(char(0xFF));
+    frame.append(char(0xFF));
+    frame.append(char(0xFF));
+    AuthReply reply;
+    int consumed = -1;
+    QCOMPARE(tryParseAuthReply(frame, &reply, &consumed), false);
+    QCOMPARE(consumed, 0);
+
+    // length = 0x80000001 — also overflows int.
+    frame[5] = char(0x01);
+    frame[6] = char(0x00);
+    frame[7] = char(0x00);
+    frame[8] = char(0x80);
+    QCOMPARE(tryParseAuthReply(frame, &reply, &consumed), false);
+
+    // length = 65 KB — just above the 64 KB cap.
+    frame[5] = char(0x01);
+    frame[6] = char(0x00);
+    frame[7] = char(0x01);
+    frame[8] = char(0x00);
+    QCOMPARE(tryParseAuthReply(frame, &reply, &consumed), false);
+
+    // length = 64 KB exactly — under the cap, falls through to the
+    // "need more bytes" check (frame doesn't have a 64 KB body).
+    frame[5] = char(0x00);
+    frame[6] = char(0x00);
+    frame[7] = char(0x01);
+    frame[8] = char(0x00);
+    QCOMPARE(tryParseAuthReply(frame, &reply, &consumed), false);
 }
 
 void TestRedirCodec::computeDigestKnownVector()
