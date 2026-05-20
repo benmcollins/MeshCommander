@@ -9,12 +9,23 @@ namespace qumesh::app {
 
 /// Wrap a secret string (AMT password, SSH password, SSH key passphrase)
 /// in the legacy v2 encryption envelope before writing it to
-/// `computers.json`, and unwrap on read. This is not protection against
-/// file theft — the key + IV ride along with the ciphertext — but it
-/// stops the secret from showing up in plain ripgrep / Spotlight
-/// indexing of the user's `Application Support` directory, and matches
-/// the format the legacy NW.js app used so a config that's been
-/// round-tripped through the migrate tool stays interoperable.
+/// `computers.json`, and unwrap on read.
+///
+/// **SECURITY**: this is obfuscation, not encryption. The v2 envelope
+/// is `v2:<key_hex><iv_hex><ciphertext_hex>` — the AES key is right
+/// there in the file. Anyone with read access to `computers.json` can
+/// decrypt the contents in three lines of code. The only protection
+/// gained is:
+///
+///   - Secrets don't show up in plain ripgrep / Spotlight indexing.
+///   - File permissions are 0600 (#273), so on POSIX the limit is the
+///     file owner. On Windows `%APPDATA%` is already user-isolated.
+///
+/// The format is preserved (and intentionally identical to the legacy
+/// NW.js MeshCommander v2 envelope) so a config that's round-tripped
+/// through the migrate tool stays interoperable. The real fix — a
+/// platform-keystore-derived key (Keychain / DPAPI / libsecret) — is
+/// tracked as a follow-up to #274.
 ///
 /// `encode` returns the empty string when given the empty string, so
 /// optional fields don't pay encryption cost. `decode` is lenient: if
