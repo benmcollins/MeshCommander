@@ -249,6 +249,25 @@ QByteArray computeDigestResponse(const QByteArray &user, const QByteArray &realm
     return md5Hex(ha1 + ":" + nonce + ":" + nc + ":" + cnonce + ":" + qop + ":" + ha2);
 }
 
+/// Per RFC 7616 §3.4.6: quoted-string fields in the Authorization
+/// header must backslash-escape embedded backslash and double-quote.
+/// AMT usernames usually don't contain either, but the same code
+/// path runs for SSH-tunnelled requests where `user` is operator-
+/// supplied via the Computer config — a username with `\` or `"`
+/// produces a malformed header that AMT rejects with no useful
+/// diagnostic. Escape backslash first so the inserted `\` isn't
+/// re-escaped by the quote pass. See #277.
+QByteArray quotedStringEscape(const QByteArray &v)
+{
+    QByteArray out;
+    out.reserve(v.size());
+    for (char ch : v) {
+        if (ch == '\\' || ch == '"') out.append('\\');
+        out.append(ch);
+    }
+    return out;
+}
+
 /// Build the `Authorization: Digest …` header for one request.
 QByteArray buildDigestHeader(const WsmanClient::Private &c, const QByteArray &method,
                               const QByteArray &uri, const QByteArray &user,
@@ -257,15 +276,18 @@ QByteArray buildDigestHeader(const WsmanClient::Private &c, const QByteArray &me
     const QByteArray ncBytes = QByteArray::number(nc, 16).rightJustified(8, '0');
     const QByteArray cnonce = randomCnonce();
     const QByteArray qop = c.digestQop.isEmpty() ? QByteArrayLiteral("auth") : c.digestQop;
+    // Note: computeDigestResponse hashes the *raw* (unescaped) realm /
+    // user / nonce per the digest algorithm; escaping is purely a
+    // header-serialisation concern.
     const QByteArray response = computeDigestResponse(user, c.digestRealm, pass,
                                                       c.digestNonce, cnonce,
                                                       ncBytes, qop, method, uri);
 
     QByteArray out = "Digest ";
-    out += "username=\"" + user + "\", ";
-    out += "realm=\"" + c.digestRealm + "\", ";
-    out += "nonce=\"" + c.digestNonce + "\", ";
-    out += "uri=\"" + uri + "\", ";
+    out += "username=\"" + quotedStringEscape(user) + "\", ";
+    out += "realm=\"" + quotedStringEscape(c.digestRealm) + "\", ";
+    out += "nonce=\"" + quotedStringEscape(c.digestNonce) + "\", ";
+    out += "uri=\"" + quotedStringEscape(uri) + "\", ";
     out += "response=\"" + response + "\", ";
     if (!c.digestAlgorithm.isEmpty())
         out += "algorithm=" + c.digestAlgorithm + ", ";
@@ -275,7 +297,7 @@ QByteArray buildDigestHeader(const WsmanClient::Private &c, const QByteArray &me
     out += "nc=" + ncBytes + ", ";
     out += "cnonce=\"" + cnonce + "\"";
     if (!c.digestOpaque.isEmpty())
-        out += ", opaque=\"" + c.digestOpaque + "\"";
+        out += ", opaque=\"" + quotedStringEscape(c.digestOpaque) + "\"";
     return out;
 }
 
