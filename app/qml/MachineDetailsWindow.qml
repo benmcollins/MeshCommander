@@ -655,10 +655,31 @@ AppWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
+            /// Section-level loading indicator (#282). A 2 px
+            /// indeterminate progress bar pinned to the pane's top
+            /// while any WSMAN fetch is in flight. `controller.busy`
+            /// was already used to disable buttons; this surfaces
+            /// the same state visually so the user knows something's
+            /// happening on a first-open fetch (where the section
+            /// body has no rows yet to flash "loading" against).
+            ProgressBar {
+                id: sectionBusyBar
+                visible: controller.busy
+                indeterminate: true
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                implicitHeight: 2
+                z: 11
+                Accessible.role: Accessible.ProgressBar
+                Accessible.name: qsTr("Fetching")
+            }
+
             // Error banner across all sections (#283). Replaces the
             // hand-rolled red Rectangle that pinned its own height to
             // the inner Text. Adds a Dismiss button so the operator
             // can clear stale errors without switching sections.
+            // Sits below the busy bar.
             ResultBanner {
                 id: errBanner
                 kind: "error"
@@ -666,13 +687,15 @@ AppWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
+                anchors.topMargin: sectionBusyBar.visible ? sectionBusyBar.height : 0
                 z: 10
                 onDismissed: controller.clearLastError()
             }
 
             StackLayout {
                 anchors.fill: parent
-                anchors.topMargin: errBanner.visible ? errBanner.implicitHeight : 0
+                anchors.topMargin: (sectionBusyBar.visible ? sectionBusyBar.height : 0)
+                                 + (errBanner.visible ? errBanner.implicitHeight : 0)
                 currentIndex: root.currentSection
 
                 // 0 — Overview
