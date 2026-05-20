@@ -3,6 +3,7 @@
 
 #include "wsman/local_amt_probe.h"
 
+#include <QPointer>
 #include <QTcpSocket>
 #include <QTimer>
 
@@ -47,9 +48,20 @@ void LocalAmtProbe::kickConnect(quint16 port)
             this, &LocalAmtProbe::onError);
     // Belt-and-braces timeout — on an unreachable port the kernel
     // takes a few seconds to give up. Cap to a UX-tolerable window.
-    QTimer::singleShot(kConnectTimeoutMs, m_socket, [this]() {
-        if (m_socket && m_socket->state() != QAbstractSocket::ConnectedState)
+    //
+    // Capture the socket pointer explicitly + check identity in the
+    // lambda. If start() is called again before the timer fires, the
+    // old socket is deleteLater()'d (queued) and m_socket is
+    // reassigned to a new socket. Without the identity check the
+    // timer would test the *new* socket's state and could fire
+    // onTimeout against the second probe phase — collapsing two
+    // probes into one. See #286.
+    QPointer<QAbstractSocket> sock = m_socket;
+    QTimer::singleShot(kConnectTimeoutMs, this, [this, sock]() {
+        if (sock && m_socket == sock
+            && sock->state() != QAbstractSocket::ConnectedState) {
             onTimeout();
+        }
     });
     m_socket->connectToHost(QStringLiteral("127.0.0.1"), port);
 }
