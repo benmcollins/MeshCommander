@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QString>
 #include <QVector>
+#include <QtQmlIntegration>
 
 namespace qumesh::model {
 class ComputerModel;
@@ -38,6 +39,7 @@ struct ScanResult
 class ScannerController : public QAbstractListModel
 {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(bool scanning READ scanning NOTIFY scanningChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)

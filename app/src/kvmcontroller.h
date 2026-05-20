@@ -10,6 +10,7 @@
 #include <QStringList>
 #include <QTimer>
 #include <QVariantMap>
+#include <QtQmlIntegration>
 
 #include "kvmframebuffer.h"
 #include "redir/redir_client.h"
@@ -31,6 +32,7 @@ class SshTunnelHost;
 class KvmController : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(QString host READ host WRITE setHost NOTIFY hostChanged)
     Q_PROPERTY(QString user READ user WRITE setUser NOTIFY userChanged)
     Q_PROPERTY(QString password READ password WRITE setPassword NOTIFY passwordChanged)

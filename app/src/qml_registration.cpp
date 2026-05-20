@@ -40,21 +40,18 @@ void registerQumeshQmlTypes(const QmlSingletonContext &ctx)
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "BatchController",
                                  ctx.batchController);
 
-    qmlRegisterType<SolController>("QuMesh", 1, 0, "SolController");
-    qmlRegisterType<IderController>("QuMesh", 1, 0, "IderController");
-    qmlRegisterType<KvmController>("QuMesh", 1, 0, "KvmController");
-    qmlRegisterType<KvmViewer>("QuMesh", 1, 0, "KvmViewer");
-    qmlRegisterType<MachineDetailsController>(
-        "QuMesh", 1, 0, "MachineDetailsController");
-    qmlRegisterType<ScannerController>("QuMesh", 1, 0, "ScannerController");
-    qmlRegisterType<SetupBinController>("QuMesh", 1, 0, "SetupBinController");
-
+    // SolController / IderController / KvmController / KvmViewer /
+    // MachineDetailsController / ScannerController /
+    // SetupBinController are now declared with `QML_ELEMENT` in
+    // their headers — qmltyperegistrar picks them up from
+    // qumesh_appcore at build time. KvmFramebuffer is
+    // `QML_UNCREATABLE` for the same reason. TerminalScreen still
+    // uses imperative registration because it lives in qumesh_terminal
+    // (a non-QML module); wiring it via QML_FOREIGN is the planned
+    // follow-up to #294.
     qmlRegisterUncreatableType<qumesh::terminal::TerminalScreen>(
         "QuMesh", 1, 0, "TerminalScreen",
         QStringLiteral("Owned by SolController"));
-    qmlRegisterUncreatableType<KvmFramebuffer>(
-        "QuMesh", 1, 0, "KvmFramebuffer",
-        QStringLiteral("Owned by KvmController"));
 }
 
 } // namespace qumesh::app

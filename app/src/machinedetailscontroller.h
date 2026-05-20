@@ -9,6 +9,7 @@
 #include <QStringList>
 #include <QUrl>
 #include <QVariantList>
+#include <QtQmlIntegration>
 
 #include "wsman/wsman_client.h" // for PeerCertSummary
 
@@ -30,6 +31,7 @@ namespace qumesh::app {
 class MachineDetailsController : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
 
     // Connection inputs (set by the QML window from the saved machine).
     Q_PROPERTY(QString host READ host WRITE setHost NOTIFY hostChanged)

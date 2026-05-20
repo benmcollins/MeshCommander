@@ -6,6 +6,7 @@
 #include <QImage>
 #include <QObject>
 #include <QRect>
+#include <QtQmlIntegration>
 
 namespace qumesh::app {
 
@@ -19,6 +20,8 @@ namespace qumesh::app {
 class KvmFramebuffer : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
+    QML_UNCREATABLE("Owned by KvmController")
     Q_PROPERTY(int width READ width NOTIFY resized)
     Q_PROPERTY(int height READ height NOTIFY resized)
     // `version` is a monotonic frame counter — bumped on tileApplied,

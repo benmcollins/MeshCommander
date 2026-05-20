@@ -8,6 +8,7 @@
 #include <QString>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QtQmlIntegration>
 
 #include "wsman/setupbin.h"
 
@@ -24,6 +25,7 @@ namespace qumesh::app {
 class SetupBinController : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(int version READ version WRITE setVersion NOTIFY fileChanged)
     Q_PROPERTY(bool doNotConsumeRecords READ doNotConsumeRecords
                WRITE setDoNotConsumeRecords NOTIFY fileChanged)
