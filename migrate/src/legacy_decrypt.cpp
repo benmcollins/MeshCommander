@@ -168,6 +168,13 @@ LegacyCrypto::DecryptResult LegacyCrypto::decrypt(QByteArrayView ciphertext)
     return result;
 }
 
+// SECURITY: the v2 envelope this function produces stores the random
+// AES key and IV inline with the ciphertext (`v2:<key><iv><ct>`).
+// Anyone with read access to the file can decrypt — this is obfuscation
+// only. The format is preserved for round-trip compatibility with the
+// legacy NW.js MeshCommander; new code should pair this with file
+// permissions (#273) and ideally a platform-keystore-derived key
+// (planned follow-up to #274).
 QByteArray LegacyCrypto::encryptV2(QByteArrayView plaintext)
 {
     QByteArray key(kAesKeyLen, Qt::Uninitialized);
