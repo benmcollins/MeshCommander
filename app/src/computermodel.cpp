@@ -76,6 +76,16 @@ Computer Computer::fromJson(const QJsonObject &obj)
 ComputerModel::ComputerModel(QObject *parent)
     : QAbstractListModel(parent)
 {
+    // Re-emit row-count changes as a Q_PROPERTY NOTIFY so QML can bind
+    // to `ComputerModel.count` and stay reactive. Without this the
+    // TitleBar machine-count chip stayed stale until the model was
+    // re-read (e.g. after a window reopen).
+    connect(this, &QAbstractItemModel::rowsInserted,
+            this, &ComputerModel::countChanged);
+    connect(this, &QAbstractItemModel::rowsRemoved,
+            this, &ComputerModel::countChanged);
+    connect(this, &QAbstractItemModel::modelReset,
+            this, &ComputerModel::countChanged);
 }
 
 void ComputerModel::setStore(config::ConfigStore *store)
