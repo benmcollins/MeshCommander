@@ -25,6 +25,7 @@ private slots:
     void persistFailureRollsBack();
     void reloadFromStoreOnSetStore();
     void sshConfigRoundTripsCompression();
+    void sshMutationsEmitDataChanged();
 };
 
 void TestComputerModel::contractWithItemModelTester()
@@ -210,6 +211,40 @@ void TestComputerModel::sshConfigRoundTripsCompression()
         const QVariantMap cfg = m.sshConfigFor(0);
         QCOMPARE(cfg.value(QStringLiteral("compression")).toBool(), false);
     }
+}
+
+/// #284 — both setSshConfig() and addTrustedSshHostKey() mutate row
+/// state. QAbstractItemModel's contract requires dataChanged() after
+/// any mutation, regardless of whether the field has an explicit
+/// role declared.
+void TestComputerModel::sshMutationsEmitDataChanged()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    ConfigStore store(tmp.path());
+    ComputerModel m;
+    m.setStore(&store);
+    const int row = m.addComputer(QStringLiteral("a"), QStringLiteral("1.1.1.1"),
+                                  QStringLiteral("u"), QStringLiteral("p"), false);
+    QCOMPARE(row, 0);
+
+    QSignalSpy spy(&m, &QAbstractItemModel::dataChanged);
+
+    const QVariantMap cfg = {
+        {QStringLiteral("enabled"), true},
+        {QStringLiteral("host"), QStringLiteral("jump")},
+        {QStringLiteral("user"), QStringLiteral("ubuntu")},
+        {QStringLiteral("authMode"), 0},
+        {QStringLiteral("password"), QStringLiteral("pw")},
+    };
+    QVERIFY(m.setSshConfig(row, cfg));
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).value<QModelIndex>().row(), row);
+
+    spy.clear();
+    QVERIFY(m.addTrustedSshHostKey(row, QStringLiteral("AA:BB:CC")));
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).value<QModelIndex>().row(), row);
 }
 
 QTEST_GUILESS_MAIN(TestComputerModel)
