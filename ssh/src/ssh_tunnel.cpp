@@ -121,9 +121,34 @@ int makeSocketPair(qintptr fds[2])
         ::close(listener);
         return -1;
     }
-    int server = ::accept(listener, nullptr, nullptr);
+    // Capture the client's source port so we can verify the accept()
+    // peer matches — see the post-accept check below.
+    sockaddr_in clientAddr{};
+    socklen_t clen = sizeof(clientAddr);
+    if (::getsockname(client, reinterpret_cast<sockaddr *>(&clientAddr), &clen) != 0) {
+        ::close(client);
+        ::close(listener);
+        return -1;
+    }
+    sockaddr_in peerAddr{};
+    socklen_t plen = sizeof(peerAddr);
+    int server = ::accept(listener, reinterpret_cast<sockaddr *>(&peerAddr), &plen);
     ::close(listener);
     if (server < 0) {
+        ::close(client);
+        return -1;
+    }
+    // Tiny race window between listen() and accept() lets another
+    // local process connect() to our loopback port and impersonate
+    // the client. They can't bypass downstream auth, but they can
+    // feed garbage into the redir parser. Verify the accepted peer's
+    // source port matches the source port `connect()` got back — if
+    // someone else raced in their source port differs. Pre-#291 the
+    // listener returned the first connect() to land, no matter
+    // whose.
+    if (peerAddr.sin_port != clientAddr.sin_port
+        || peerAddr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+        ::close(server);
         ::close(client);
         return -1;
     }
@@ -317,10 +342,15 @@ protected:
             if (eof != 0) break;
 
             if (!didWork) {
-                // Avoid spinning: short sleep when both directions
-                // are idle. 5ms keeps interactive paste/keystrokes
-                // responsive while bounding CPU at ~0% idle.
-                QThread::usleep(5000);
+                // Avoid spinning: sleep when both directions are
+                // idle. 50ms is plenty for interactive use (matches
+                // the SSH session worker's poll cadence in
+                // waitForLibssh) and cuts the per-tunnel idle wakeup
+                // rate from ~200 Hz to ~20 Hz. See #291. A proper
+                // QWaitCondition / select() driven wake — wakes
+                // immediately on either fd readable — is a planned
+                // follow-up; this is the low-risk piece.
+                QThread::usleep(50000);
             }
         }
 
