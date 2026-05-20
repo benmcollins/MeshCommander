@@ -89,6 +89,18 @@ void IderController::setSshConfig(const QVariantMap &cfg)
         m_sshHost = new SshTunnelHost(this);
         QObject::connect(m_sshHost, &SshTunnelHost::trustedHostKeyAdded, this,
                          &IderController::trustedSshHostKeyAdded);
+        QObject::connect(m_sshHost, &SshTunnelHost::hostKeyPromptRequired, this,
+                [this](const QString &fp, const QString &keyType) {
+            // Mirror the prompt up so QML's SshHostKeyTrustDialog can
+            // bind to `awaitingSshHostKeyTrust` on us; we proxy the
+            // user's accept back down to the host via
+            // `trustPendingSshHostKey`. See #270.
+            m_pendingSshHostKey = fp;
+            m_pendingSshHostKeyType = keyType;
+            m_awaitingSshHostKeyTrust = true;
+            emit sshHostKeyPromptChanged();
+            emit sshHostKeyPromptRequired(fp, keyType);
+        });
         QObject::connect(m_sshHost, &SshTunnelHost::connectedChanged, this, [this]() {
             if (m_openDeferred && m_sshHost != nullptr && m_sshHost->isConnected()) {
                 m_openDeferred = false;
@@ -96,8 +108,25 @@ void IderController::setSshConfig(const QVariantMap &cfg)
             }
         });
     }
+    if (m_awaitingSshHostKeyTrust
+        && cfg.value(QStringLiteral("enabled")).toBool() == false) {
+        m_pendingSshHostKey.clear();
+        m_pendingSshHostKeyType.clear();
+        m_awaitingSshHostKeyTrust = false;
+        emit sshHostKeyPromptChanged();
+    }
     m_sshHost->setConfig(cfg);
     m_sshSession = m_sshHost->session();
+}
+
+void IderController::trustPendingSshHostKey(bool persist)
+{
+    if (!m_awaitingSshHostKeyTrust || m_sshHost == nullptr) return;
+    m_pendingSshHostKey.clear();
+    m_pendingSshHostKeyType.clear();
+    m_awaitingSshHostKeyTrust = false;
+    emit sshHostKeyPromptChanged();
+    m_sshHost->trustPendingHostKey(persist);
 }
 
 void IderController::open()

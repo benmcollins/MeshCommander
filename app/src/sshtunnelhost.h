@@ -21,6 +21,12 @@ namespace qumesh::app {
 class SshTunnelHost : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(bool awaitingHostKeyTrust READ awaitingHostKeyTrust
+                   NOTIFY awaitingHostKeyTrustChanged)
+    Q_PROPERTY(QString pendingHostKeyFingerprint READ pendingHostKeyFingerprint
+                   NOTIFY pendingHostKeyChanged)
+    Q_PROPERTY(QString pendingHostKeyType READ pendingHostKeyType
+                   NOTIFY pendingHostKeyChanged)
 public:
     explicit SshTunnelHost(QObject *parent = nullptr);
     ~SshTunnelHost() override;
@@ -28,9 +34,11 @@ public:
     /// Apply a per-machine SSH config. `cfg["enabled"] == true` creates
     /// (or reuses) the underlying `SshSession` and starts its open
     /// flow; `false` (or a missing key) tears any existing session
-    /// down. On first connect the host auto-pins the remote key
-    /// (TOFU) and emits `trustedHostKeyAdded` so the controller can
-    /// forward the new fingerprint up to `ComputerModel`.
+    /// down. When the remote presents an unpinned host key the session
+    /// pauses in `NeedsHostKeyTrust` and emits `hostKeyPromptRequired`
+    /// — callers must surface a dialog and either call
+    /// `trustPendingHostKey(persist)` or cancel by passing
+    /// `enabled=false` (or invoking `close()` indirectly via setConfig).
     void setConfig(const QVariantMap &cfg);
 
     /// `true` once the SSH session has reached `Connected`.
@@ -38,13 +46,30 @@ public:
     [[nodiscard]] bool isEnabled() const { return m_enabled; }
     [[nodiscard]] qumesh::ssh::SshSession *session() const { return m_session; }
     [[nodiscard]] QString status() const { return m_status; }
+    [[nodiscard]] bool awaitingHostKeyTrust() const { return m_awaitingHostKeyTrust; }
+    [[nodiscard]] QString pendingHostKeyFingerprint() const { return m_pendingHostKeyFingerprint; }
+    [[nodiscard]] QString pendingHostKeyType() const { return m_pendingHostKeyType; }
+
+    /// Called by the QML prompt when the user accepts the presented
+    /// host key. Resumes the paused SSH session. When `persist` is
+    /// true, also emits `trustedHostKeyAdded` so the controller can
+    /// forward the new fingerprint into ComputerModel for verification
+    /// on subsequent connects. No-op if no prompt is pending.
+    Q_INVOKABLE void trustPendingHostKey(bool persist);
 
 signals:
     void statusChanged();
     void connectedChanged();
-    /// Emitted on a fresh first-connect with the remote key auto-pinned.
-    /// The controller forwards this so `ComputerModel` can persist the
-    /// fingerprint for verification on subsequent connects.
+    void awaitingHostKeyTrustChanged();
+    void pendingHostKeyChanged();
+    /// Emitted when the remote SSH server's host key is not in the
+    /// machine's `trustedHostKeyFingerprints` list. The session is
+    /// paused — call `trustPendingHostKey(persist)` to accept or
+    /// reapply `setConfig` with `enabled=false` to abandon.
+    void hostKeyPromptRequired(const QString &fingerprint,
+                                const QString &keyType);
+    /// Emitted after `trustPendingHostKey(true)` so the owning
+    /// controller can persist the new fingerprint into ComputerModel.
     void trustedHostKeyAdded(const QString &fingerprint);
 
 private:
@@ -52,6 +77,9 @@ private:
     bool m_enabled = false;
     QString m_status;
     QString m_jumpHost;  ///< Cached at setConfig() so status strings can name it.
+    bool m_awaitingHostKeyTrust = false;
+    QString m_pendingHostKeyFingerprint;
+    QString m_pendingHostKeyType;
 };
 
 } // namespace qumesh::app

@@ -105,6 +105,16 @@ AppWindow {
         controller: controller
     }
 
+    /// SSH host-key trust prompt (#270). The dialog binds to the
+    /// controller's `awaitingSshHostKeyTrust` and the
+    /// `pendingSshHostKey*` properties; Accept calls
+    /// `trustPendingSshHostKey(persist)`, Cancel tears the tunnel
+    /// down via `setSshConfig({})`.
+    SshHostKeyTrustDialog {
+        controller: controller
+        onCancelled: controller.setSshConfig({})
+    }
+
     SecureErasePrompt {
         id: secureErasePrompt
         tlsActive: root.machineTls

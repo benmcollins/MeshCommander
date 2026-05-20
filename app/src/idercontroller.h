@@ -49,6 +49,15 @@ class IderController : public QObject
     Q_PROPERTY(QString pendingCertNotAfter READ pendingCertNotAfter NOTIFY pendingCertChanged)
     Q_PROPERTY(bool awaitingTrust READ awaitingTrust NOTIFY awaitingTrustChanged)
 
+    // SSH host-key prompt — see `SshHostKeyTrustDialog.qml`. Bound
+    // when the per-machine SSH tunnel encounters an unpinned key.
+    Q_PROPERTY(bool awaitingSshHostKeyTrust READ awaitingSshHostKeyTrust
+                   NOTIFY sshHostKeyPromptChanged)
+    Q_PROPERTY(QString pendingSshHostKeyFingerprint READ pendingSshHostKeyFingerprint
+                   NOTIFY sshHostKeyPromptChanged)
+    Q_PROPERTY(QString pendingSshHostKeyType READ pendingSshHostKeyType
+                   NOTIFY sshHostKeyPromptChanged)
+
 public:
     enum class State {
         Disconnected,
@@ -89,6 +98,9 @@ public:
     [[nodiscard]] QString pendingCertFingerprint() const { return m_pendingCert.fingerprintSha256; }
     [[nodiscard]] QString pendingCertNotBefore() const { return m_pendingCert.notBefore; }
     [[nodiscard]] QString pendingCertNotAfter() const { return m_pendingCert.notAfter; }
+    [[nodiscard]] bool awaitingSshHostKeyTrust() const { return m_awaitingSshHostKeyTrust; }
+    [[nodiscard]] QString pendingSshHostKeyFingerprint() const { return m_pendingSshHostKey; }
+    [[nodiscard]] QString pendingSshHostKeyType() const { return m_pendingSshHostKeyType; }
 
     void setHost(const QString &v);
     /// Override the redirection port. Tests only — production derives
@@ -111,6 +123,11 @@ public:
     Q_INVOKABLE void open();
     Q_INVOKABLE void close();
     Q_INVOKABLE void trustPendingCert(bool persist);
+    /// Resolves a pending SSH host-key prompt (see `SshTunnelHost`).
+    /// On accept, resumes the paused SSH session; with `persist` also
+    /// forwards the fingerprint via `trustedSshHostKeyAdded` so the
+    /// QML layer can pin it on the per-machine config.
+    Q_INVOKABLE void trustPendingSshHostKey(bool persist);
 
 signals:
     void hostChanged();
@@ -127,7 +144,16 @@ signals:
     void pendingCertChanged();
     void awaitingTrustChanged();
     void trustedFingerprintAdded(const QString &fingerprint);
-    /// Emitted on the first SSH connect after auto-pinning the host key.
+    /// Emitted when the per-machine SSH tunnel encounters an unpinned
+    /// host key. QML surfaces `SshHostKeyTrustDialog`; the user accepts
+    /// via `trustPendingSshHostKey(persist)` or cancels by closing the
+    /// session.
+    void sshHostKeyPromptRequired(const QString &fingerprint,
+                                   const QString &keyType);
+    /// NOTIFY for the `awaitingSshHostKeyTrust` / pending properties.
+    void sshHostKeyPromptChanged();
+    /// Emitted after `trustPendingSshHostKey(true)` so the QML layer
+    /// can persist the fingerprint into ComputerModel.
     void trustedSshHostKeyAdded(const QString &fingerprint);
     /// Forwarded from the underlying client whenever a TLS
     /// reconnect quietly matched a pinned fingerprint. The QML side
@@ -160,6 +186,10 @@ private:
     qumesh::ssh::SshSession *m_sshSession = nullptr;
     SshTunnelHost *m_sshHost = nullptr;
     bool m_openDeferred = false;
+
+    QString m_pendingSshHostKey;
+    QString m_pendingSshHostKeyType;
+    bool m_awaitingSshHostKeyTrust = false;
 };
 
 } // namespace qumesh::app

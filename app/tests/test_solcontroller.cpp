@@ -163,6 +163,7 @@ private slots:
     void openWithEmptyHostFails();
     void connectAndReceiveData();
     void respondsToWindowSizeQuery();
+    void sshHostKeyPromptDefaults();
 };
 
 void TestSolController::initialStateAndScreen()
@@ -228,6 +229,33 @@ void TestSolController::respondsToWindowSizeQuery()
     }));
 
     c.close();
+}
+
+/// Issue #270 regression guard: the controller surfaces SSH host-key
+/// trust state via Q_PROPERTY but never auto-trusts. Verify the API
+/// surface defaults are sane and that `trustPendingSshHostKey` is a
+/// safe no-op when nothing is pending (so QML can call it without
+/// guarding) and emits nothing.
+void TestSolController::sshHostKeyPromptDefaults()
+{
+    SolController c;
+    QCOMPARE(c.awaitingSshHostKeyTrust(), false);
+    QVERIFY(c.pendingSshHostKeyFingerprint().isEmpty());
+    QVERIFY(c.pendingSshHostKeyType().isEmpty());
+
+    QSignalSpy promptSpy(&c, &SolController::sshHostKeyPromptRequired);
+    QSignalSpy promptChangedSpy(&c, &SolController::sshHostKeyPromptChanged);
+    QSignalSpy persistSpy(&c, &SolController::trustedSshHostKeyAdded);
+
+    // No-op when no prompt is pending — must not emit anything and
+    // must not crash even with no SshTunnelHost constructed yet.
+    c.trustPendingSshHostKey(true);
+    c.trustPendingSshHostKey(false);
+
+    QCOMPARE(promptSpy.count(), 0);
+    QCOMPARE(promptChangedSpy.count(), 0);
+    QCOMPARE(persistSpy.count(), 0);
+    QCOMPARE(c.awaitingSshHostKeyTrust(), false);
 }
 
 QTEST_MAIN(TestSolController)
