@@ -47,6 +47,12 @@ public:
 private:
     QFile m_file;
     QElapsedTimer m_timer;
+    /// Up to 3 trailing bytes from the previous `pushBytes` that
+    /// belong to a multi-byte UTF-8 sequence still waiting for its
+    /// remaining continuation bytes. Prepended to the next call's
+    /// chunk so a codepoint that straddles a SOL read boundary
+    /// decodes as one character instead of two U+FFFDs. See #288.
+    QByteArray m_tail;
 };
 
 } // namespace qumesh::app
