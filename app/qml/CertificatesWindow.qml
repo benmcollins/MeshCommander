@@ -313,10 +313,16 @@ Layout.alignment: Qt.AlignHCenter
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 enabled: root.selectedRow >= 0
+                // Pre-#278 this called removeAt() directly. Cert
+                // entries embed PEM private keys; deletion is
+                // irreversible.
                 onClicked: {
-                    if (CertModel.removeAt(root.selectedRow)) {
-                        root.selectedRow = -1;
-                    }
+                    confirmDelete.pendingRow = root.selectedRow;
+                    confirmDelete.ask(
+                        qsTr("Delete certificate?"),
+                        qsTr("This removes the certificate and its private "
+                             + "key from the store. This cannot be undone."),
+                        qsTr("Delete"), true);
                 }
             }
             FlatButton {
@@ -336,5 +342,17 @@ Layout.alignment: Qt.AlignHCenter
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
         }
+    }
+
+    ConfirmDialog {
+        id: confirmDelete
+        property int pendingRow: -1
+        onProceed: {
+            if (pendingRow >= 0 && CertModel.removeAt(pendingRow)) {
+                root.selectedRow = -1;
+            }
+            pendingRow = -1;
+        }
+        onRejected: pendingRow = -1
     }
 }

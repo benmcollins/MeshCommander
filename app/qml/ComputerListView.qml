@@ -294,7 +294,20 @@ Rectangle {
                 enabled: list.currentIndex >= 0
                 ToolTip.text: qsTr("Remove selected")
                 ToolTip.visible: hovered
-                onClicked: ComputerModel.removeAt(list.currentIndex)
+                // Pre-#278 this called removeAt() directly — irreversible,
+                // no warning. Now route through the same ConfirmDialog
+                // the per-machine details pane already uses for delete.
+                onClicked: {
+                    const row = list.currentIndex;
+                    const name = ComputerModel.data(
+                        ComputerModel.index(row, 0), ComputerModel.NameRole) || "";
+                    confirmRemove.pendingRow = row;
+                    confirmRemove.ask(
+                        qsTr("Delete machine?"),
+                        qsTr("This removes \"%1\" and its saved credentials. "
+                             + "This cannot be undone.").arg(name),
+                        qsTr("Delete"), true);
+                }
             }
 
             Button {
@@ -405,5 +418,18 @@ Rectangle {
                 font.pixelSize: Type.sizeXs
             }
         }
+    }
+
+    /// Confirmation prompt for the sidebar `−` delete button (#278).
+    /// Stores the row to remove on `pendingRow` so the proceed handler
+    /// doesn't rely on a possibly-changed `list.currentIndex`.
+    ConfirmDialog {
+        id: confirmRemove
+        property int pendingRow: -1
+        onProceed: {
+            if (pendingRow >= 0) ComputerModel.removeAt(pendingRow);
+            pendingRow = -1;
+        }
+        onRejected: pendingRow = -1
     }
 }
