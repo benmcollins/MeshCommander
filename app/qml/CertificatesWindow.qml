@@ -333,14 +333,16 @@ Layout.alignment: Qt.AlignHCenter
             }
         }
 
-        Text {
-            visible: CertModel.lastError !== undefined && CertModel.lastError.length > 0
-            text: qsTr("Error: %1").arg(CertModel.lastError || "")
-            color: Colors.error
-            font.family: Type.sans
-            font.pixelSize: Type.sizeXs
+        /// Error banner (#283). Replaces a 12 px red line at the
+        /// bottom of the window — easy to miss, no dismiss. Now
+        /// the same shape and prominence as MachineDetailsWindow's
+        /// banner, with a Dismiss button.
+        ResultBanner {
+            id: errBanner
+            kind: "error"
+            text: CertModel.lastError || ""
             Layout.fillWidth: true
-            wrapMode: Text.WordWrap
+            onDismissed: CertModel.clearLastError()
         }
     }
 
