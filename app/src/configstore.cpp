@@ -61,8 +61,15 @@ bool ConfigStore::writeFile(const QString &name, const QByteArray &bytes)
         m_lastError = QStringLiteral("could not create %1").arg(m_dir);
         return false;
     }
+    // Restrict the parent dir to 0700 (POSIX) so the directory listing
+    // doesn't leak filenames. On Windows %APPDATA% is already
+    // user-isolated; setPermissions maps to an ACL adjustment there
+    // and is at worst a no-op. See #273.
+    QFile::setPermissions(m_dir,
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
 
-    QSaveFile f(pathFor(name));
+    const QString path = pathFor(name);
+    QSaveFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         m_lastError = QStringLiteral("could not open %1 for writing: %2")
                           .arg(f.fileName(), f.errorString());
@@ -77,6 +84,14 @@ bool ConfigStore::writeFile(const QString &name, const QByteArray &bytes)
         m_lastError = QStringLiteral("could not commit %1: %2").arg(f.fileName(), f.errorString());
         return false;
     }
+    // computers.json carries v2-"encrypted" passwords whose key+IV
+    // ship with the ciphertext (see #274), so the file is effectively
+    // plaintext credentials. settings.json is less sensitive but we
+    // restrict both for consistency — there's no reason for any other
+    // local user to read either. Done after commit so the rename has
+    // landed the final inode. See #273.
+    QFile::setPermissions(path,
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     return true;
 }
 

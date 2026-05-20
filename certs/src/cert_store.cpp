@@ -74,6 +74,10 @@ bool CertStore::save(QString *error)
         if (error) *error = sf.errorString();
         return false;
     }
+    // certificates.json embeds PEM private keys; restrict to 0600 so
+    // they don't leak via a world-readable file. See #273.
+    QFile::setPermissions(m_path,
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     return true;
 }
 
