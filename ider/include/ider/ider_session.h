@@ -95,6 +95,10 @@ private:
     void scsiStartStop(quint8 dev, quint8 feature);
     void scsiReadCapacity(quint8 dev, quint8 deviceFlags, quint8 feature);
     void scsiRead(const QByteArray &cdb, quint8 dev, quint8 feature, bool isRead10);
+    /// Posts the next SCSI Read chunk and re-arms itself until
+    /// `m_remainingReadBytes` hits zero. Driven by `QTimer::singleShot(0)`
+    /// rather than a synchronous loop with `processEvents` — see #275.
+    void sendNextScsiChunk();
     void scsiReadToc(const QByteArray &cdb, quint8 dev, quint8 feature);
     void scsiGetConfiguration(const QByteArray &cdb, quint8 dev, quint8 feature);
     void scsiGetEventStatus(const QByteArray &cdb, quint8 dev, quint8 feature);
@@ -125,6 +129,12 @@ private:
     bool m_enabled = false;
     bool m_cdReady = false;
     quint64 m_remainingReadBytes = 0;
+    // SCSI Read state held across QTimer::singleShot continuations
+    // (see scsiRead / sendNextScsiChunk).
+    quint8 m_chunkDev = 0;
+    quint8 m_chunkFeature = 0;
+    quint64 m_chunkSize = 0;
+    bool m_scsiReadInFlight = false;
     QString m_lastError;
 };
 

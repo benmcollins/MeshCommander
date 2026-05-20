@@ -9,6 +9,7 @@
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QFileInfo>
+#include <QTimer>
 
 namespace qumesh::ider {
 
@@ -369,6 +370,19 @@ void IderSession::scsiRead(const QByteArray &cdb, quint8 dev, quint8 feature, bo
         return;
     }
 
+    if (m_scsiReadInFlight) {
+        // AMT is supposed to serialise SCSI per device — if we see a
+        // second Read10 land while one's still chunking, treat it as a
+        // protocol violation rather than interleaving reads (which
+        // would corrupt the byte stream). Pre-#275 the old code pumped
+        // the event loop between chunks, so a nested CmdCommandWritten
+        // would re-enter scsiRead and silently produce out-of-order
+        // bytes.
+        fail(QStringLiteral("AMT issued a second SCSI Read before the previous "
+                            "one completed — interleaved reads not supported"));
+        return;
+    }
+
     quint64 byteOffset = static_cast<quint64>(lba) << 11;
     quint64 remaining  = static_cast<quint64>(len) << 11;
 
@@ -377,27 +391,44 @@ void IderSession::scsiRead(const QByteArray &cdb, quint8 dev, quint8 feature, bo
         sendError(dev, kSenseIllegalRequest, 0x21, 0x00);
         return;
     }
-    // Send chunks one at a time, yielding back to the event loop between
-    // each so the socket flushes and inbound heartbeats keep flowing for
-    // multi-megabyte reads.
-    auto sendNext = [this, dev, feature, chunk]() mutable -> bool {
-        if (m_remainingReadBytes == 0) return false;
-        const qint64 want = static_cast<qint64>(qMin(m_remainingReadBytes, chunk));
-        QByteArray data = m_isoFile.read(want);
-        if (data.size() != want) {
-            sendError(dev, kSenseIllegalRequest, 0x21, 0x00);
-            m_remainingReadBytes = 0;
-            return false;
-        }
-        m_remainingReadBytes -= want;
-        const bool completed = (m_remainingReadBytes == 0);
-        sendData(dev, completed, data, (feature & 0x01) != 0);
-        return m_remainingReadBytes > 0;
-    };
+    // Pre-#275 this was a synchronous `while (sendNext()) processEvents()`
+    // loop. processEvents() can dispatch a nested onRawBytes →
+    // drainInbox → scsiRead recursion, which corrupts m_isoFile's
+    // position. Switch to a QTimer::singleShot(0) continuation —
+    // sendNextScsiChunk() processes one chunk and re-arms itself
+    // until m_remainingReadBytes reaches zero. The yield-between-
+    // chunks property the old code wanted is preserved (the timer
+    // fires after the event loop spins once), but no nested pump
+    // happens inside this function.
     m_remainingReadBytes = remaining;
-    while (sendNext()) {
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
-        if (!m_isoFile.isOpen()) return; // teardown while yielding
+    m_chunkDev = dev;
+    m_chunkFeature = feature;
+    m_chunkSize = chunk;
+    m_scsiReadInFlight = true;
+    QTimer::singleShot(0, this, &IderSession::sendNextScsiChunk);
+}
+
+void IderSession::sendNextScsiChunk()
+{
+    if (!m_isoFile.isOpen() || m_remainingReadBytes == 0) {
+        m_scsiReadInFlight = false;
+        return;
+    }
+    const qint64 want = static_cast<qint64>(qMin(m_remainingReadBytes, m_chunkSize));
+    QByteArray data = m_isoFile.read(want);
+    if (data.size() != want) {
+        sendError(m_chunkDev, kSenseIllegalRequest, 0x21, 0x00);
+        m_remainingReadBytes = 0;
+        m_scsiReadInFlight = false;
+        return;
+    }
+    m_remainingReadBytes -= want;
+    const bool completed = (m_remainingReadBytes == 0);
+    sendData(m_chunkDev, completed, data, (m_chunkFeature & 0x01) != 0);
+    if (m_remainingReadBytes > 0) {
+        QTimer::singleShot(0, this, &IderSession::sendNextScsiChunk);
+    } else {
+        m_scsiReadInFlight = false;
     }
 }
 
