@@ -29,6 +29,7 @@ private slots:
     void backspaceBeforeBol();
     void osCSequenceIsIgnored();
     void scrolling();
+    void csiOverflowResetsToGround();
 };
 
 namespace {
@@ -230,6 +231,36 @@ void TestVt100Parser::scrolling()
     QCOMPARE(s.cell(0, 1).ch, QChar(u'B'));
     QCOMPARE(s.cell(2, 0).ch, QChar(u'D'));
     QCOMPARE(s.cell(2, 1).ch, QChar(u'D'));
+}
+
+/// #289 — A malformed CSI of `\x1B[` followed by megabytes of digits
+/// used to grow the parser's accumulator without bound. The parser
+/// now caps at 4 KB; on overflow it drops to Ground and discards
+/// the partial sequence. Bytes that follow are then processed
+/// normally. We prove that by feeding a known-good CSI after the
+/// runaway one and confirming it ran: the trailing CUP (`H`) homes
+/// the cursor, and the character right after lands at (0,0).
+void TestVt100Parser::csiOverflowResetsToGround()
+{
+    TerminalScreen s;
+    s.resize(4, 8);
+
+    QByteArray junk;
+    junk.append('\x1B');
+    junk.append('[');
+    junk.append(QByteArray(8192, '5'));  // way over the 4 KB cap
+
+    // Drive the parser through the runaway CSI. Should not allocate
+    // 8 KB into m_seq, throw, or deadlock.
+    s.feed(junk);
+
+    // After the cap is hit, m_seq was cleared and we're back in
+    // Ground. Send a valid CUP + a character to home the cursor and
+    // land the character at (0,0). This proves the parser resynced
+    // cleanly — if we'd been stuck in CSI state, the leading 0x1B
+    // wouldn't have re-entered.
+    s.feed(QByteArrayLiteral("\x1B[H!"));
+    QCOMPARE(s.cell(0, 0).ch, QChar(u'!'));
 }
 
 QTEST_GUILESS_MAIN(TestVt100Parser)

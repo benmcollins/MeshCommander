@@ -14,6 +14,13 @@ namespace {
 constexpr unsigned char kEsc = 0x1B;
 constexpr unsigned char kBel = 0x07;
 
+/// Upper bound on a single CSI accumulator. Legitimate CSI bodies
+/// (parameters + intermediates + final) are at most a handful of
+/// bytes; cap at 4 KB so a malformed stream like
+/// `\x1B[ + megabytes of digits` can't grow `m_seq` without bound.
+/// See #289.
+constexpr qsizetype kCsiMaxBytes = 4096;
+
 bool isCsiFinal(unsigned char b) { return b >= 0x40 && b <= 0x7E; }
 
 QVector<int> parseParams(QByteArrayView body, int *outIntermediateStart)
@@ -100,6 +107,18 @@ void Vt100Parser::feed(QByteArrayView bytes)
             if (m_seq.isEmpty() && b == '?') {
                 m_csiPrivate = true;
                 continue;
+            }
+            // Cap the CSI accumulator. Real CSI sequences are tiny
+            // (a handful of digits + ';' separators); a malformed
+            // stream of `\x1B[` followed by megabytes of digits used
+            // to grow m_seq without bound. On overflow drop back to
+            // Ground and discard the partial sequence — the rest of
+            // the stream will resync at the next ESC. See #289.
+            if (m_seq.size() >= kCsiMaxBytes) {
+                m_seq.clear();
+                m_csiPrivate = false;
+                m_state = State::Ground;
+                break;
             }
             m_seq.append(static_cast<char>(b));
             if (isCsiFinal(b)) {
