@@ -7,30 +7,34 @@
 
 namespace qumesh::app {
 
-/// Wrap a secret string (AMT password, SSH password, SSH key passphrase)
-/// in the legacy v2 encryption envelope before writing it to
-/// `computers.json`, and unwrap on read.
+/// Wrap a secret string (AMT password, SSH password, SSH key
+/// passphrase) before writing it to `computers.json`, and unwrap on
+/// read. Three envelope formats are recognised on the read path; the
+/// write path picks the strongest available.
 ///
-/// **SECURITY**: this is obfuscation, not encryption. The v2 envelope
-/// is `v2:<key_hex><iv_hex><ciphertext_hex>` — the AES key is right
-/// there in the file. Anyone with read access to `computers.json` can
-/// decrypt the contents in three lines of code. The only protection
-/// gained is:
-///
-///   - Secrets don't show up in plain ripgrep / Spotlight indexing.
-///   - File permissions are 0600 (#273), so on POSIX the limit is the
-///     file owner. On Windows `%APPDATA%` is already user-isolated.
-///
-/// The format is preserved (and intentionally identical to the legacy
-/// NW.js MeshCommander v2 envelope) so a config that's round-tripped
-/// through the migrate tool stays interoperable. The real fix — a
-/// platform-keystore-derived key (Keychain / DPAPI / libsecret) — is
-/// tracked as a follow-up to #274.
+/// - **v3** (new in #306): `v3:<iv_hex><ct_hex>`. AES-256-CTR with
+///   a per-user master key held in the platform keystore (macOS
+///   Keychain, Windows DPAPI-wrapped file, Linux 0600 file under
+///   `$XDG_DATA_HOME/qumesh/`). The on-disk file no longer holds
+///   the AES key — moving `computers.json` to another user or
+///   machine renders the secrets undecryptable.
+/// - **v2** (legacy): `v2:<key_hex><iv_hex><ct_hex>`. AES-256-CTR
+///   with the key inline. Obfuscation only; anyone with read access
+///   to the file can decrypt. Preserved for round-trip compatibility
+///   with the legacy NW.js MeshCommander; new code only emits this
+///   when the platform keystore is unavailable (rare — would need a
+///   stripped-down system with no writable XDG home).
+/// - **bare**: pre-codec data without any prefix. Returned verbatim
+///   from `decode` so hand-edited configs from before SecretCodec
+///   existed still load. The next save through the codec rewraps in
+///   v3 / v2.
 ///
 /// `encode` returns the empty string when given the empty string, so
-/// optional fields don't pay encryption cost. `decode` is lenient: if
-/// the input doesn't have the `v2:` prefix it's returned verbatim, on
-/// the assumption that it was written before this codec existed.
+/// optional fields don't pay encryption cost.
+///
+/// Defense-in-depth: pairs with #273 (computers.json is 0600 on POSIX)
+/// so even the weakest fallback (v2) limits the attack surface to the
+/// file owner.
 class SecretCodec
 {
 public:
