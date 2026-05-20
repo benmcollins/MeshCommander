@@ -4,7 +4,9 @@
 #include "machinedetailscontroller.h"
 
 #include <QDateTime>
+#include <QFile>
 #include <QTimer>
+#include <QUrl>
 
 #include "certs/cert_parser.h"
 #include "wsman/cert_request_builder.h"
@@ -1630,6 +1632,37 @@ void MachineDetailsController::refreshSystemDefense()
             m_systemDefense = std::move(sd);
             emit systemDefenseChanged();
         });
+}
+
+QString MachineDetailsController::readTextFromPath(const QString &pathOrUrl) const
+{
+    // Accept either a plain path or a file:// URL — QML's FileDialog
+    // hands back the latter. Anything else (http://, etc.) is rejected:
+    // this entry point is for local PEM files only.
+    QString path = pathOrUrl;
+    if (path.startsWith(QStringLiteral("file://"))) {
+        const QUrl u(path);
+        if (u.isLocalFile()) path = u.toLocalFile();
+        else return {};
+    }
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return {};
+    return QString::fromUtf8(f.readAll());
+}
+
+bool MachineDetailsController::writeTextToPath(const QString &pathOrUrl,
+                                                 const QString &text) const
+{
+    QString path = pathOrUrl;
+    if (path.startsWith(QStringLiteral("file://"))) {
+        const QUrl u(path);
+        if (u.isLocalFile()) path = u.toLocalFile();
+        else return false;
+    }
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+    const QByteArray bytes = text.toUtf8();
+    return f.write(bytes) == bytes.size();
 }
 
 void MachineDetailsController::addCertificateFromPem(const QString &pem,

@@ -44,20 +44,21 @@ Dialog {
             qsTr("Certificate files (*.pem *.cer *.crt *.der)"),
             qsTr("All files (*)")
         ]
+        // Route the read through the controller's
+        // `readTextFromPath()` — uses QFile on the C++ side, no UI
+        // hitch for multi-MB PKCS#7 chains. Pre-#298 this used a
+        // synchronous XMLHttpRequest("GET", url, false) which blocked
+        // the GUI thread.
+        //
+        // Note: this still hands DER bytes through a QString
+        // TextArea binding when the operator picks a .cer file, so
+        // non-ASCII bytes can come through as replacement characters
+        // — that's the same shape as before. Operators with raw DER
+        // should convert to PEM first.
         onAccepted: {
-            // QML's XMLHttpRequest reads file:// URLs synchronously.
-            // The TextArea binding wants a string so DER bytes that
-            // aren't 7-bit ASCII may come through as replacement
-            // characters — operators with binary .cer files should
-            // convert to PEM first (the CertParser on the controller
-            // side is happy with both, but the round-trip through a
-            // QString TextArea is the bottleneck here). For .pem
-            // files the contents land cleanly.
-            const xhr = new XMLHttpRequest();
-            xhr.open("GET", certFileDialog.selectedFile, false);
-            xhr.send();
-            if (xhr.status === 0 || xhr.status === 200)
-                root.draftPem = xhr.responseText;
+            const text = root.controller.readTextFromPath(
+                certFileDialog.selectedFile.toString());
+            if (text.length > 0) root.draftPem = text;
         }
     }
 

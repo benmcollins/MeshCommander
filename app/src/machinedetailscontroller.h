@@ -424,6 +424,23 @@ public:
     Q_INVOKABLE void addCertificateFromPem(const QString &pem,
                                             bool asTrustedRoot);
 
+    /// Read a UTF-8 text file (typically a PEM-encoded certificate)
+    /// off disk and return its contents as a QString. Accepts either
+    /// a local path or a `file://` URL — the QML side often has the
+    /// latter from a `FileDialog`. Empty on read failure (the QML
+    /// caller treats empty as "leave the existing PEM alone").
+    ///
+    /// Replaces the synchronous `XMLHttpRequest("GET", url, false)`
+    /// pattern in `AddCertificateDialog.qml` — that one hitched the
+    /// UI on multi-MB PKCS#7 chains. See #298.
+    Q_INVOKABLE QString readTextFromPath(const QString &pathOrUrl) const;
+    /// Counterpart for the CSR save flow: write `text` to a local
+    /// path or `file://` URL. Returns true on success. Replaces the
+    /// synchronous `XMLHttpRequest("PUT", file://…)` IssueCertificate-
+    /// Dialog used to spool the CSR. See #298.
+    Q_INVOKABLE bool writeTextToPath(const QString &pathOrUrl,
+                                      const QString &text) const;
+
     /// WS-Transfer Delete on `AMT_PublicKeyCertificate` with the given
     /// `instanceId`. The QML guards against deleting an ACTIVE cert.
     /// See #157.
