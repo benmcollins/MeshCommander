@@ -21,6 +21,9 @@ private slots:
     void start_writesHeader();
     void pushBytes_writesEventLines();
     void roundtrip_parsesAsAsciicastV2();
+    void pushBytes_stitchesUtf8AcrossChunks();
+    void pushBytes_handlesAllMultibyteSplits();
+    void stop_flushesIncompleteTailAsReplacement();
 };
 
 void TestAsciicastRecorder::start_rejectsInvalidArgs()
@@ -110,6 +113,115 @@ void TestAsciicastRecorder::roundtrip_parsesAsAsciicastV2()
         QJsonDocument::fromJson(l.toUtf8(), &err);
         QCOMPARE(err.error, QJsonParseError::NoError);
     }
+}
+
+// `é` is U+00E9 — two-byte UTF-8 0xC3 0xA9. The pre-#288 implementation
+// decoded each half with `fromUtf8` per chunk, so the operator saw
+// `��` in their asciicast where they expected a single `é`.
+void TestAsciicastRecorder::pushBytes_stitchesUtf8AcrossChunks()
+{
+    AsciicastRecorder r;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("split.cast");
+    QVERIFY(r.start(path, 80, 24, QString()));
+
+    // Half a codepoint per call — the 0xC3 stays in the tail until
+    // the 0xA9 arrives.
+    r.pushBytes(QByteArray::fromHex("c3"));
+    r.pushBytes(QByteArray::fromHex("a9"));
+    r.stop();
+
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    f.readLine(); // header
+
+    // First pushBytes had only the lead byte — nothing emitted.
+    // Second pushBytes stitched it together and emitted "é".
+    const QByteArray ev = f.readLine();
+    QVERIFY(!ev.isEmpty());
+    const QJsonArray a = QJsonDocument::fromJson(ev.trimmed()).array();
+    QCOMPARE(a.size(), 3);
+    QCOMPARE(a.at(2).toString(), QString::fromUtf8("\xc3\xa9"));
+    QCOMPARE(a.at(2).toString().size(), 1); // one codepoint, not two FFFDs.
+
+    // Only one event was written (the lead-byte-only call produced
+    // nothing).
+    QVERIFY(f.atEnd());
+}
+
+void TestAsciicastRecorder::pushBytes_handlesAllMultibyteSplits()
+{
+    // Exercise 2 / 3 / 4-byte sequences split at every internal
+    // boundary. Each pair of (whole sequence, split index) should
+    // decode to the same single codepoint as the whole sequence.
+    struct Case {
+        const char *label;
+        QByteArray seq;
+        QString want;
+    };
+    const Case cases[] = {
+        // U+00E9 é
+        { "2b@1",  QByteArray::fromHex("c3a9"),     QString::fromUtf8("\xc3\xa9") },
+        // U+20AC € (E2 82 AC)
+        { "3b@1",  QByteArray::fromHex("e282ac"),   QString::fromUtf8("\xe2\x82\xac") },
+        { "3b@2",  QByteArray::fromHex("e282ac"),   QString::fromUtf8("\xe2\x82\xac") },
+        // U+1F600 😀 (F0 9F 98 80)
+        { "4b@1",  QByteArray::fromHex("f09f9880"), QString::fromUtf8("\xf0\x9f\x98\x80") },
+        { "4b@2",  QByteArray::fromHex("f09f9880"), QString::fromUtf8("\xf0\x9f\x98\x80") },
+        { "4b@3",  QByteArray::fromHex("f09f9880"), QString::fromUtf8("\xf0\x9f\x98\x80") },
+    };
+    const int splitAt[] = { 1, 1, 2, 1, 2, 3 };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        AsciicastRecorder r;
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("c.cast"));
+        QVERIFY(r.start(path, 80, 24, QString()));
+        const QByteArray &seq = cases[i].seq;
+        r.pushBytes(seq.left(splitAt[i]));
+        r.pushBytes(seq.mid(splitAt[i]));
+        r.stop();
+
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        f.readLine(); // header
+        QString glued;
+        while (!f.atEnd()) {
+            const QByteArray ln = f.readLine();
+            if (ln.trimmed().isEmpty()) continue;
+            const QJsonArray a = QJsonDocument::fromJson(ln.trimmed()).array();
+            if (a.size() == 3) glued += a.at(2).toString();
+        }
+        QVERIFY2(glued == cases[i].want,
+                 qPrintable(QStringLiteral("case %1 (%2)")
+                                .arg(cases[i].label)
+                                .arg(QString::fromLatin1(seq.toHex()))));
+    }
+}
+
+void TestAsciicastRecorder::stop_flushesIncompleteTailAsReplacement()
+{
+    // If the SOL session ends mid-codepoint we'd rather emit a
+    // visible U+FFFD than silently drop the trailing bytes — they
+    // were on the wire, the operator should see something landed.
+    AsciicastRecorder r;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("truncated.cast");
+    QVERIFY(r.start(path, 80, 24, QString()));
+    r.pushBytes(QByteArray::fromHex("c3")); // lone lead byte, no continuation.
+    r.stop();
+
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    f.readLine(); // header
+    const QByteArray ev = f.readLine();
+    QVERIFY(!ev.isEmpty());
+    const QJsonArray a = QJsonDocument::fromJson(ev.trimmed()).array();
+    QCOMPARE(a.size(), 3);
+    QCOMPARE(a.at(2).toString(), QString(QChar(QChar::ReplacementCharacter)));
 }
 
 QTEST_MAIN(TestAsciicastRecorder)
