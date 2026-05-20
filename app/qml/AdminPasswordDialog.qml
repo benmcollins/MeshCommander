@@ -43,8 +43,19 @@ Dialog {
                && draftPassword === draftPasswordConfirm;
     }
 
+    /// Centralised primary-action gate so the AccentButton and the
+    /// Enter-key handler stay in sync — #279.
+    function submitIfReady() {
+        if (root.draftUsername.length === 0 || !root.passwordsAgree()) return;
+        root.controller.setAdminPassword(root.draftUsername, root.draftPassword);
+        root.accept();
+    }
+
     contentItem: ColumnLayout {
         spacing: 14
+
+        Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+        Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
         Section {
             title: qsTr("ADMIN")
@@ -142,11 +153,7 @@ Dialog {
                 font.pixelSize: Type.sizeS
                 enabled: root.draftUsername.length > 0
                          && root.passwordsAgree()
-                onClicked: {
-                    root.controller.setAdminPassword(root.draftUsername,
-                                                     root.draftPassword);
-                    root.accept();
-                }
+                onClicked: root.submitIfReady()
             }
         }
     }

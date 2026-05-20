@@ -37,8 +37,18 @@ Dialog {
     standardButtons: Dialog.NoButton
     implicitWidth: 460
 
+    function submitIfReady() {
+        if (root.draftAccessInfo.length === 0
+            || root.draftPort < 1 || root.draftPort > 65535) return;
+        root.confirmed(root.draftAccessInfo, root.draftPort, root.draftDnsSuffix);
+        root.accept();
+    }
+
     contentItem: ColumnLayout {
         spacing: 14
+
+        Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+        Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
         Section {
             title: qsTr("ACCESS POINT")
@@ -125,12 +135,7 @@ Dialog {
                 font.pixelSize: Type.sizeS
                 enabled: root.draftAccessInfo.length > 0
                          && root.draftPort >= 1 && root.draftPort <= 65535
-                onClicked: {
-                    root.confirmed(root.draftAccessInfo,
-                                   root.draftPort,
-                                   root.draftDnsSuffix);
-                    root.accept();
-                }
+                onClicked: root.submitIfReady()
             }
         }
     }
