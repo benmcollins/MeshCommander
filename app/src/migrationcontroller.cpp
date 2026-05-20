@@ -24,11 +24,11 @@ void MigrationController::checkAndMaybeMigrate()
 {
     if (m_store == nullptr) {
         setMessage(QStringLiteral("MigrationController has no ConfigStore"));
-        setState(Failed);
+        setState(State::Failed);
         return;
     }
     if (m_store->hasNativeConfig()) {
-        setState(Idle);
+        setState(State::Idle);
         return;
     }
 
@@ -37,11 +37,11 @@ void MigrationController::checkAndMaybeMigrate()
                                   : m_legacyDataDirOverride;
     if (!QFileInfo(legacyDir).isDir()) {
         setMessage(QStringLiteral("No legacy MeshCommander data found at %1").arg(legacyDir));
-        setState(NoLegacyData);
+        setState(State::NoLegacyData);
         return;
     }
 
-    setState(Migrating);
+    setState(State::Migrating);
 
     migrate::MigrationOptions opts;
     opts.legacyDataDir = legacyDir;
@@ -52,7 +52,7 @@ void MigrationController::checkAndMaybeMigrate()
 
     if (!r.ok) {
         setMessage(r.error);
-        setState(Failed);
+        setState(State::Failed);
         return;
     }
 
@@ -63,7 +63,7 @@ void MigrationController::checkAndMaybeMigrate()
                    .arg(r.certificatesCount)
                    .arg(r.settingsCount)
                    .arg(legacyDir));
-    setState(Imported);
+    setState(State::Imported);
 }
 
 void MigrationController::setState(State s)

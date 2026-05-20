@@ -40,7 +40,8 @@ constexpr quint32 kXkMetaL     = 0xFFE7;
 KvmViewer::KvmViewer(QQuickItem *parent)
     : QQuickPaintedItem(parent)
 {
-    setFlag(ItemHasContents, true);
+    // QQuickPaintedItem already sets ItemHasContents in its base
+    // ctor — the explicit setFlag here was redundant (#295).
     setAcceptedMouseButtons(Qt::AllButtons);
     setAcceptHoverEvents(true);
     setFillColor(Qt::black);

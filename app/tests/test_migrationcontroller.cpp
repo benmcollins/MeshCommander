@@ -78,7 +78,7 @@ void TestMigrationController::existingNativeConfigStaysIdle()
     c.setStore(&store);
     c.setLegacyDataDir(QStringLiteral("/nonexistent"));
     c.checkAndMaybeMigrate();
-    QCOMPARE(c.state(), MigrationController::Idle);
+    QCOMPARE(c.state(), MigrationController::State::Idle);
 }
 
 void TestMigrationController::missingNativeAndLegacyReportsNoLegacy()
@@ -91,7 +91,7 @@ void TestMigrationController::missingNativeAndLegacyReportsNoLegacy()
     c.setStore(&store);
     c.setLegacyDataDir(QDir(tmp.path()).filePath(QStringLiteral("nothere")));
     c.checkAndMaybeMigrate();
-    QCOMPARE(c.state(), MigrationController::NoLegacyData);
+    QCOMPARE(c.state(), MigrationController::State::NoLegacyData);
 }
 
 void TestMigrationController::firstLaunchImportsFromLegacy()
@@ -115,7 +115,7 @@ void TestMigrationController::firstLaunchImportsFromLegacy()
     QSignalSpy stateSpy(&c, &MigrationController::stateChanged);
     c.checkAndMaybeMigrate();
     QVERIFY(stateSpy.size() >= 1);
-    QCOMPARE(c.state(), MigrationController::Imported);
+    QCOMPARE(c.state(), MigrationController::State::Imported);
     QCOMPARE(c.computersImported(), 1);
     QVERIFY(store.hasNativeConfig());
 }

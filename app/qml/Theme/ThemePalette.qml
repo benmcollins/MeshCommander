@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
 pragma Singleton
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import QuMesh
