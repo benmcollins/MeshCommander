@@ -62,7 +62,7 @@ AppWindow {
         title: qsTr("PKCS#12 password")
         modal: true
         anchors.centerIn: parent
-        standardButtons: Dialog.Ok | Dialog.Cancel
+        standardButtons: Dialog.NoButton
 
         property string path
 
@@ -81,13 +81,33 @@ AppWindow {
                 Layout.preferredWidth: 280
                 font.family: Type.mono
                 font.pixelSize: Type.sizeM
+                onAccepted: importBtn.clicked()
+            }
+            RowLayout {
+                spacing: 8
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                Item { Layout.fillWidth: true }
+                FlatButton {
+                    text: qsTr("Cancel")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    onClicked: passwordPrompt.reject()
+                }
+                AccentButton {
+                    id: importBtn
+                    text: qsTr("Import")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    onClicked: {
+                        CertModel.importFromFile(passwordPrompt.path, pwField.text);
+                        pwField.clear();
+                        passwordPrompt.accept();
+                    }
+                }
             }
         }
 
-        onAccepted: {
-            CertModel.importFromFile(passwordPrompt.path, pwField.text);
-            pwField.clear();
-        }
         onRejected: pwField.clear()
     }
 

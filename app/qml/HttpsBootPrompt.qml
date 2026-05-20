@@ -24,7 +24,7 @@ Dialog {
     modal: true
     closePolicy: Popup.CloseOnEscape
     anchors.centerIn: parent
-    standardButtons: Dialog.Cancel | Dialog.Yes
+    standardButtons: Dialog.NoButton
     implicitWidth: 520
 
     function openFor(reset) {
@@ -72,7 +72,27 @@ Dialog {
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
         }
-    }
 
-    onAccepted: root.confirmed(urlField.text, root.resetFlavour)
+        RowLayout {
+            spacing: 8
+            Layout.fillWidth: true
+            Layout.topMargin: 6
+            Item { Layout.fillWidth: true }
+            FlatButton {
+                text: qsTr("Cancel")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                onClicked: root.reject()
+            }
+            AccentButton {
+                text: qsTr("Boot")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                onClicked: {
+                    root.confirmed(urlField.text, root.resetFlavour);
+                    root.accept();
+                }
+            }
+        }
+    }
 }
