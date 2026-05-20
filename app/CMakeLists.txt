@@ -170,6 +170,10 @@ qt_add_qml_module(qumesh_appcore
         qml/MachineDetails/HardwareSection.qml
         qml/MachineDetails/EventLogSection.qml
         qml/MachineDetails/AuditLogSection.qml
+        qml/MachineDetails/WatchdogsSection.qml
+        qml/MachineDetails/EventSubscriptionsSection.qml
+        qml/MachineDetails/WakeAlarmsSection.qml
+        qml/MachineDetails/ActiveSessionsSection.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
