@@ -239,6 +239,7 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             text: qsTr("Delete machine")
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
+                            destructive: true
                             onClicked: confirmDelete.open()
                         }
                     }
