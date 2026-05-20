@@ -15,6 +15,16 @@ ColumnLayout {
     id: root
 
     required property MachineDetailsController controller
+    required property var watchdogDialog
+
+    /// True when the configured watchdog count has hit the firmware
+    /// ceiling — used to grey out Add and explain why in the header.
+    readonly property bool atCeiling: {
+        const ap = root.controller.agentPresence || {};
+        const cap = ap.maxTotalAgents || 0;
+        const cur = (ap.watchdogs || []).length;
+        return cap > 0 && cur >= cap;
+    }
 
     spacing: 8
 
@@ -26,45 +36,64 @@ ColumnLayout {
         Layout.leftMargin: 24
         Layout.rightMargin: 24
 
-        Text {
-            text: qsTr("WATCHDOGS")
-            color: Colors.textMuted
-            font.family: Type.sans
-            font.pixelSize: Type.sizeXs
-            font.letterSpacing: 2
-            font.weight: Font.Medium
-        }
-        Text {
-            text: {
-                const ap = controller.agentPresence || {};
-                const w = ap.watchdogs || [];
-                if (Object.keys(ap).length === 0)
-                    return qsTr("Not yet fetched");
-                if (w.length === 0)
-                    return qsTr("No agent presence watchdog configured.");
-                return qsTr("%1 watchdog%2 configured")
-                    .arg(w.length)
-                    .arg(w.length === 1 ? "" : "s");
+        RowLayout {
+            spacing: 12
+            Layout.fillWidth: true
+
+            ColumnLayout {
+                spacing: 4
+                Layout.fillWidth: true
+
+                Text {
+                    text: qsTr("WATCHDOGS")
+                    color: Colors.textMuted
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeXs
+                    font.letterSpacing: 2
+                    font.weight: Font.Medium
+                }
+                Text {
+                    text: {
+                        const ap = root.controller.agentPresence || {};
+                        const w = ap.watchdogs || [];
+                        if (Object.keys(ap).length === 0)
+                            return qsTr("Not yet fetched");
+                        if (w.length === 0)
+                            return qsTr("No agent presence watchdog configured.");
+                        return qsTr("%1 watchdog%2 configured")
+                            .arg(w.length)
+                            .arg(w.length === 1 ? "" : "s");
+                    }
+                    color: Colors.text
+                    font.family: Type.sans
+                    font.pixelSize: 20
+                }
+                Text {
+                    visible: (root.controller.agentPresence
+                               && root.controller.agentPresence.maxTotalAgents > 0)
+                    text: qsTr("Firmware ceiling: %1 watchdogs, %2 actions total.")
+                        .arg(root.controller.agentPresence.maxTotalAgents)
+                        .arg(root.controller.agentPresence.maxTotalActions)
+                    color: Colors.textMuted
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeXs
+                }
+                Text {
+                    visible: root.atCeiling
+                    text: qsTr("At the firmware ceiling — delete a watchdog before adding a new one.")
+                    color: Colors.textFaint
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeXs
+                }
             }
-            color: Colors.text
-            font.family: Type.sans
-            font.pixelSize: 20
-        }
-        Text {
-            visible: (controller.agentPresence
-                       && controller.agentPresence.maxTotalAgents > 0)
-            text: qsTr("Firmware ceiling: %1 watchdogs, %2 actions total.")
-                .arg(controller.agentPresence.maxTotalAgents)
-                .arg(controller.agentPresence.maxTotalActions)
-            color: Colors.textMuted
-            font.family: Type.sans
-            font.pixelSize: Type.sizeXs
-        }
-        Text {
-            text: qsTr("Read-only — add / edit / delete arrives in Phase B.")
-            color: Colors.textFaint
-            font.family: Type.sans
-            font.pixelSize: Type.sizeXs
+
+            AccentButton {
+                text: qsTr("Add watchdog")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                enabled: !root.atCeiling
+                onClicked: root.watchdogDialog.openForAdd()
+            }
         }
     }
 
@@ -75,8 +104,8 @@ ColumnLayout {
         Layout.rightMargin: 24
         Layout.bottomMargin: 24
         clip: true
-        model: (controller.agentPresence
-                 && controller.agentPresence.watchdogs) || []
+        model: (root.controller.agentPresence
+                 && root.controller.agentPresence.watchdogs) || []
         ScrollBar.vertical: ScrollBar {}
         spacing: 6
 
@@ -140,6 +169,30 @@ ColumnLayout {
                             font.pixelSize: Type.sizeXs
                             font.weight: Font.Medium
                             font.letterSpacing: 1
+                        }
+                    }
+
+                    FlatButton {
+                        text: qsTr("Edit")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        onClicked: root.watchdogDialog.openForEdit(watchdogCol.parent.modelData)
+                    }
+                    FlatButton {
+                        text: qsTr("Delete")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        onClicked: {
+                            watchdogConfirmDialog.pendingDeviceIdGuid =
+                                watchdogCol.parent.modelData.deviceIdGuid || "";
+                            watchdogConfirmDialog.ask(
+                                qsTr("Delete watchdog"),
+                                qsTr("Remove %1 from AMT. The watchdog and any actions cascading from it will be deleted on the device.")
+                                    .arg(watchdogCol.parent.modelData.description
+                                         || watchdogCol.parent.modelData.deviceIdGuid
+                                         || qsTr("the watchdog")),
+                                qsTr("Delete"),
+                                true);
                         }
                     }
                 }

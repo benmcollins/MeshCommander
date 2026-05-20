@@ -34,6 +34,8 @@ private slots:
     void wifiPeapEnvelopeIncludesUsernameAndServerCertGuard();
     void addAlarmEnvelopeShape();
     void addAlarmEnvelopeOmitsIntervalForOneShot();
+    void registerAgentEnvelopeShape();
+    void registerAgentEnvelopeRoundTripsGuid();
 };
 
 namespace {
@@ -556,6 +558,57 @@ void TestSoapEnvelope::addAlarmEnvelopeOmitsIntervalForOneShot()
     // No <Interval> element at all on a one-shot — only the
     // StartTime/Datetime block carries a CIM common element.
     QVERIFY(!env.contains("Interval>"));
+}
+
+void TestSoapEnvelope::registerAgentEnvelopeShape()
+{
+    AgentPresenceWatchdog w;
+    w.deviceIdGuid = QStringLiteral("01234567-89ab-cdef-0123-456789abcdef");
+    w.description = QStringLiteral("backup daemon");
+    w.monitoredEntityCode = 7; // Application
+    w.startupIntervalSec = 60;
+    w.timeoutIntervalSec = 30;
+
+    const QByteArray env = buildRegisterAgentEnvelopeForTesting(w);
+
+    // Well-formed XML.
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Targets AMT_AgentPresenceService.RegisterAgent — selectors + Action.
+    QVERIFY(env.contains("AMT_AgentPresenceService/RegisterAgent"));
+    QVERIFY(env.contains("AMT_AgentPresenceService"));
+    QVERIFY(env.contains("Intel(r) AMT Agent Presence Service"));
+
+    // Method input + embedded watchdog carrying the editable fields.
+    QVERIFY(env.contains("RegisterAgent_INPUT"));
+    QVERIFY(env.contains("AgentTemplate"));
+    QVERIFY(env.contains("AMT_AgentPresenceWatchdog"));
+    QVERIFY(env.contains(">backup daemon<"));
+    QVERIFY(env.contains(">7<"));  // MonitoredEntity
+    QVERIFY(env.contains(">60<")); // StartupInterval
+    QVERIFY(env.contains(">30<")); // TimeoutInterval
+}
+
+void TestSoapEnvelope::registerAgentEnvelopeRoundTripsGuid()
+{
+    // The user-typed (or generated) 8-4-4-4-12 GUID has to make it
+    // onto the wire as the base-64-of-raw-16-bytes shape the read
+    // side decodes. Lock the encoder against silent endianness /
+    // hex-vs-base64 regressions: same input GUID → same hex → known
+    // base-64. The reference base-64 here was computed offline from
+    // the raw bytes 01 23 45 67 89 ab cd ef 01 23 45 67 89 ab cd ef.
+    AgentPresenceWatchdog w;
+    w.deviceIdGuid = QStringLiteral("01234567-89ab-cdef-0123-456789abcdef");
+    w.timeoutIntervalSec = 1;
+
+    const QByteArray env = buildRegisterAgentEnvelopeForTesting(w);
+
+    QVERIFY(env.contains("ASNFZ4mrze8BI0VniavN7w=="));
+    // The bare GUID string must NOT appear on the wire — that would
+    // mean we sent the hex form instead of the base-64-raw form.
+    QVERIFY(!env.contains("01234567-89ab-cdef-0123-456789abcdef"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)

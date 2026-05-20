@@ -291,6 +291,27 @@ AppWindow {
         onRejected: pendingInstanceId = ""
     }
 
+    WatchdogDialog {
+        id: watchdogDialog
+        onConfirmed: function(editingDeviceIdGuid, fields) {
+            if (editingDeviceIdGuid.length > 0)
+                controller.replaceAgentPresenceWatchdog(editingDeviceIdGuid, fields);
+            else
+                controller.addAgentPresenceWatchdog(fields);
+        }
+    }
+
+    ConfirmDialog {
+        id: watchdogConfirmDialog
+        property string pendingDeviceIdGuid: ""
+        onProceed: {
+            if (pendingDeviceIdGuid.length > 0)
+                controller.deleteAgentPresenceWatchdog(pendingDeviceIdGuid);
+            pendingDeviceIdGuid = "";
+        }
+        onRejected: pendingDeviceIdGuid = ""
+    }
+
     Wired8021xDialog {
         id: wired8021xDialog
         controller: controller
@@ -870,6 +891,7 @@ AppWindow {
                     sourceComponent: WatchdogsSection {
                         anchors.fill: parent
                         controller: controller
+                        watchdogDialog: watchdogDialog
                     }
                 }
 
