@@ -167,6 +167,9 @@ qt_add_qml_module(qumesh_appcore
         qml/SecureErasePrompt.qml
         qml/MachineDetails/OverviewSection.qml
         qml/MachineDetails/TimeSection.qml
+        qml/MachineDetails/HardwareSection.qml
+        qml/MachineDetails/EventLogSection.qml
+        qml/MachineDetails/AuditLogSection.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
