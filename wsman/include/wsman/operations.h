@@ -663,10 +663,20 @@ struct Hdr8021Filter
 {
     QString instanceId;
     QString name;
-    int filterDirection = -1;       ///< 1=in, 2=out, 3=both.
+    int filterDirection = -1;       ///< 0=tx (out), 1=rx (in).
     int vlanTag = -1;               ///< -1 = not set.
+    /// AMT field name on the wire is `HdrProtocolID8021`; 2048=IP,
+    /// 2054=ARP. See #353.
     int etherType = -1;
     int priority = -1;
+    /// Create-side only. 0=Allow+Count, 1=Drop+Count, 2=Rate Limit,
+    /// 3=Allow, 4=Drop. -1 on the read path (firmware doesn't echo
+    /// it back consistently per AMT version).
+    int filterProfile = -1;
+    /// Create-side only — packets/second cap for `filterProfile == 2`.
+    int filterProfileData = 0;
+    /// Create-side only — fire an event on match.
+    bool actionEventOnMatch = false;
 };
 
 /// One `AMT_IPHeadersFilter` (L3/L4) row.
@@ -741,6 +751,19 @@ void deleteSystemDefensePolicy(WsmanClient *client, const QString &instanceId,
 /// See #346.
 void deleteHdr8021Filter(WsmanClient *client, const QString &instanceId,
                           std::function<void(InvokeResult)> callback);
+
+/// WS-Transfer Create of a new `AMT_Hdr8021Filter`. The firmware
+/// assigns InstanceID + the three creation-class fields; the caller
+/// only fills name / direction / ethertype / filterProfile and
+/// (optionally) the rate-limit data. See #353.
+void addHdr8021Filter(WsmanClient *client, const Hdr8021Filter &filter,
+                       std::function<void(InvokeResult)> callback);
+
+/// Test-only seam for `addHdr8021Filter`.
+[[nodiscard]] QByteArray buildAddHdr8021FilterEnvelopeForTesting(
+    const Hdr8021Filter &filter,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:add-hdr8021-test"));
 
 /// WS-Transfer Delete on `AMT_IPHeadersFilter` keyed by `InstanceID`.
 /// See #346.

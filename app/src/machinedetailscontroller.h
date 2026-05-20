@@ -665,6 +665,13 @@ public:
     Q_INVOKABLE void deleteSystemDefensePolicy(const QString &instanceId);
     /// WS-Transfer Delete on `AMT_Hdr8021Filter`. See #346.
     Q_INVOKABLE void deleteSystemDefenseHdrFilter(const QString &instanceId);
+    /// WS-Transfer Create of a new `AMT_Hdr8021Filter`. `fields`
+    /// carries `name` (string), `etherType` (int — `HdrProtocolID8021`
+    /// on the wire), `filterProfile` (int, 0..4), `filterProfileData`
+    /// (int, only used at `filterProfile == 2` rate-limit),
+    /// `filterDirection` (int, 0=Tx / 1=Rx), `actionEventOnMatch`
+    /// (bool). On success refreshes the section. See #353.
+    Q_INVOKABLE void addSystemDefenseHdrFilter(const QVariantMap &fields);
     /// WS-Transfer Delete on `AMT_IPHeadersFilter`. See #346.
     Q_INVOKABLE void deleteSystemDefenseIpFilter(const QString &instanceId);
     /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.

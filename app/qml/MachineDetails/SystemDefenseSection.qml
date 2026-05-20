@@ -15,6 +15,7 @@ Flickable {
     id: root
 
     required property MachineDetailsController controller
+    required property var hdr8021FilterDialog
 
     contentWidth: width
     contentHeight: sysDefCol.implicitHeight + 48
@@ -162,15 +163,37 @@ Flickable {
             title: qsTr("L2 FILTERS (802.1Q / EtherType)")
             visible: sysDefCol.isAcm
                   && sysDefCol.supported
-                  && controller.systemDefense
-                  && (controller.systemDefense.hdrFilters || []).length > 0
+                  && !!root.controller.systemDefense
             Layout.fillWidth: true
             Layout.leftMargin: 24
             Layout.rightMargin: 24
 
             ColumnLayout {
-                spacing: 4
+                spacing: 6
                 Layout.fillWidth: true
+
+                RowLayout {
+                    spacing: 8
+                    Layout.fillWidth: true
+                    Text {
+                        text: ((root.controller.systemDefense
+                                  && root.controller.systemDefense.hdrFilters) || []).length === 0
+                            ? qsTr("No L2 filters configured.")
+                            : ""
+                        color: Colors.textMuted
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                    }
+                    Item { Layout.fillWidth: true }
+                    FlatButton {
+                        text: qsTr("Add L2 filter")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        onClicked: root.hdr8021FilterDialog.openForAdd()
+                    }
+                }
 
                 Repeater {
                     model: (root.controller.systemDefense
