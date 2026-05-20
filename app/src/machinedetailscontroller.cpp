@@ -45,6 +45,12 @@ void MachineDetailsController::setSshConfig(const QVariantMap &cfg)
             m_sshSession->deleteLater();
             m_sshSession = nullptr;
         }
+        if (m_awaitingSshHostKeyTrust) {
+            m_pendingSshHostKey.clear();
+            m_pendingSshHostKeyType.clear();
+            m_awaitingSshHostKeyTrust = false;
+            emit sshHostKeyPromptChanged();
+        }
         m_client->setSocketFactory({});
         m_client->setSerializeRequests(false);
         m_sshTunnelStatus.clear();
@@ -91,16 +97,19 @@ void MachineDetailsController::setSshConfig(const QVariantMap &cfg)
                 });
         connect(m_sshSession, &qumesh::ssh::SshSession::hostKeyPromptRequired, this,
                 [this](const QString &fp, const QString &keyType) {
+                    // SshSession is now paused in `NeedsHostKeyTrust`.
+                    // Hold the pending state and surface the prompt to
+                    // QML — `SshHostKeyTrustDialog` calls
+                    // `trustPendingSshHostKey(persist)` on accept, or
+                    // `close()` to abandon. Pre-#270 this auto-pinned
+                    // every unknown key (TOFU-every-time), which
+                    // silently accepted post-first-connect key
+                    // rotation — effectively no MITM defence.
                     m_pendingSshHostKey = fp;
                     m_pendingSshHostKeyType = keyType;
                     m_awaitingSshHostKeyTrust = true;
-                    // Auto-pin on first connect (TOFU). The
-                    // fingerprint is then persisted into ComputerModel
-                    // via `trustedSshHostKeyAdded`, so subsequent
-                    // connects must match — protecting against
-                    // post-first-connect MITM / key rotation.
+                    emit sshHostKeyPromptChanged();
                     emit sshHostKeyPromptRequired(fp, keyType);
-                    trustPendingSshHostKey(true);
                 });
     }
 
@@ -138,6 +147,7 @@ void MachineDetailsController::trustPendingSshHostKey(bool persist)
     m_pendingSshHostKey.clear();
     m_pendingSshHostKeyType.clear();
     m_awaitingSshHostKeyTrust = false;
+    emit sshHostKeyPromptChanged();
     if (m_sshSession != nullptr) m_sshSession->trustPendingHostKey();
     if (persist) emit trustedSshHostKeyAdded(fp);
 }

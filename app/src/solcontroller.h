@@ -48,6 +48,15 @@ class SolController : public QObject
     Q_PROPERTY(bool awaitingTrust READ awaitingTrust NOTIFY awaitingTrustChanged)
     Q_PROPERTY(bool recording READ isRecording NOTIFY recordingChanged)
 
+    // SSH host-key prompt — see `SshHostKeyTrustDialog.qml`. Bound
+    // when the per-machine SSH tunnel encounters an unpinned key.
+    Q_PROPERTY(bool awaitingSshHostKeyTrust READ awaitingSshHostKeyTrust
+                   NOTIFY sshHostKeyPromptChanged)
+    Q_PROPERTY(QString pendingSshHostKeyFingerprint READ pendingSshHostKeyFingerprint
+                   NOTIFY sshHostKeyPromptChanged)
+    Q_PROPERTY(QString pendingSshHostKeyType READ pendingSshHostKeyType
+                   NOTIFY sshHostKeyPromptChanged)
+
 public:
     enum class State {
         Disconnected,
@@ -78,6 +87,9 @@ public:
     [[nodiscard]] QString pendingCertNotAfter() const { return m_pendingCert.notAfter; }
     [[nodiscard]] qumesh::terminal::TerminalScreen *screen() const { return m_screen; }
     [[nodiscard]] bool isRecording() const;
+    [[nodiscard]] bool awaitingSshHostKeyTrust() const { return m_awaitingSshHostKeyTrust; }
+    [[nodiscard]] QString pendingSshHostKeyFingerprint() const { return m_pendingSshHostKey; }
+    [[nodiscard]] QString pendingSshHostKeyType() const { return m_pendingSshHostKeyType; }
 
     void setHost(const QString &v);
     /// Override the redirection port. Only exists for tests that need to
@@ -112,6 +124,11 @@ public:
     /// is true) emits `trustedFingerprintAdded` so the QML layer can
     /// persist it via ComputerModel.
     Q_INVOKABLE void trustPendingCert(bool persist);
+    /// Resolves a pending SSH host-key prompt (see `SshTunnelHost`).
+    /// On accept, resumes the paused SSH session; with `persist` also
+    /// emits `trustedSshHostKeyAdded` so the QML layer can pin the
+    /// fingerprint on the per-machine config.
+    Q_INVOKABLE void trustPendingSshHostKey(bool persist);
 
     /// Start streaming the SOL output to `path` as asciicast v2. The
     /// recorded file is replayable by asciinema / asciinema-player.
@@ -136,8 +153,14 @@ signals:
     /// Emitted after `trustPendingCert(true)` so the QML layer can
     /// persist the fingerprint into ComputerModel.
     void trustedFingerprintAdded(const QString &fingerprint);
-    /// Emitted on the first SSH connect after auto-pinning the host key
-    /// so the QML layer can persist the fingerprint into ComputerModel.
+    /// Emitted when the per-machine SSH tunnel encounters an unpinned
+    /// host key. QML surfaces `SshHostKeyTrustDialog`.
+    void sshHostKeyPromptRequired(const QString &fingerprint,
+                                   const QString &keyType);
+    /// NOTIFY for the `awaitingSshHostKeyTrust` / pending properties.
+    void sshHostKeyPromptChanged();
+    /// Emitted after `trustPendingSshHostKey(true)` so the QML layer
+    /// can persist the fingerprint into ComputerModel.
     void trustedSshHostKeyAdded(const QString &fingerprint);
     /// Forwarded from the underlying client whenever a TLS
     /// reconnect quietly matched a pinned fingerprint. The QML side
@@ -170,6 +193,10 @@ private:
     /// host reaches Connected.
     bool m_openDeferred = false;
     AsciicastRecorder *m_recorder = nullptr;
+
+    QString m_pendingSshHostKey;
+    QString m_pendingSshHostKeyType;
+    bool m_awaitingSshHostKeyTrust = false;
 };
 
 } // namespace qumesh::app

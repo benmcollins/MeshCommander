@@ -108,6 +108,15 @@ AppWindow {
         controller: powerController
     }
 
+    /// SSH host-key trust for the WSMAN-side tunnel managed by the
+    /// SessionWindow's MachineDetailsController. Sol/Kvm/Ider tabs
+    /// each have their own SshTunnelHost and surface their own
+    /// prompts via the per-panel SshHostKeyTrustDialog instances.
+    SshHostKeyTrustDialog {
+        controller: powerController
+        onCancelled: powerController.setSshConfig({})
+    }
+
     OptInPrompt {
         id: optInPrompt
         onSubmitted: function(code) { powerController.sendOptInCode(code); }

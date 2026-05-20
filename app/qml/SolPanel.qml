@@ -66,6 +66,13 @@ Item {
         controller: controller
     }
 
+    /// SSH host-key prompt for the per-tab tunnel (#270). Cancel
+    /// disables the SSH config so the tunnel tears down.
+    SshHostKeyTrustDialog {
+        controller: controller
+        onCancelled: controller.setSshConfig({})
+    }
+
     // Open the save dialogs with a default name pre-populated.
     function openScreenshotDialog() {
         screenshotDialog.currentFolder =

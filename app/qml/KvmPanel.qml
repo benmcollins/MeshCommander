@@ -85,6 +85,12 @@ Item {
         controller: controller
     }
 
+    /// SSH host-key prompt for the per-tab tunnel (#270).
+    SshHostKeyTrustDialog {
+        controller: controller
+        onCancelled: controller.setSshConfig({})
+    }
+
     // Open the save dialogs with a sensible default name pre-populated:
     //   "<machine> YYYY-MM-DD at H.MM.SS [AP]M.<ext>"
     // The folder defaults to the user's Documents directory; the dialog

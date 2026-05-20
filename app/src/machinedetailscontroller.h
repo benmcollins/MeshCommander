@@ -54,6 +54,16 @@ class MachineDetailsController : public QObject
     Q_PROPERTY(QString pendingCertNotBefore READ pendingCertNotBefore NOTIFY pendingCertChanged)
     Q_PROPERTY(QString pendingCertNotAfter READ pendingCertNotAfter NOTIFY pendingCertChanged)
 
+    // Trust-on-first-use surface for the SSH host-key prompt. Mirrors
+    // the pendingCert* shape so SshHostKeyTrustDialog can render us via
+    // the same controller-as-QtObject convention.
+    Q_PROPERTY(bool awaitingSshHostKeyTrust READ awaitingSshHostKeyTrust
+                   NOTIFY sshHostKeyPromptChanged)
+    Q_PROPERTY(QString pendingSshHostKeyFingerprint READ pendingSshHostKeyFingerprint
+                   NOTIFY sshHostKeyPromptChanged)
+    Q_PROPERTY(QString pendingSshHostKeyType READ pendingSshHostKeyType
+                   NOTIFY sshHostKeyPromptChanged)
+
     // Overview / power.
     Q_PROPERTY(int powerState READ powerState NOTIFY powerStateChanged)
     Q_PROPERTY(QString powerStateLabel READ powerStateLabel NOTIFY powerStateChanged)
@@ -261,6 +271,10 @@ public:
     [[nodiscard]] QString pendingCertFingerprint() const { return m_pendingCert.fingerprintSha256; }
     [[nodiscard]] QString pendingCertNotBefore() const { return m_pendingCert.notBefore; }
     [[nodiscard]] QString pendingCertNotAfter() const { return m_pendingCert.notAfter; }
+
+    [[nodiscard]] bool awaitingSshHostKeyTrust() const { return m_awaitingSshHostKeyTrust; }
+    [[nodiscard]] QString pendingSshHostKeyFingerprint() const { return m_pendingSshHostKey; }
+    [[nodiscard]] QString pendingSshHostKeyType() const { return m_pendingSshHostKeyType; }
 
     [[nodiscard]] int powerState() const { return m_powerState; }
     [[nodiscard]] QString powerStateLabel() const;
@@ -787,6 +801,9 @@ signals:
     /// or `close()`.
     void sshHostKeyPromptRequired(const QString &fingerprint,
                                    const QString &keyType);
+    /// NOTIFY for the SSH `awaitingSshHostKeyTrust` / pending fields.
+    /// Fires whenever the prompt opens or closes.
+    void sshHostKeyPromptChanged();
     /// Emitted after `trustPendingSshHostKey()` — the QML layer
     /// persists the fingerprint into ComputerModel.
     void trustedSshHostKeyAdded(const QString &fingerprint);

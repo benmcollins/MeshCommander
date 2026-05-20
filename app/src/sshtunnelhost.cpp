@@ -26,6 +26,13 @@ void SshTunnelHost::setConfig(const QVariantMap &cfg)
             m_session->deleteLater();
             m_session = nullptr;
         }
+        if (m_awaitingHostKeyTrust) {
+            m_awaitingHostKeyTrust = false;
+            m_pendingHostKeyFingerprint.clear();
+            m_pendingHostKeyType.clear();
+            emit awaitingHostKeyTrustChanged();
+            emit pendingHostKeyChanged();
+        }
         if (!m_status.isEmpty()) {
             m_status.clear();
             emit statusChanged();
@@ -66,12 +73,20 @@ void SshTunnelHost::setConfig(const QVariantMap &cfg)
             emit connectedChanged();
         });
         QObject::connect(m_session, &qumesh::ssh::SshSession::hostKeyPromptRequired, this,
-                [this](const QString &fp, const QString & /*keyType*/) {
-            // TOFU: auto-trust on first connect, then emit so the
-            // controller can persist the fingerprint into the
-            // ComputerModel for verification on subsequent connects.
-            m_session->trustPendingHostKey();
-            emit trustedHostKeyAdded(fp);
+                [this](const QString &fp, const QString &keyType) {
+            // The SshSession is now paused in `NeedsHostKeyTrust` —
+            // hold the pending state and forward the prompt up. The
+            // QML layer surfaces a confirm dialog; on accept it calls
+            // `trustPendingHostKey(persist)`; on reject the controller
+            // tears the tunnel down via setConfig(enabled=false).
+            // Pre-#270 this auto-pinned, which silently accepted any
+            // new key — TOFU-every-time, effectively no MITM defence.
+            m_pendingHostKeyFingerprint = fp;
+            m_pendingHostKeyType = keyType;
+            m_awaitingHostKeyTrust = true;
+            emit pendingHostKeyChanged();
+            emit awaitingHostKeyTrustChanged();
+            emit hostKeyPromptRequired(fp, keyType);
         });
     }
 
@@ -92,6 +107,19 @@ void SshTunnelHost::setConfig(const QVariantMap &cfg)
     for (const QVariant &v : fps) p.trustedHostKeyFingerprints.append(v.toString());
 
     m_session->open(p);
+}
+
+void SshTunnelHost::trustPendingHostKey(bool persist)
+{
+    if (!m_awaitingHostKeyTrust || m_session == nullptr) return;
+    const QString fp = m_pendingHostKeyFingerprint;
+    m_pendingHostKeyFingerprint.clear();
+    m_pendingHostKeyType.clear();
+    m_awaitingHostKeyTrust = false;
+    emit pendingHostKeyChanged();
+    emit awaitingHostKeyTrustChanged();
+    m_session->trustPendingHostKey();
+    if (persist) emit trustedHostKeyAdded(fp);
 }
 
 } // namespace qumesh::app

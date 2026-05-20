@@ -57,6 +57,12 @@ Item {
         controller: controller
     }
 
+    /// SSH host-key prompt for the per-tab tunnel (#270).
+    SshHostKeyTrustDialog {
+        controller: controller
+        onCancelled: controller.setSshConfig({})
+    }
+
     FileDialog {
         id: isoDialog
         nameFilters: [qsTr("ISO images (*.iso)"), qsTr("All files (*)")]

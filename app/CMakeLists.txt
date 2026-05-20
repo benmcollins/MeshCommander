@@ -144,6 +144,7 @@ qt_add_qml_module(qumesh_appcore
         qml/MachineDetailsWindow.qml
         qml/CertificatesWindow.qml
         qml/CertTrustDialog.qml
+        qml/SshHostKeyTrustDialog.qml
         qml/SetupBinWindow.qml
         qml/BatchProgressDialog.qml
         qml/AccentButton.qml
