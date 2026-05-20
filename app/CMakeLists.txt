@@ -182,6 +182,8 @@ qt_add_qml_module(qumesh_appcore
         qml/MachineDetails/DeviceCertStoreSection.qml
         qml/MachineDetails/WirelessSection.qml
         qml/MachineDetails/CiraSection.qml
+        qml/MachineDetails/PowerSection.qml
+        qml/MachineDetails/SessionLaunchersSection.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
