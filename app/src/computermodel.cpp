@@ -249,6 +249,13 @@ bool ComputerModel::setSshConfig(int row, const QVariantMap &cfg)
         c = snapshot;
         return false;
     }
+    // QAbstractItemModel contract: emit dataChanged after any row
+    // mutation, even for fields without explicit roles. Today QML
+    // reads SSH config imperatively via `sshConfigFor()`, so missing
+    // this signal was invisible — but the moment a binding starts
+    // depending on these fields it would stale-read. See #284.
+    const QModelIndex idx = index(row, 0);
+    emit dataChanged(idx, idx);
     return true;
 }
 
@@ -263,6 +270,8 @@ bool ComputerModel::addTrustedSshHostKey(int row, const QString &fingerprint)
         c = snapshot;
         return false;
     }
+    const QModelIndex idx = index(row, 0);
+    emit dataChanged(idx, idx);
     return true;
 }
 
