@@ -84,12 +84,12 @@ SshSessionWorker::~SshSessionWorker()
 
 QString SshSessionWorker::pendingFingerprint() const
 {
-    QMutexLocker lock(&const_cast<QMutex &>(m_sessionMutex));
+    QMutexLocker lock(&m_pendingHostKeyMutex);
     return m_pendingHostKeyFingerprint;
 }
 QString SshSessionWorker::pendingKeyType() const
 {
-    QMutexLocker lock(&const_cast<QMutex &>(m_sessionMutex));
+    QMutexLocker lock(&m_pendingHostKeyMutex);
     return m_pendingHostKeyType;
 }
 
@@ -98,7 +98,10 @@ void SshSessionWorker::open(SshSession::Params p)
     m_params = std::move(p);
     emit stateChanged(SshSession::Connecting);
 
-    QMutexLocker lock(&m_sessionMutex);
+    // `m_session` is worker-thread-local: open()/close()/
+    // openForwardChannel() all run here (close() is QueuedConnection
+    // from SshSession; openForwardChannel is invokeMethod'd from
+    // SshTunnel). No mutex needed on this side. See #272.
     if (m_session != nullptr) {
         ssh_disconnect(m_session);
         ssh_free(m_session);
@@ -167,35 +170,40 @@ void SshSessionWorker::open(SshSession::Params p)
 void SshSessionWorker::resumeAfterHostKeyTrust()
 {
     if (!m_awaitingHostKeyTrust) return;
-    QMutexLocker lock(&m_sessionMutex);
-    const QString fp = m_pendingHostKeyFingerprint;
+    QString fp;
+    {
+        QMutexLocker lock(&m_pendingHostKeyMutex);
+        fp = m_pendingHostKeyFingerprint;
+        m_pendingHostKeyFingerprint.clear();
+        m_pendingHostKeyType.clear();
+    }
     m_awaitingHostKeyTrust = false;
-    m_pendingHostKeyFingerprint.clear();
-    m_pendingHostKeyType.clear();
-    lock.unlock();
     emit hostKeyTrusted(fp);
     proceedWithAuth();
 }
 
 void SshSessionWorker::close()
 {
-    QMutexLocker lock(&m_sessionMutex);
     if (m_session != nullptr) {
         ssh_disconnect(m_session);
         ssh_free(m_session);
         m_session = nullptr;
     }
     m_awaitingHostKeyTrust = false;
-    m_pendingHostKeyFingerprint.clear();
-    m_pendingHostKeyType.clear();
-    lock.unlock();
+    {
+        QMutexLocker lock(&m_pendingHostKeyMutex);
+        m_pendingHostKeyFingerprint.clear();
+        m_pendingHostKeyType.clear();
+    }
     emit stateChanged(SshSession::Disconnected);
 }
 
 ssh_channel SshSessionWorker::openForwardChannel(const QString &remoteHost,
                                                   quint16 remotePort)
 {
-    QMutexLocker lock(&m_sessionMutex);
+    // Worker-thread-only: SshTunnel uses QMetaObject::invokeMethod
+    // against the worker thread to land here, so `m_session` access
+    // is single-threaded.
     if (m_session == nullptr) return nullptr;
     ssh_channel ch = ssh_channel_new(m_session);
     if (ch == nullptr) return nullptr;
@@ -248,11 +256,17 @@ bool SshSessionWorker::verifyHostKey()
         return true;
     }
 
-    m_pendingHostKeyFingerprint = fp;
-    m_pendingHostKeyType = keyTypeName(keyType);
+    QString keyTypeStr = keyTypeName(keyType);
+    {
+        // Cross-thread visibility for the QML-side `pendingFingerprint`
+        // / `pendingKeyType` readers.
+        QMutexLocker lock(&m_pendingHostKeyMutex);
+        m_pendingHostKeyFingerprint = fp;
+        m_pendingHostKeyType = keyTypeStr;
+    }
     m_awaitingHostKeyTrust = true;
     emit stateChanged(SshSession::NeedsHostKeyTrust);
-    emit hostKeyPromptRequired(fp, m_pendingHostKeyType);
+    emit hostKeyPromptRequired(fp, keyTypeStr);
     return false;
 }
 
