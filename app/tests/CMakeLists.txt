@@ -81,6 +81,7 @@ target_link_libraries(test_kvmcontroller PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Network
+    Qt6::Qml
     Qt6::Test
     qumesh_kvm
     qumesh_redir
@@ -211,6 +212,7 @@ target_include_directories(test_solcontroller PRIVATE ${CMAKE_CURRENT_SOURCE_DIR
 target_link_libraries(test_solcontroller PRIVATE
     Qt6::Core
     Qt6::Network
+    Qt6::Qml
     Qt6::Test
     qumesh_redir
     qumesh_ssh

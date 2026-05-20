@@ -6,6 +6,7 @@
 #include <QPainter>
 #include <QPointer>
 #include <QQuickPaintedItem>
+#include <QtQmlIntegration>
 
 namespace qumesh::app {
 
@@ -19,6 +20,7 @@ class KvmFramebuffer;
 class KvmViewer : public QQuickPaintedItem
 {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(qumesh::app::KvmController *controller
                    READ controller WRITE setController NOTIFY controllerChanged)
 

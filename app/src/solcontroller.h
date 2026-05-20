@@ -8,6 +8,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVariantMap>
+#include <QtQmlIntegration>
 
 #include "redir/redir_client.h"
 #include "terminal/terminalscreen.h"
@@ -31,6 +32,7 @@ class SshTunnelHost;
 class SolController : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(QString host READ host WRITE setHost NOTIFY hostChanged)
     Q_PROPERTY(QString user READ user WRITE setUser NOTIFY userChanged)
     Q_PROPERTY(QString password READ password WRITE setPassword NOTIFY passwordChanged)
