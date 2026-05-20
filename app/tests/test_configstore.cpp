@@ -8,6 +8,10 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#ifdef Q_OS_UNIX
+#  include <sys/stat.h>
+#endif
+
 using qumesh::config::ConfigStore;
 
 class TestConfigStore : public QObject
@@ -20,6 +24,7 @@ private slots:
     void malformedJsonReportsError();
     void saveCreatesDirIfMissing();
     void atomicityPartialWriteLeavesOldFile();
+    void savedFilesAreOwnerReadableOnly();
 };
 
 void TestConfigStore::emptyDirHasNoNativeConfig()
@@ -115,6 +120,44 @@ void TestConfigStore::atomicityPartialWriteLeavesOldFile()
     QCOMPARE(reloaded.size(), 1);
     QCOMPARE(reloaded.first().toObject().value(QStringLiteral("name")).toString(),
              QStringLiteral("second"));
+}
+
+/// #273 — ConfigStore must write secret-bearing files with 0600 and
+/// the containing directory with 0700 on POSIX. The Q_OS_WIN side
+/// uses ACLs which Qt's setPermissions translates to but is hard to
+/// inspect in a portable way; skip there. The check uses the
+/// platform-native stat() so the QFileDevice masking doesn't lie to
+/// us — Qt's Permission readback can claim 0600 even when the inode
+/// mode disagrees, depending on filesystem.
+void TestConfigStore::savedFilesAreOwnerReadableOnly()
+{
+#ifndef Q_OS_UNIX
+    QSKIP("POSIX-specific mode check");
+#else
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    ConfigStore store(tmp.path());
+
+    QVERIFY(store.saveComputers(QJsonArray{
+        QJsonObject{{QStringLiteral("host"), QStringLiteral("h")}}}));
+    QVERIFY(store.saveSettings(QJsonObject{
+        {QStringLiteral("k"), QStringLiteral("v")}}));
+
+    auto checkFile = [](const QString &path) {
+        struct ::stat st {};
+        QVERIFY2(::stat(path.toLocal8Bit().constData(), &st) == 0,
+                 qPrintable(path));
+        // Owner can read/write; group + other must have no bits.
+        QCOMPARE(st.st_mode & 0177, mode_t(0));
+    };
+
+    checkFile(QDir(tmp.path()).filePath(QStringLiteral("computers.json")));
+    checkFile(QDir(tmp.path()).filePath(QStringLiteral("settings.json")));
+
+    struct ::stat dirSt {};
+    QVERIFY(::stat(tmp.path().toLocal8Bit().constData(), &dirSt) == 0);
+    QCOMPARE(dirSt.st_mode & 0077, mode_t(0));
+#endif
 }
 
 QTEST_GUILESS_MAIN(TestConfigStore)

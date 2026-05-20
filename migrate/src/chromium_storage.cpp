@@ -30,6 +30,14 @@ QString copyDirectoryRecursive(const QString &source, const QString &dest)
     if (!destDir.exists() && !destDir.mkpath(QStringLiteral("."))) {
         return QStringLiteral("could not create destination directory: %1").arg(dest);
     }
+    // Lock the destination dir to 0700 immediately — the leveldb copy
+    // we're about to write still contains the v2-encrypted credential
+    // blobs from the source, and lives under a shared TempLocation
+    // (POSIX `/tmp` or per-user `%TEMP%`). Tighten now so no window
+    // exists where another local user could read the working set.
+    // See #273.
+    QFile::setPermissions(dest,
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
 
     const auto entries = srcDir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
     for (const auto &fi : entries) {
@@ -38,6 +46,8 @@ QString copyDirectoryRecursive(const QString &source, const QString &dest)
         if (!QFile::copy(from, to)) {
             return QStringLiteral("could not copy %1 -> %2").arg(from, to);
         }
+        QFile::setPermissions(to,
+            QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     }
     return QString();
 }
