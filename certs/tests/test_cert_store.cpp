@@ -151,6 +151,13 @@ void TestCertStore::parserRejectsBadPkcs12Password()
     const CertEntry e = CertParser::fromPkcs12(g.p12, QStringLiteral("wrong"), &err);
     QVERIFY(e.certDer.isEmpty());
     QVERIFY(!err.isEmpty());
+    // #292 — the bare ERR_get_error() path used to return "no error"
+    // when the queue was empty. Ensure the message is now informative
+    // (either drained queue contents, or the explicit fallback).
+    QVERIFY2(!err.contains(QStringLiteral("no error"),
+                            Qt::CaseInsensitive),
+             qPrintable(err));
+    QVERIFY(err.contains(QStringLiteral("PKCS#12 parse failed")));
 }
 
 void TestCertStore::storeRoundTripsEntries()

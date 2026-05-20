@@ -125,10 +125,28 @@ CertEntry CertParser::fromPkcs12(const QByteArray &p12, const QString &password,
     PKCS12_free(pkcs);
     if (parsed == 0 || cert == nullptr) {
         if (error) {
-            unsigned long err = ERR_get_error();
-            char buf[256];
-            ERR_error_string_n(err, buf, sizeof(buf));
-            *error = QStringLiteral("PKCS#12 parse failed: %1").arg(QString::fromLatin1(buf));
+            // OpenSSL's error stack may hold one (typically "wrong
+            // password") or several entries; the bare ERR_get_error()
+            // pop returns 0 when the queue is empty, and
+            // ERR_error_string_n(0, …) yields a meaningless "no error"
+            // — that's what made "wrong PKCS#12 password" especially
+            // hard to diagnose pre-#292. Peek first; drain everything
+            // if anything is queued; otherwise fall back to a generic
+            // message.
+            if (ERR_peek_last_error() != 0) {
+                QStringList msgs;
+                unsigned long e2 = 0;
+                while ((e2 = ERR_get_error()) != 0) {
+                    char buf[256];
+                    ERR_error_string_n(e2, buf, sizeof(buf));
+                    msgs << QString::fromLatin1(buf);
+                }
+                *error = QStringLiteral("PKCS#12 parse failed: %1")
+                             .arg(msgs.join(QStringLiteral("; ")));
+            } else {
+                *error = QStringLiteral("PKCS#12 parse failed "
+                                        "(wrong password?)");
+            }
         }
         if (pkey) EVP_PKEY_free(pkey);
         if (cert) X509_free(cert);
