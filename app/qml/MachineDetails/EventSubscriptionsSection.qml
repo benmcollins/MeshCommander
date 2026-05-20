@@ -15,10 +15,16 @@ Flickable {
     id: root
 
     required property MachineDetailsController controller
+    required property var eventSubscriptionDialog
 
     contentWidth: width
     contentHeight: subsCol.implicitHeight + 48
     clip: true
+
+    readonly property bool catalogLoaded: {
+        const es = root.controller.eventSubscriptions || {};
+        return (es.filters && es.filters.length > 0);
+    }
 
     ColumnLayout {
         id: subsCol
@@ -32,35 +38,54 @@ Flickable {
             Layout.leftMargin: 24
             Layout.rightMargin: 24
 
-            Text {
-                text: qsTr("EVENT SUBSCRIPTIONS")
-                color: Colors.textMuted
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-                font.letterSpacing: 2
-                font.weight: Font.Medium
-            }
-            Text {
-                text: {
-                    const es = controller.eventSubscriptions || {};
-                    if (Object.keys(es).length === 0)
-                        return qsTr("Not yet fetched");
-                    const s = es.subscriptions || [];
-                    return s.length === 0
-                        ? qsTr("No subscriptions configured")
-                        : qsTr("%1 subscription%2")
-                              .arg(s.length)
-                              .arg(s.length === 1 ? "" : "s");
+            RowLayout {
+                spacing: 12
+                Layout.fillWidth: true
+
+                ColumnLayout {
+                    spacing: 4
+                    Layout.fillWidth: true
+
+                    Text {
+                        text: qsTr("EVENT SUBSCRIPTIONS")
+                        color: Colors.textMuted
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        font.letterSpacing: 2
+                        font.weight: Font.Medium
+                    }
+                    Text {
+                        text: {
+                            const es = root.controller.eventSubscriptions || {};
+                            if (Object.keys(es).length === 0)
+                                return qsTr("Not yet fetched");
+                            const s = es.subscriptions || [];
+                            return s.length === 0
+                                ? qsTr("No subscriptions configured")
+                                : qsTr("%1 subscription%2")
+                                      .arg(s.length)
+                                      .arg(s.length === 1 ? "" : "s");
+                        }
+                        color: Colors.text
+                        font.family: Type.sans
+                        font.pixelSize: 20
+                    }
+                    Text {
+                        visible: !root.catalogLoaded
+                        text: qsTr("Refresh to load the filter catalog before subscribing.")
+                        color: Colors.textFaint
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                    }
                 }
-                color: Colors.text
-                font.family: Type.sans
-                font.pixelSize: 20
-            }
-            Text {
-                text: qsTr("Read-only — Subscribe / UnSubscribe arrives in Phase B.")
-                color: Colors.textFaint
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
+
+                AccentButton {
+                    text: qsTr("Subscribe")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    enabled: root.catalogLoaded
+                    onClicked: root.eventSubscriptionDialog.openForAdd()
+                }
             }
         }
 
@@ -106,6 +131,27 @@ Flickable {
                                 color: Colors.textMuted
                                 font.family: Type.sans
                                 font.pixelSize: Type.sizeXs
+                            }
+                            FlatButton {
+                                text: qsTr("Delete")
+                                font.family: Type.sans
+                                font.pixelSize: Type.sizeXs
+                                onClicked: {
+                                    eventSubscriptionConfirmDialog.pendingFilterInstanceId =
+                                        subRow.modelData.filterInstanceId || "";
+                                    eventSubscriptionConfirmDialog.pendingListenerName =
+                                        subRow.modelData.listenerName || "";
+                                    eventSubscriptionConfirmDialog.ask(
+                                        qsTr("Delete subscription"),
+                                        qsTr("Stop pushing %1 events to %2. The listener will be cleaned up if no other subscription references it.")
+                                            .arg(subRow.modelData.filterInstanceId
+                                                 || qsTr("the filter"))
+                                            .arg(subRow.modelData.destination
+                                                 || subRow.modelData.listenerName
+                                                 || qsTr("the listener")),
+                                        qsTr("Delete"),
+                                        true);
+                                }
                             }
                         }
                         Text {

@@ -1624,6 +1624,73 @@ QString humanizeIsoDuration(const QString &iso)
 
 } // namespace
 
+void MachineDetailsController::subscribeToEventFilter(const QString &filterInstanceId,
+                                                       const QString &deliveryMode,
+                                                       const QString &notifyUrl,
+                                                       const QString &user,
+                                                       const QString &pass)
+{
+    setLastError({});
+    if (filterInstanceId.isEmpty()) {
+        setLastError(QStringLiteral("Subscribe: filter is required."));
+        return;
+    }
+    if (notifyUrl.isEmpty()
+        || !(notifyUrl.startsWith(QStringLiteral("http://"))
+              || notifyUrl.startsWith(QStringLiteral("https://")))) {
+        setLastError(QStringLiteral("Subscribe: notify URL must be http:// or https://."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Subscribe: host is empty."));
+        return;
+    }
+    const auto mode = deliveryMode.compare(QStringLiteral("Push"), Qt::CaseInsensitive) == 0
+        ? qumesh::wsman::EventDeliveryMode::Push
+        : qumesh::wsman::EventDeliveryMode::PushWithAck;
+    incInflight();
+    qumesh::wsman::subscribeToEventFilter(m_client, filterInstanceId, mode,
+        notifyUrl, user, pass,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Subscribe: failed.")
+                    : QStringLiteral("Subscribe: %1").arg(r.error));
+                return;
+            }
+            refreshEventSubscriptions();
+        });
+}
+
+void MachineDetailsController::unsubscribeFromEventFilter(const QString &filterInstanceId,
+                                                            const QString &listenerName)
+{
+    setLastError({});
+    if (filterInstanceId.isEmpty() || listenerName.isEmpty()) {
+        setLastError(QStringLiteral("Unsubscribe: filter and listener are required."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Unsubscribe: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::unsubscribeFromEventFilter(m_client, filterInstanceId, listenerName,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Unsubscribe: failed.")
+                    : QStringLiteral("Unsubscribe: %1").arg(r.error));
+                return;
+            }
+            refreshEventSubscriptions();
+        });
+}
+
 void MachineDetailsController::refreshWakeAlarms()
 {
     if (deferIfSshConnecting(PendingWakeAlarms)) return;

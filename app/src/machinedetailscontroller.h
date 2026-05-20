@@ -609,6 +609,24 @@ public:
     /// Enumerate CIM_FilterCollection + CIM_ListenerDestination +
     /// CIM_FilterCollectionSubscription. See #163.
     Q_INVOKABLE void refreshEventSubscriptions();
+    /// Invoke WS-Eventing Subscribe against the AMT firmware to
+    /// route notifications from `filterInstanceId` to `notifyUrl`.
+    /// `deliveryMode` is the dialog's enum string — `"Push"` or
+    /// `"PushWithAck"`. `user` / `pass` are optional HTTP basic
+    /// auth credentials forwarded to the listener. On success
+    /// refreshes the section. See #345.
+    Q_INVOKABLE void subscribeToEventFilter(const QString &filterInstanceId,
+                                             const QString &deliveryMode,
+                                             const QString &notifyUrl,
+                                             const QString &user,
+                                             const QString &pass);
+    /// Invoke WS-Eventing Unsubscribe. `filterInstanceId` +
+    /// `listenerName` together identify the
+    /// `CIM_FilterCollectionSubscription` row to drop. AMT cleans
+    /// up the auto-created listener if no other subscription
+    /// references it. On success refreshes the section. See #345.
+    Q_INVOKABLE void unsubscribeFromEventFilter(const QString &filterInstanceId,
+                                                  const QString &listenerName);
     /// Enumerate IPS_AlarmClockOccurrence for the Wake alarms pane.
     /// See #161 phase A.
     Q_INVOKABLE void refreshWakeAlarms();

@@ -517,6 +517,54 @@ struct EventSubscriptionsResult
 void getEventSubscriptions(WsmanClient *client,
                            std::function<void(EventSubscriptionsResult)> callback);
 
+/// Wire-level delivery mode for `subscribeToEventFilter`. AMT supports
+/// `Push` (fire-and-forget) and `PushWithAck` (firmware retries until
+/// the listener acknowledges). See #345.
+enum class EventDeliveryMode { Push, PushWithAck };
+
+/// Invoke WS-Eventing Subscribe with ResourceURI `CIM_FilterCollection`
+/// and the chosen filter as the `InstanceID` selector. `notifyUrl` is
+/// the listener-side endpoint AMT pushes notifications to. If `user`
+/// or `pass` is set, both are embedded as a WS-Trust UsernameToken so
+/// the firmware can forward HTTP basic auth to the listener. See #345.
+void subscribeToEventFilter(WsmanClient *client,
+                              const QString &filterInstanceId,
+                              EventDeliveryMode deliveryMode,
+                              const QString &notifyUrl,
+                              const QString &user,
+                              const QString &pass,
+                              std::function<void(InvokeResult)> callback);
+
+/// Test-only seam for `subscribeToEventFilter`: hand back the bytes
+/// the envelope builder would send, without round-tripping through a
+/// `WsmanClient`. Used to lock in the on-wire shape.
+[[nodiscard]] QByteArray buildSubscribeEnvelopeForTesting(
+    const QString &filterInstanceId,
+    EventDeliveryMode deliveryMode,
+    const QString &notifyUrl,
+    const QString &user,
+    const QString &pass,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:subscribe-test"));
+
+/// Invoke WS-Eventing Unsubscribe with ResourceURI
+/// `CIM_FilterCollectionSubscription`. The two selectors are
+/// EPR-valued (not scalars): a Filter EPR pointing at the
+/// `CIM_FilterCollection` row by `InstanceID`, and a Handler EPR
+/// pointing at the `CIM_ListenerDestinationWSManagement` row by the
+/// standard 4-key tuple with `Name = listenerName`. See #345.
+void unsubscribeFromEventFilter(WsmanClient *client,
+                                  const QString &filterInstanceId,
+                                  const QString &listenerName,
+                                  std::function<void(InvokeResult)> callback);
+
+/// Test-only seam for `unsubscribeFromEventFilter`.
+[[nodiscard]] QByteArray buildUnsubscribeEnvelopeForTesting(
+    const QString &filterInstanceId,
+    const QString &listenerName,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:unsubscribe-test"));
+
 /// Render a `CIM_ListenerDestination.DeliveryMode` enum into a label.
 [[nodiscard]] QString listenerDeliveryModeLabel(int code);
 
