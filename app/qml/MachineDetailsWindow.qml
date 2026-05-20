@@ -637,31 +637,24 @@ AppWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            // Error banner across all sections.
-            Rectangle {
-                visible: controller.lastError.length > 0
-                color: Colors.bannerFailed
+            // Error banner across all sections (#283). Replaces the
+            // hand-rolled red Rectangle that pinned its own height to
+            // the inner Text. Adds a Dismiss button so the operator
+            // can clear stale errors without switching sections.
+            ResultBanner {
+                id: errBanner
+                kind: "error"
+                text: controller.lastError
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                implicitHeight: errText.implicitHeight + 12
                 z: 10
-
-                Text {
-                    id: errText
-                    text: controller.lastError
-                    color: Colors.text
-                    font.family: Type.sans
-                    font.pixelSize: Type.sizeS
-                    wrapMode: Text.WordWrap
-                    anchors.fill: parent
-                    anchors.margins: 6
-                }
+                onDismissed: controller.clearLastError()
             }
 
             StackLayout {
                 anchors.fill: parent
-                anchors.topMargin: controller.lastError.length > 0 ? errText.implicitHeight + 12 : 0
+                anchors.topMargin: errBanner.visible ? errBanner.implicitHeight : 0
                 currentIndex: root.currentSection
 
                 // 0 — Overview

@@ -16,6 +16,13 @@ namespace qumesh::app {
 class CertModel : public QAbstractListModel
 {
     Q_OBJECT
+    /// QML-bindable error string. Pre-#283 this was a plain accessor
+    /// without Q_PROPERTY, so the QML binding `CertModel.lastError`
+    /// returned `undefined` and the error UI silently never appeared.
+    /// Promoted to a Q_PROPERTY with NOTIFY so the ResultBanner
+    /// actually reacts to changes.
+    Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
+
 public:
     enum Role : int {
         IdRole = Qt::UserRole + 1,
@@ -36,6 +43,10 @@ public:
 
     [[nodiscard]] QString lastError() const { return m_lastError; }
 
+    /// Clear the lastError property — wired to ResultBanner's
+    /// Dismiss button (#283).
+    Q_INVOKABLE void clearLastError();
+
     // QAbstractListModel
     [[nodiscard]] int rowCount(const QModelIndex &parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex &index, int role) const override;
@@ -55,8 +66,12 @@ public:
     Q_INVOKABLE bool exportAsDer(int row, const QString &path);
     Q_INVOKABLE bool exportAsPem(int row, const QString &path);
 
+signals:
+    void lastErrorChanged();
+
 private:
     void reload();
+    void setLastError(const QString &e);
 
     certs::CertStore m_store;
     QString m_lastError;

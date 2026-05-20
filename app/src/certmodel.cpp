@@ -24,8 +24,9 @@ void CertModel::setStorePath(const QString &path)
     beginResetModel();
     m_store = CertStore(path);
     QString err;
-    if (!m_store.load(&err)) m_lastError = err;
+    bool loadOk = m_store.load(&err);
     endResetModel();
+    if (!loadOk) setLastError(err);
 }
 
 int CertModel::rowCount(const QModelIndex &parent) const
@@ -68,10 +69,10 @@ QHash<int, QByteArray> CertModel::roleNames() const
 
 int CertModel::importFromFile(const QString &path, const QString &password)
 {
-    m_lastError.clear();
+    setLastError({});
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) {
-        m_lastError = f.errorString();
+        setLastError(f.errorString());
         return -1;
     }
     const QByteArray bytes = f.readAll();
@@ -90,9 +91,9 @@ int CertModel::importFromFile(const QString &path, const QString &password)
         e = CertParser::fromDer(bytes, &parseErr);
     }
     if (e.certDer.isEmpty()) {
-        m_lastError = parseErr.isEmpty()
+        setLastError(parseErr.isEmpty()
             ? QStringLiteral("could not parse certificate")
-            : parseErr;
+            : parseErr);
         return -1;
     }
 
@@ -107,7 +108,7 @@ int CertModel::importFromFile(const QString &path, const QString &password)
         CertStore toSave = next;
         QString saveErr;
         if (!toSave.save(&saveErr)) {
-            m_lastError = saveErr;
+            setLastError(saveErr);
             return -1;
         }
     }
@@ -133,7 +134,7 @@ bool CertModel::removeAt(int row)
 
     QString saveErr;
     if (!next.save(&saveErr)) {
-        m_lastError = saveErr;
+        setLastError(saveErr);
         return false;
     }
     beginRemoveRows({}, row, row);
@@ -144,15 +145,15 @@ bool CertModel::removeAt(int row)
 
 bool CertModel::exportAsDer(int row, const QString &path)
 {
-    m_lastError.clear();
+    setLastError({});
     if (row < 0 || row >= m_store.entries().size()) {
-        m_lastError = QStringLiteral("row out of range");
+        setLastError(QStringLiteral("row out of range"));
         return false;
     }
     const CertEntry &e = m_store.entries().at(row);
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        m_lastError = f.errorString();
+        setLastError(f.errorString());
         return false;
     }
     return f.write(e.certDer) == e.certDer.size();
@@ -160,19 +161,19 @@ bool CertModel::exportAsDer(int row, const QString &path)
 
 bool CertModel::exportAsPem(int row, const QString &path)
 {
-    m_lastError.clear();
+    setLastError({});
     if (row < 0 || row >= m_store.entries().size()) {
-        m_lastError = QStringLiteral("row out of range");
+        setLastError(QStringLiteral("row out of range"));
         return false;
     }
     const QByteArray pem = CertParser::toPem(m_store.entries().at(row));
     if (pem.isEmpty()) {
-        m_lastError = QStringLiteral("could not encode PEM");
+        setLastError(QStringLiteral("could not encode PEM"));
         return false;
     }
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        m_lastError = f.errorString();
+        setLastError(f.errorString());
         return false;
     }
     return f.write(pem) == pem.size();
@@ -180,9 +181,20 @@ bool CertModel::exportAsPem(int row, const QString &path)
 
 void CertModel::reload()
 {
+    QString err;
     beginResetModel();
-    m_store.load(&m_lastError);
+    m_store.load(&err);
     endResetModel();
+    setLastError(err);
 }
+
+void CertModel::setLastError(const QString &e)
+{
+    if (e == m_lastError) return;
+    m_lastError = e;
+    emit lastErrorChanged();
+}
+
+void CertModel::clearLastError() { setLastError({}); }
 
 } // namespace qumesh::app

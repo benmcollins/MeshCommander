@@ -714,6 +714,11 @@ public:
     /// Clears pending trust state and asks the QML window to close.
     Q_INVOKABLE void close();
 
+    /// Clear the `lastError` property — wired to the ResultBanner's
+    /// Dismiss button (#283) so the operator can clear stale errors
+    /// without switching sections.
+    Q_INVOKABLE void clearLastError() { setLastError({}); }
+
 signals:
     void hostChanged();
     void userChanged();
