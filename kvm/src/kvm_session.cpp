@@ -219,13 +219,22 @@ bool KvmSession::stepFrameLoop()
     }
     if (tag == MsgServerCutText) {
         // 1 tag + 3 padding + u32 length + bytes; we just consume it.
+        // Cap len at 1 MB — far over any realistic clipboard payload —
+        // so a wire-supplied 4 GB length can't sign-overflow the
+        // `static_cast<int>` and cause an OOB read at the `remove()`
+        // call below. See #271.
+        constexpr quint32 kServerCutTextMax = 1u * 1024u * 1024u;
         if (m_inbox.size() < 8) return false;
         const quint32 len = (static_cast<quint32>(static_cast<unsigned char>(m_inbox.at(4))) << 24)
                           | (static_cast<quint32>(static_cast<unsigned char>(m_inbox.at(5))) << 16)
                           | (static_cast<quint32>(static_cast<unsigned char>(m_inbox.at(6))) << 8)
                           | static_cast<quint32>(static_cast<unsigned char>(m_inbox.at(7)));
-        if (m_inbox.size() < static_cast<int>(8 + len)) return false;
-        m_inbox.remove(0, 8 + static_cast<int>(len));
+        if (len > kServerCutTextMax) {
+            fail(QStringLiteral("ServerCutText length too large: %1").arg(len));
+            return false;
+        }
+        if (m_inbox.size() < qsizetype(8) + qsizetype(len)) return false;
+        m_inbox.remove(0, qsizetype(8) + qsizetype(len));
         return true;
     }
 

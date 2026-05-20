@@ -135,6 +135,14 @@ QByteArray buildDigestResponse(const QString &user, const QString &realm,
     return buildAuthFrame(AuthType::DigestWithQop, data);
 }
 
+// Upper bound on AuthReply.dataLen. The legitimate body is a few
+// length-prefixed strings (realm + nonce + qop), each capped at 255
+// bytes by its u8 length prefix — so a real reply tops out around 768
+// bytes. Cap at 64 KB so a hostile or buggy peer can't supply a
+// 4 GB length and trigger a signed-overflow OOB read at the
+// `buffer.sliced()` call below (#271).
+constexpr quint32 kAuthReplyMaxData = 64 * 1024;
+
 bool tryParseAuthReply(QByteArrayView buffer, AuthReply *reply, int *consumed)
 {
     if (consumed != nullptr) *consumed = 0;
@@ -143,7 +151,9 @@ bool tryParseAuthReply(QByteArrayView buffer, AuthReply *reply, int *consumed)
     if (buffer.size() < kAuthReplyFixedSize) return false;
 
     const quint32 dataLen = read32Le(buffer, 5);
-    if (buffer.size() < kAuthReplyFixedSize + static_cast<int>(dataLen)) return false;
+    if (dataLen > kAuthReplyMaxData) return false;
+    if (buffer.size() < qsizetype(kAuthReplyFixedSize) + qsizetype(dataLen))
+        return false;
 
     if (reply != nullptr) {
         reply->status = static_cast<unsigned char>(buffer[1]);
@@ -153,7 +163,8 @@ bool tryParseAuthReply(QByteArrayView buffer, AuthReply *reply, int *consumed)
         reply->nonce.clear();
         reply->qop.clear();
 
-        const QByteArrayView data = buffer.sliced(kAuthReplyFixedSize, dataLen);
+        const QByteArrayView data =
+            buffer.sliced(kAuthReplyFixedSize, qsizetype(dataLen));
 
         if (reply->authType == AuthType::Query) {
             // Body is a bitmap of supported auth types — each byte names a
@@ -190,7 +201,8 @@ bool tryParseAuthReply(QByteArrayView buffer, AuthReply *reply, int *consumed)
         }
     }
 
-    if (consumed != nullptr) *consumed = kAuthReplyFixedSize + static_cast<int>(dataLen);
+    if (consumed != nullptr)
+        *consumed = kAuthReplyFixedSize + int(dataLen);
     return true;
 }
 
