@@ -33,7 +33,9 @@ class MigrationController : public QObject
     Q_PROPERTY(int computersImported READ computersImported
                    NOTIFY computersImportedChanged)
 public:
-    enum State : int {
+    // `enum class` matches SolController::State / KvmController::State
+    // / IderController::State — was a plain `enum` here pre-#295.
+    enum class State : int {
         Idle,         ///< Nothing to do (native config already exists, or no legacy data found)
         Migrating,    ///< Currently running the importer
         Imported,     ///< Migration succeeded
@@ -72,7 +74,7 @@ private:
 
     config::ConfigStore *m_store = nullptr;
     QString m_legacyDataDirOverride;
-    State m_state = Idle;
+    State m_state = State::Idle;
     QString m_message;
     int m_computersImported = 0;
 };

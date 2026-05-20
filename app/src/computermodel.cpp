@@ -171,6 +171,13 @@ bool ComputerModel::setData(const QModelIndex &index, const QVariant &value, int
 Qt::ItemFlags ComputerModel::flags(const QModelIndex &index) const
 {
     if (!index.isValid()) return Qt::NoItemFlags;
+    // ItemIsEditable applies to the row as a whole — Qt's flags() API
+    // doesn't take a role, so we can't narrow by it here. setData()
+    // is the gate that actually rejects unsupported roles (Id,
+    // TrustedFingerprints, the SSH fields) by returning false. QML
+    // doesn't have an item-view that probes flags() on a per-role
+    // basis (it goes through Q_INVOKABLEs instead), so the apparent
+    // mismatch isn't observable in practice. See #295.
     return QAbstractListModel::flags(index) | Qt::ItemIsEditable;
 }
 
