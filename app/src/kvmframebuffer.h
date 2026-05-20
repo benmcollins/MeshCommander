@@ -21,7 +21,13 @@ class KvmFramebuffer : public QObject
     Q_OBJECT
     Q_PROPERTY(int width READ width NOTIFY resized)
     Q_PROPERTY(int height READ height NOTIFY resized)
-    Q_PROPERTY(int version READ version NOTIFY tileApplied)
+    // `version` is a monotonic frame counter — bumped on tileApplied,
+    // resize, and clear. Pre-#287 it reused `tileApplied(QRect)` as
+    // its NOTIFY signal; same fire-points worked in practice but the
+    // signal name implied a different scope (tile arrival only) and
+    // qmllint flagged the asymmetric arity (tileApplied takes a
+    // QRect, NOTIFY signals for ints conventionally take none).
+    Q_PROPERTY(int version READ version NOTIFY versionChanged)
 
 public:
     explicit KvmFramebuffer(QObject *parent = nullptr);
@@ -38,6 +44,7 @@ public:
 signals:
     void resized();
     void tileApplied(QRect rect);
+    void versionChanged();
 
 private:
     QImage m_image;

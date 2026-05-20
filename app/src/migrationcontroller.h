@@ -24,7 +24,14 @@ class MigrationController : public QObject
     Q_OBJECT
     Q_PROPERTY(State state READ state NOTIFY stateChanged)
     Q_PROPERTY(QString message READ message NOTIFY messageChanged)
-    Q_PROPERTY(int computersImported READ computersImported NOTIFY messageChanged)
+    // Distinct NOTIFY so a future caller that updates the count
+    // without touching the message still re-binds. Pre-#287 both
+    // properties shared `messageChanged` — fine today because the
+    // count is always set immediately before the message, but a
+    // contract violation against Qt's "NOTIFY fires iff value
+    // changed" expectation.
+    Q_PROPERTY(int computersImported READ computersImported
+                   NOTIFY computersImportedChanged)
 public:
     enum State : int {
         Idle,         ///< Nothing to do (native config already exists, or no legacy data found)
@@ -57,6 +64,7 @@ public:
 signals:
     void stateChanged();
     void messageChanged();
+    void computersImportedChanged();
 
 private:
     void setState(State s);

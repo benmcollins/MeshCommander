@@ -57,6 +57,7 @@ void MigrationController::checkAndMaybeMigrate()
     }
 
     m_computersImported = r.computersCount;
+    emit computersImportedChanged();
     setMessage(QStringLiteral("Imported %1 computers, %2 certificates, %3 settings from %4")
                    .arg(r.computersCount)
                    .arg(r.certificatesCount)
