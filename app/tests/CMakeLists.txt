@@ -10,19 +10,46 @@ function(qumesh_app_test name)
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/computermodel.h
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/secret_codec.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/secret_codec.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/keystore.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/keystore.h
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/migrationcontroller.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/migrationcontroller.h
     )
+    # Platform-specific KeyStore backend — same conditional as the
+    # production target in app/CMakeLists.txt. See #306.
+    if(APPLE)
+        target_sources(${name} PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/keystore_mac.mm)
+        set_source_files_properties(
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/keystore_mac.mm
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        find_library(_sec_fw Security REQUIRED)
+        find_library(_found_fw Foundation REQUIRED)
+        target_link_libraries(${name} PRIVATE ${_sec_fw} ${_found_fw})
+    elseif(WIN32)
+        target_sources(${name} PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/keystore_win.cpp)
+        target_link_libraries(${name} PRIVATE crypt32)
+    else()
+        target_sources(${name} PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/keystore_linux.cpp)
+    endif()
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
     target_link_libraries(${name} PRIVATE
         Qt6::Core
         Qt6::Network
         Qt6::Qml
         Qt6::Test
+        OpenSSL::Crypto
         qumesh_migrate
         qumesh_wsman
     )
     add_test(NAME ${name} COMMAND ${name})
+    # Skip the platform keystore in tests — on macOS that means no
+    # Keychain prompts; on Windows / Linux it's a no-op since the
+    # file fallbacks are unattended already. See #306.
+    set_tests_properties(${name} PROPERTIES
+        ENVIRONMENT "QUMESH_NO_KEYSTORE=1")
 endfunction()
 
 qt_add_executable(test_smoke test_smoke.cpp)
@@ -32,6 +59,7 @@ add_test(NAME smoke COMMAND test_smoke)
 qumesh_app_test(test_configstore)
 qumesh_app_test(test_computermodel)
 qumesh_app_test(test_migrationcontroller)
+qumesh_app_test(test_secret_codec)
 # test_migrationcontroller also seeds a real leveldb fixture.
 target_link_libraries(test_migrationcontroller PRIVATE leveldb)
 

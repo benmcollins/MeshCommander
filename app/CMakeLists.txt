@@ -14,6 +14,8 @@ qt_add_library(qumesh_appcore STATIC
     src/configstore.h
     src/secret_codec.cpp
     src/secret_codec.h
+    src/keystore.cpp
+    src/keystore.h
     src/ssh_tunnel_opener.cpp
     src/ssh_tunnel_opener.h
     src/sshtunnelhost.cpp
@@ -194,7 +196,26 @@ target_link_libraries(qumesh_appcore PUBLIC
     qumesh_wsman
     qumesh_rmcp
     qumesh_ssh
+    OpenSSL::Crypto
 )
+
+# Platform-specific KeyStore backend for the v3 SecretCodec envelope
+# (#306). Each platform compiles exactly one impl into qumesh_appcore;
+# the abstract interface lives in keystore.h.
+if(APPLE)
+    target_sources(qumesh_appcore PRIVATE src/keystore_mac.mm)
+    set_source_files_properties(src/keystore_mac.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    find_library(SECURITY_FRAMEWORK Security REQUIRED)
+    find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+    target_link_libraries(qumesh_appcore PRIVATE
+        ${SECURITY_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
+elseif(WIN32)
+    target_sources(qumesh_appcore PRIVATE src/keystore_win.cpp)
+    target_link_libraries(qumesh_appcore PRIVATE crypt32)
+else()
+    target_sources(qumesh_appcore PRIVATE src/keystore_linux.cpp)
+endif()
 
 target_link_libraries(qumesh PRIVATE qumesh_appcore)
 
