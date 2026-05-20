@@ -165,6 +165,8 @@ qt_add_qml_module(qumesh_appcore
         qml/PlatformErasePrompt.qml
         qml/PowerPolicyDialog.qml
         qml/SecureErasePrompt.qml
+        qml/MachineDetails/OverviewSection.qml
+        qml/MachineDetails/TimeSection.qml
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
