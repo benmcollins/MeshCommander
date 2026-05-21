@@ -3,6 +3,7 @@
 
 #include "wsman/soap_envelope.h"
 
+#include <QLoggingCategory>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
@@ -11,6 +12,24 @@
 namespace qumesh::wsman {
 
 namespace {
+
+Q_LOGGING_CATEGORY(lcSoapEnvelope, "qumesh.wsman.soap_envelope")
+
+/// Check the writer after `writeEndDocument()` and, if it has tripped,
+/// clear the partial buffer so callers see an unambiguous empty result.
+/// Today every builder writes to a `QByteArray`, which cannot fail, so
+/// this guard is purely defensive — but it prevents silent corruption
+/// if the writer is ever pointed at a `QFile`, `QSslSocket`, or any
+/// other `QIODevice` that *can* short-write or hit an EIO.
+void finalizeWriter(QXmlStreamWriter &w, QByteArray &out,
+                    const char *builderName)
+{
+    if (w.hasError()) {
+        qCWarning(lcSoapEnvelope) << "writer error building" << builderName
+                                  << "- returning empty envelope";
+        out.clear();
+    }
+}
 
 constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
 constexpr char kNsAddressing[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
@@ -93,6 +112,7 @@ QByteArray buildIdentifyEnvelope()
     w.writeEndElement(); // Body
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
+    finalizeWriter(w, out, "buildIdentifyEnvelope");
     return out;
 }
 
@@ -119,6 +139,7 @@ QByteArray buildGetEnvelope(const QString &resourceUri,
 
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
+    finalizeWriter(w, out, "buildGetEnvelope");
     return out;
 }
 
@@ -146,6 +167,7 @@ QByteArray buildDeleteEnvelope(const QString &resourceUri,
 
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
+    finalizeWriter(w, out, "buildDeleteEnvelope");
     return out;
 }
 
@@ -181,6 +203,7 @@ QByteArray buildPutEnvelope(const QString &resourceUri,
 
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
+    finalizeWriter(w, out, "buildPutEnvelope");
     return out;
 }
 
@@ -245,6 +268,7 @@ QByteArray buildChangeBootOrderEnvelope(const QString &amtBootSourceInstanceId,
     w.writeEndElement(); // Body
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
+    finalizeWriter(w, out, "buildChangeBootOrderEnvelope");
     return out;
 }
 
@@ -270,6 +294,7 @@ QByteArray buildEnumerateEnvelope(const QString &resourceUri, const QString &to,
     w.writeEndElement(); // Body
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
+    finalizeWriter(w, out, "buildEnumerateEnvelope");
     return out;
 }
 
@@ -301,6 +326,7 @@ QByteArray buildPullEnvelope(const QString &resourceUri,
     w.writeEndElement(); // Body
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
+    finalizeWriter(w, out, "buildPullEnvelope");
     return out;
 }
 
@@ -431,6 +457,7 @@ QByteArray buildInvokeEnvelope(const QString &resourceUri,
 
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
+    finalizeWriter(w, out, "buildInvokeEnvelope");
     return out;
 }
 
@@ -466,6 +493,7 @@ QByteArray buildInvokeEnvelopeOrdered(const QString &resourceUri,
 
     w.writeEndElement(); // Envelope
     w.writeEndDocument();
+    finalizeWriter(w, out, "buildInvokeEnvelopeOrdered");
     return out;
 }
 
