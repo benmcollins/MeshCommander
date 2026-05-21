@@ -4437,11 +4437,17 @@ void enumerateEventLog(WsmanClient *client,
     auto getRecordsStep = std::make_shared<std::function<void(const QString &)>>();
     *getRecordsStep = [client, acc, getRecordsStep, done, resource, endpoint](
                           const QString &iterId) mutable {
-        QHash<QString, QString> params;
-        params.insert(QStringLiteral("IterationIdentifier"), iterId);
-        params.insert(QStringLiteral("MaxReadRecords"), QString::number(kBatchSize));
-        const QByteArray env = buildInvokeEnvelope(resource, QStringLiteral("GetRecords"),
-                                                    {}, params, endpoint, newMessageId());
+        // AMT validates GetRecords_INPUT against its XSD sequence:
+        // IterationIdentifier must precede MaxReadRecords or the firmware
+        // returns a:Sender / e:SchemaValidationError. QHash iteration order
+        // is unspecified, so the ordered overload is mandatory here.
+        const QList<std::pair<QString, QString>> params{
+            { QStringLiteral("IterationIdentifier"), iterId },
+            { QStringLiteral("MaxReadRecords"),      QString::number(kBatchSize) },
+        };
+        const QByteArray env = buildInvokeEnvelopeOrdered(
+            resource, QStringLiteral("GetRecords"),
+            {}, params, endpoint, newMessageId());
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc, getRecordsStep, done]() mutable {
