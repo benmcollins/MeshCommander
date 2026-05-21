@@ -62,13 +62,41 @@ Dialog {
                 font.pixelSize: Type.sizeS
                 onClicked: root.reject()
             }
-            AccentButton {
-                text: root.proceedText
-                font.family: Type.sans
-                font.pixelSize: Type.sizeS
-                onClicked: {
-                    root.proceed();
-                    root.accept();
+            // Proceed button picks its style off `destructive`: a
+            // red-tinted FlatButton for irreversible / lock-out-risk
+            // actions, an AccentButton for benign confirms. Pre-#400
+            // this was hardcoded to AccentButton regardless of the
+            // `destructive` flag, which left every "Delete" confirm
+            // landing the user's hand on a blue button — undoing the
+            // red-tint sweep from #368 right where it matters most.
+            Loader {
+                sourceComponent: root.destructive
+                    ? destructiveProceed
+                    : accentProceed
+            }
+            Component {
+                id: destructiveProceed
+                FlatButton {
+                    destructive: true
+                    text: root.proceedText
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    onClicked: {
+                        root.proceed();
+                        root.accept();
+                    }
+                }
+            }
+            Component {
+                id: accentProceed
+                AccentButton {
+                    text: root.proceedText
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    onClicked: {
+                        root.proceed();
+                        root.accept();
+                    }
                 }
             }
         }
