@@ -416,7 +416,11 @@ SshTunnel::~SshTunnel()
     // If an open is still in flight, tell the worker-side lambda to
     // free the channel itself instead of posting back to us.
     if (d->openState) d->openState->abandoned.store(true);
-    close();
+    // Destructor path: never emit signals. Slots connected to
+    // failed/closed routinely capture the tunnel pointer (deleteLater
+    // patterns) and re-entering them from inside ~SshTunnel is a
+    // use-after-free hazard.
+    closeInternal(/*emitSignals=*/false);
 }
 
 void SshTunnel::open()
@@ -528,8 +532,27 @@ void SshTunnel::onChannelOpened(void *rawChannel)
 
 void SshTunnel::close()
 {
-    // Abandon any in-flight open. Already-abandoned is a no-op.
-    if (d->openState) d->openState->abandoned.store(true);
+    closeInternal(/*emitSignals=*/true);
+}
+
+void SshTunnel::closeInternal(bool emitSignals)
+{
+    // Snapshot whether an async open is still in flight *before* we
+    // abandon it — that's the bug from #372: close() arriving between
+    // open() and onChannelOpened() must drive a terminal signal so
+    // consumers wired via makeSshTunnelOpener get their deleteLater
+    // slot, instead of leaking the heap object.
+    const bool wasOpenPending = d->openState && !d->opened;
+
+    // Abandon any in-flight open. Already-abandoned is a no-op. The
+    // worker-side lambda will free the channel itself; the
+    // result-arrival lambda will skip `onChannelOpened`. After this
+    // point, neither `opened` nor a "real" `failed` can fire — so the
+    // synthetic `failed` below cannot double-fire.
+    if (d->openState) {
+        d->openState->abandoned.store(true);
+        d->openState.reset();
+    }
 
     if (d->pump != nullptr) {
         d->pump->stop();
@@ -538,7 +561,15 @@ void SshTunnel::close()
     }
     if (d->opened) {
         d->opened = false;
-        emit closed();
+        if (emitSignals) emit closed();
+    } else if (wasOpenPending && emitSignals) {
+        // Closed before the channel-open round-trip completed. Drive a
+        // synthetic `failed` so consumers wired with the documented
+        // "exactly one of opened/failed fires" contract clean up.
+        if (d->lastError.isEmpty()) {
+            d->lastError = QStringLiteral("SSH tunnel closed before channel opened");
+        }
+        emit failed(d->lastError);
     }
 }
 

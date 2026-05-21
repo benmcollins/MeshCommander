@@ -275,6 +275,7 @@ class TestSshTunnelShutdown : public QObject
     Q_OBJECT
 private slots:
     void destructorReturnsPromptlyWhilePumpIsBusy();
+    void closeBeforeChannelOpenEmitsFailed();
 };
 
 void TestSshTunnelShutdown::destructorReturnsPromptlyWhilePumpIsBusy()
@@ -359,6 +360,89 @@ void TestSshTunnelShutdown::destructorReturnsPromptlyWhilePumpIsBusy()
     // its destructor racing the test exit.
     writer.stop();
     writer.wait(2000);
+}
+
+void TestSshTunnelShutdown::closeBeforeChannelOpenEmitsFailed()
+{
+    // Regression guard for #372. SshTunnelOpener wires deleteLater
+    // off opened → closed and off failed. Pre-fix, SshTunnel::close()
+    // only emitted closed() when d->opened was already true — so if
+    // close() landed between open() (which only *posts* work to the
+    // session worker) and the worker handing back a channel, neither
+    // signal ever fired and the heap tunnel leaked for the lifetime
+    // of the process. Reproduce that race here by calling close()
+    // synchronously after open(), before the worker thread has had a
+    // chance to run.
+    //
+    // The session has to be Connected so open() takes the async-post
+    // branch (rather than the early-return "not connected" branch
+    // which already emits failed). Reuse the MockSshServer fixture
+    // from the pump-busy test — we don't actually exercise the
+    // server's channel-accept path; we just need a Connected session.
+
+    MockSshServer server;
+    QVERIFY(server.listen());
+
+    auto session = std::make_unique<SshSession>();
+    SshSession::Params p;
+    p.host = QStringLiteral("127.0.0.1");
+    p.port = server.port();
+    p.user = QStringLiteral("test");
+    p.password = QStringLiteral("anything");
+    p.connectTimeoutMs = 15000;
+
+    server.start();
+    QObject::connect(session.get(), &SshSession::hostKeyPromptRequired,
+                     session.get(),
+                     [&](const QString &, const QString &) {
+                         session->trustPendingHostKey();
+                     });
+    session->open(p);
+    QVERIFY2(waitFor(8000, [&] {
+                 return session->state() == SshSession::Connected;
+             }),
+             qPrintable(QStringLiteral(
+                 "session never reached Connected; last state=%1, lastError='%2'")
+                 .arg(int(session->state()))
+                 .arg(session->lastError())));
+
+    // Allocate on the heap to mirror the makeSshTunnelOpener pattern
+    // (`new SshTunnel(...)` with deleteLater wired off failed). A
+    // QSignalSpy on destroyed() is the sentinel for "the deleteLater
+    // chain ran" — i.e. the leak that #372 was about.
+    auto *tunnel = new SshTunnel(session.get(), QStringLiteral("127.0.0.1"), 12345);
+    QSignalSpy openedSpy(tunnel, &SshTunnel::opened);
+    QSignalSpy failedSpy(tunnel, &SshTunnel::failed);
+    QSignalSpy closedSpy(tunnel, &SshTunnel::closed);
+    QSignalSpy destroyedSpy(tunnel, &QObject::destroyed);
+
+    // Same wiring as makeSshTunnelOpener: deleteLater on failed.
+    QObject::connect(tunnel, &SshTunnel::failed, tunnel, &QObject::deleteLater);
+
+    tunnel->open();
+    // Race window: close() before the worker thread can finish its
+    // queued openForwardChannel + post back. open() itself only posts
+    // to the worker, so the close runs first.
+    tunnel->close();
+
+    // Synthetic failed must have fired by close() return.
+    QCOMPARE(failedSpy.size(), 1);
+    QCOMPARE(openedSpy.size(), 0);
+    QCOMPARE(closedSpy.size(), 0);
+
+    // deleteLater runs on the next event-loop tick. QTRY waits a
+    // bounded interval for the destruction sentinel to fire — that's
+    // the actual leak fix.
+    QTRY_COMPARE(destroyedSpy.size(), 1);
+
+    // The worker may still queue a stale onChannelOpened back; let the
+    // event loop drain so anything left in flight runs (and the
+    // abandoned-flag short-circuit fires) before we tear the session
+    // down. No assertions here — we just don't want background work
+    // outliving the test.
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 200);
+
+    session.reset();
 }
 
 QTEST_GUILESS_MAIN(TestSshTunnelShutdown)

@@ -75,6 +75,17 @@ private:
     // freshly-opened channel. Builds the socketpair, starts the pump,
     // emits opened(fd). `channel` may be null on failure.
     void onChannelOpened(void *channel);
+
+    // Shared cleanup for the public close() slot and the destructor.
+    // When `emitSignals` is true and the close is interrupting an
+    // in-flight async open (the contract case in #372), emits a
+    // synthetic `failed(...)` so consumers wired with the documented
+    // "exactly one of opened/failed fires" assumption — e.g. the
+    // makeSshTunnelOpener / makeSshSocketFactory teardown path — get
+    // their cleanup slot driven. The destructor passes false: emitting
+    // signals during destruction is unsafe and unnecessary (the
+    // consumer is already releasing the object).
+    void closeInternal(bool emitSignals);
 };
 
 } // namespace qumesh::ssh
