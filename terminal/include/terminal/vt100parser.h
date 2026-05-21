@@ -55,8 +55,14 @@ private:
     void handleSgr(const QVector<int> &params);
     void handleWindowOps(const QVector<int> &params);
     void handleC0(unsigned char b);
-    void putChar(QChar c);
-    QChar consumeUtf8(unsigned char b);
+    /// Forward one Unicode scalar value to the screen. `fragment` is
+    /// one `QChar` for BMP code points or a 2-`QChar` surrogate pair
+    /// for non-BMP code points (#370). An empty view is a no-op.
+    void putChar(QStringView fragment);
+    /// Accumulate UTF-8 continuation bytes. Returns the decoded
+    /// fragment (1 `QChar` for BMP, 2 `QChar`s for non-BMP code
+    /// points), or an empty string while still collecting bytes.
+    QString consumeUtf8(unsigned char b);
 
     TerminalScreen *m_screen;
     State m_state = State::Ground;

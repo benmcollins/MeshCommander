@@ -26,6 +26,7 @@ private slots:
     void windowOpsReportsTextAreaSize();
     void windowOpsIgnoresActiveOps();
     void utf8MultiByteIsPreserved();
+    void utf8FourByteNonBmpRoundTrips();
     void backspaceBeforeBol();
     void osCSequenceIsIgnored();
     void scrolling();
@@ -120,6 +121,37 @@ void TestVt100Parser::utf8MultiByteIsPreserved()
     s.feed(QStringLiteral("ä好").toUtf8());
     QCOMPARE(s.cell(0, 0).ch, QChar(u'ä'));
     QCOMPARE(s.cell(0, 1).ch, QChar(u'好'));
+}
+
+/// #370 — `consumeUtf8` used to return only `s.at(0)` (the high
+/// surrogate) for a 4-byte UTF-8 sequence, silently dropping the low
+/// surrogate. We now thread both halves through to the cell. Use
+/// U+10000 (LINEAR B SYLLABLE B008 A) — a non-BMP codepoint encoded
+/// in UTF-8 as `F0 90 80 80` — so the assertion doesn't rely on
+/// emojis or shaping behaviour.
+void TestVt100Parser::utf8FourByteNonBmpRoundTrips()
+{
+    TerminalScreen s;
+    const QByteArray bytes = QByteArrayLiteral("\xF0\x90\x80\x80");
+    s.feed(bytes);
+
+    const Cell &c0 = s.cell(0, 0);
+    QVERIFY(c0.ch.isHighSurrogate());
+    QVERIFY(c0.lowSurrogate.isLowSurrogate());
+    QCOMPARE(QChar::surrogateToUcs4(c0.ch, c0.lowSurrogate), char32_t(0x10000));
+
+    // The parser advances the cursor by exactly one cell — one
+    // user-visible character occupies one cell regardless of how
+    // many UTF-16 code units it takes.
+    QCOMPARE(s.cursorRow(), 0);
+    QCOMPARE(s.cursorColumn(), 1);
+
+    // `lineHtml` must surface both surrogate halves so the rendered
+    // string is valid UTF-16. A lone high surrogate would round-trip
+    // through `QString::toUtf8` as the replacement character.
+    const QString html = s.lineHtml(0);
+    const char32_t codepoint = 0x10000;
+    QVERIFY(html.contains(QString::fromUcs4(&codepoint, 1)));
 }
 
 void TestVt100Parser::backspaceBeforeBol()
