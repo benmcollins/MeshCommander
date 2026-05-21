@@ -4,14 +4,18 @@
 #include "updater.h"
 
 #include <QCoreApplication>
+#include <QList>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPointer>
 #include <QRegularExpression>
+#include <QSslError>
 #include <QUrl>
 #include <QVersionNumber>
 #include <QXmlStreamReader>
+
+#include <chrono>
 
 // QUMESH_APPCAST_FEED_URL is set as a target_compile_definitions string
 // in app/CMakeLists.txt — same URL Sparkle/WinSparkle hit on the other
@@ -48,7 +52,30 @@ struct Updater::Private
 };
 
 Updater::Updater(QObject *parent)
-    : QObject(parent), d(std::make_unique<Private>()) {}
+    : QObject(parent), d(std::make_unique<Private>())
+{
+    // 30s matches the WSMAN client's per-request timeout (the only
+    // other transfer timeout in the codebase). A stalled TLS handshake
+    // to the appcast host would otherwise hang the reply indefinitely;
+    // setTransferTimeout covers handshake + headers + body and fires
+    // OperationCanceledError on the reply, which the finished handler
+    // surfaces as checkFailed().
+    d->nam.setTransferTimeout(std::chrono::seconds{30});
+
+    // QNetworkAccessManager swallows TLS errors silently by default
+    // when no slot is connected to sslErrors / no ignoreSslErrors() is
+    // called — except it *blocks* the reply, leaving it never finished
+    // and the inflight pointer pinned. Abort explicitly so the existing
+    // finished handler runs and emits checkFailed() with a clean error
+    // string. We never call ignoreSslErrors(): an appcast fetched over
+    // a broken chain is exactly the kind of fetch we don't want to
+    // trust.
+    connect(&d->nam, &QNetworkAccessManager::sslErrors, this,
+            [](QNetworkReply *reply, const QList<QSslError> &) {
+                if (reply)
+                    reply->abort();
+            });
+}
 Updater::~Updater() = default;
 
 bool Updater::available() const { return true; }
