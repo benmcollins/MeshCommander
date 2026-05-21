@@ -22,6 +22,7 @@ private slots:
     void identifyRoundTripsAgainstMockServer();
     void getPowerStateRoundTripsAgainstMockServer();
     void httpErrorPropagates();
+    void transportErrorSkipsBodyParse();
     void getGeneralSettingsExtractsPowerSource();
     void getSetupAndConfigurationDecodesProvisioning();
     void getBootCapabilitiesDecodesAllFlags();
@@ -503,6 +504,59 @@ void TestWsmanClient::httpErrorPropagates()
 
     QVERIFY(!result.ok);
     QVERIFY(!result.error.isEmpty());
+}
+
+// Regression for #375: when the peer closes the TCP connection before
+// sending any HTTP response, `WsmanReply::hasError()` is set and the
+// operation handler must NOT attempt to parse the (empty) body — it
+// must emit the transport error and bail. The contract being tested
+// is "result.error is non-empty AND the SOAP-derived fields stayed
+// at their default-zero values, proving no parse-of-vacuous-body ran".
+void TestWsmanClient::transportErrorSkipsBodyParse()
+{
+    // Plain QTcpServer that accepts and immediately disconnects — no
+    // HTTP framing at all, so the client's header reader observes
+    // "Connection closed before headers" and calls finishReply with
+    // that error string.
+    QTcpServer tcp;
+    QObject::connect(&tcp, &QTcpServer::newConnection, &tcp, [&]() {
+        while (auto *sock = tcp.nextPendingConnection()) {
+            sock->disconnectFromHost();
+            sock->deleteLater();
+        }
+    });
+    QVERIFY(tcp.listen(QHostAddress::LocalHost));
+    const quint16 port = tcp.serverPort();
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(port));
+    // Keep the test fast — if anything regresses we want a quick fail,
+    // not the 30s default.
+    client.setTransferTimeoutMs(2000);
+
+    IdentifyResult result;
+    QEventLoop loop;
+    identify(&client, [&](IdentifyResult r) {
+        result = r;
+        loop.quit();
+    });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY(!result.ok);
+    QVERIFY2(!result.error.isEmpty(),
+             "transport error should propagate as a non-empty result.error");
+    // Body parse would have populated these from a parseResponse() of an
+    // empty body — they'd all be empty strings, which is the same as
+    // the default. Tighten the assertion by verifying the *error* is
+    // a transport-shaped one (not a SOAP fault message). The exact
+    // string is set in wsman_client.cpp's finishReply().
+    QVERIFY2(result.protocolVersion.isEmpty(),
+             "no SOAP body should have been parsed on transport error");
+    QVERIFY2(result.productVendor.isEmpty(),
+             "no SOAP body should have been parsed on transport error");
+    QVERIFY2(result.productVersion.isEmpty(),
+             "no SOAP body should have been parsed on transport error");
 }
 
 void TestWsmanClient::getGeneralSettingsExtractsPowerSource()

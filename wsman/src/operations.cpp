@@ -258,15 +258,14 @@ void runRequest(WsmanClient *client, const QByteArray &envelope, ResultT &&zero,
                      [reply, zero = std::move(zero), extract = std::forward<Extract>(extract),
                        cb = std::move(callback)]() mutable {
                          ResultT r = zero;
-                         const QByteArray body = reply->readAll();
-                         const auto err = reply->hasError();
-                         const auto errString = reply->errorString();
-                         reply->deleteLater();
-                         if (err) {
-                             r.error = errString;
+                         if (reply->hasError()) {
+                             r.error = reply->errorString();
+                             reply->deleteLater();
                              cb(std::move(r));
                              return;
                          }
+                         const QByteArray body = reply->readAll();
+                         reply->deleteLater();
                          const SoapResponse soap = parseResponse(body);
                          if (soap.isFault()) {
                              r.error = soap.fault;
@@ -298,15 +297,14 @@ void identify(WsmanClient *client, std::function<void(IdentifyResult)> callback)
     QObject::connect(reply, &WsmanReply::finished, client,
                      [reply, cb = std::move(callback)]() mutable {
                          IdentifyResult r;
-                         const QByteArray body = reply->readAll();
-                         const auto err = reply->hasError();
-                         const auto errString = reply->errorString();
-                         reply->deleteLater();
-                         if (err) {
-                             r.error = errString;
+                         if (reply->hasError()) {
+                             r.error = reply->errorString();
+                             reply->deleteLater();
                              cb(std::move(r));
                              return;
                          }
+                         const QByteArray body = reply->readAll();
+                         reply->deleteLater();
                          const SoapResponse soap = parseResponse(body);
                          if (soap.isFault()) {
                              r.error = soap.fault;
@@ -946,11 +944,14 @@ void getMeVersion(WsmanClient *client,
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc, pullStep, onDone]() mutable {
+                if (reply->hasError()) {
+                    const QString errString = reply->errorString();
+                    reply->deleteLater();
+                    (*onDone)(errString);
+                    return;
+                }
                 const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
-                const auto errString = reply->errorString();
                 reply->deleteLater();
-                if (err) { (*onDone)(errString); return; }
                 const SoapResponse soap = parseResponse(body);
                 if (soap.isFault()) { (*onDone)(soap.fault); return; }
                 const PullChunk chunk = parsePullResponse(soap.bodyXml);
@@ -991,11 +992,14 @@ void getMeVersion(WsmanClient *client,
     WsmanReply *reply = client->sendEnvelope(env);
     QObject::connect(reply, &WsmanReply::finished, client,
         [reply, pullStep, onDone]() mutable {
+            if (reply->hasError()) {
+                const QString errString = reply->errorString();
+                reply->deleteLater();
+                (*onDone)(errString);
+                return;
+            }
             const QByteArray body = reply->readAll();
-            const auto err = reply->hasError();
-            const auto errString = reply->errorString();
             reply->deleteLater();
-            if (err) { (*onDone)(errString); return; }
             const SoapResponse soap = parseResponse(body);
             if (soap.isFault()) { (*onDone)(soap.fault); return; }
             const QString ctx = parseEnumerateContext(soap.bodyXml);
@@ -1042,16 +1046,15 @@ void getRedirectionStatus(WsmanClient *client,
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc]() mutable {
-                const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
-                const auto errString = reply->errorString();
-                reply->deleteLater();
                 acc->gotRedir = true;
-                if (err) {
-                    if (acc->r.error.isEmpty()) acc->r.error = errString;
+                if (reply->hasError()) {
+                    if (acc->r.error.isEmpty()) acc->r.error = reply->errorString();
+                    reply->deleteLater();
                     acc->maybeFire();
                     return;
                 }
+                const QByteArray body = reply->readAll();
+                reply->deleteLater();
                 const SoapResponse soap = parseResponse(body);
                 if (soap.isFault()) {
                     if (acc->r.error.isEmpty()) acc->r.error = soap.fault;
@@ -1080,17 +1083,17 @@ void getRedirectionStatus(WsmanClient *client,
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc]() mutable {
-                const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
-                reply->deleteLater();
                 acc->gotKvm = true;
-                if (err) {
+                if (reply->hasError()) {
                     // Soft failure — AMT 5 and earlier don't expose
                     // this class. Leave kvmAvailable=false and don't
                     // surface as a top-level error.
+                    reply->deleteLater();
                     acc->maybeFire();
                     return;
                 }
+                const QByteArray body = reply->readAll();
+                reply->deleteLater();
                 const SoapResponse soap = parseResponse(body);
                 if (soap.isFault()) {
                     // Same soft-failure rationale.
@@ -1365,21 +1368,24 @@ void getAgentPresence(WsmanClient *client,
         WsmanReply *reply = client->sendEnvelope(capsEnv);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc]() mutable {
+                if (reply->hasError()) {
+                    reply->deleteLater();
+                    acc->gotCaps = true;
+                    acc->maybeFire();
+                    return;
+                }
                 const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
                 reply->deleteLater();
-                if (!err) {
-                    const SoapResponse soap = parseResponse(body);
-                    if (!soap.isFault()) {
-                        bool conv = false;
-                        const int agents = findScalar(soap.bodyXml,
-                            QStringLiteral("MaxTotalAgents")).toInt(&conv);
-                        if (conv) acc->r.maxTotalAgents = agents;
-                        conv = false;
-                        const int actions = findScalar(soap.bodyXml,
-                            QStringLiteral("MaxTotalActions")).toInt(&conv);
-                        if (conv) acc->r.maxTotalActions = actions;
-                    }
+                const SoapResponse soap = parseResponse(body);
+                if (!soap.isFault()) {
+                    bool conv = false;
+                    const int agents = findScalar(soap.bodyXml,
+                        QStringLiteral("MaxTotalAgents")).toInt(&conv);
+                    if (conv) acc->r.maxTotalAgents = agents;
+                    conv = false;
+                    const int actions = findScalar(soap.bodyXml,
+                        QStringLiteral("MaxTotalActions")).toInt(&conv);
+                    if (conv) acc->r.maxTotalActions = actions;
                 }
                 acc->gotCaps = true;
                 acc->maybeFire();
@@ -2598,15 +2604,14 @@ void executeBrowse(WsmanClient *client, const QString &classOrUri,
             [reply, cb, kind]() mutable {
                 WsmanBrowseResult r;
                 r.kind = kind;
-                const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
-                const auto errString = reply->errorString();
-                reply->deleteLater();
-                if (err) {
-                    r.error = errString;
+                if (reply->hasError()) {
+                    r.error = reply->errorString();
+                    reply->deleteLater();
                     (*cb)(std::move(r));
                     return;
                 }
+                const QByteArray body = reply->readAll();
+                reply->deleteLater();
                 const SoapResponse soap = parseResponse(body);
                 if (soap.isFault()) {
                     r.error = soap.fault;
@@ -3764,14 +3769,14 @@ void runChainStep(WsmanClient *client, const QByteArray &envelope, const QString
     QObject::connect(reply, &WsmanReply::finished, client,
                      [reply, name, extract = std::forward<ExtractRv>(extract),
                        onError = std::move(onError), next = std::move(next)]() mutable {
-                         const QByteArray body = reply->readAll();
-                         const auto err = reply->hasError();
-                         const auto errString = reply->errorString();
-                         reply->deleteLater();
-                         if (err) {
+                         if (reply->hasError()) {
+                             const QString errString = reply->errorString();
+                             reply->deleteLater();
                              onError({false, QStringLiteral("%1: %2").arg(name).arg(errString), -1});
                              return;
                          }
+                         const QByteArray body = reply->readAll();
+                         reply->deleteLater();
                          const SoapResponse soap = parseResponse(body);
                          if (soap.isFault()) {
                              onError({false, QStringLiteral("%1: %2").arg(name).arg(soap.fault), -1});
@@ -4440,11 +4445,14 @@ void enumerateEventLog(WsmanClient *client,
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc, getRecordsStep, done]() mutable {
+                if (reply->hasError()) {
+                    const QString errString = reply->errorString();
+                    reply->deleteLater();
+                    (*done)(errString);
+                    return;
+                }
                 const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
-                const auto errString = reply->errorString();
                 reply->deleteLater();
-                if (err) { (*done)(errString); return; }
                 const SoapResponse soap = parseResponse(body);
                 if (soap.isFault()) { (*done)(soap.fault); return; }
                 const QString rv = findScalar(soap.bodyXml, QStringLiteral("ReturnValue"));
@@ -4483,11 +4491,14 @@ void enumerateEventLog(WsmanClient *client,
     WsmanReply *reply = client->sendEnvelope(env);
     QObject::connect(reply, &WsmanReply::finished, client,
         [reply, getRecordsStep, done]() mutable {
+            if (reply->hasError()) {
+                const QString errString = reply->errorString();
+                reply->deleteLater();
+                (*done)(errString);
+                return;
+            }
             const QByteArray body = reply->readAll();
-            const auto err = reply->hasError();
-            const auto errString = reply->errorString();
             reply->deleteLater();
-            if (err) { (*done)(errString); return; }
             const SoapResponse soap = parseResponse(body);
             if (soap.isFault()) { (*done)(soap.fault); return; }
             const QString rv = findScalar(soap.bodyXml, QStringLiteral("ReturnValue"));
@@ -4635,24 +4646,27 @@ void enumerateUserAccounts(WsmanClient *client,
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc]() mutable {
+                if (reply->hasError()) {
+                    reply->deleteLater();
+                    acc->adminDone = true;
+                    acc->maybeFire();
+                    return;
+                }
                 const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
                 reply->deleteLater();
-                if (!err) {
-                    const SoapResponse soap = parseResponse(body);
-                    if (!soap.isFault()) {
-                        const QString u = findScalar(soap.bodyXml,
-                                                      QStringLiteral("Username"));
-                        if (!u.isEmpty()) {
-                            UserAccount admin;
-                            admin.handle = -1;
-                            admin.digestUsername = u;
-                            admin.name = u;
-                            admin.accessPermission = 999;
-                            admin.enabled = true;
-                            admin.hidden = (u.startsWith(QStringLiteral("$$")));
-                            acc->byHandle.insert(-1, admin);
-                        }
+                const SoapResponse soap = parseResponse(body);
+                if (!soap.isFault()) {
+                    const QString u = findScalar(soap.bodyXml,
+                                                  QStringLiteral("Username"));
+                    if (!u.isEmpty()) {
+                        UserAccount admin;
+                        admin.handle = -1;
+                        admin.digestUsername = u;
+                        admin.name = u;
+                        admin.accessPermission = 999;
+                        admin.enabled = true;
+                        admin.hidden = (u.startsWith(QStringLiteral("$$")));
+                        acc->byHandle.insert(-1, admin);
                     }
                 }
                 acc->adminDone = true;
@@ -4673,16 +4687,15 @@ void enumerateUserAccounts(WsmanClient *client,
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc, enumStep, startIndex, client]() mutable {
-                const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
-                const auto errString = reply->errorString();
-                reply->deleteLater();
-                if (err) {
-                    if (acc->error.isEmpty()) acc->error = errString;
+                if (reply->hasError()) {
+                    if (acc->error.isEmpty()) acc->error = reply->errorString();
+                    reply->deleteLater();
                     acc->enumDone = true;
                     acc->maybeFire();
                     return;
                 }
+                const QByteArray body = reply->readAll();
+                reply->deleteLater();
                 const SoapResponse soap = parseResponse(body);
                 if (soap.isFault()) {
                     if (acc->error.isEmpty()) acc->error = soap.fault;
@@ -4962,15 +4975,14 @@ void getOptInStatus(WsmanClient *client,
     auto *reply = client->sendEnvelope(svcEnv);
     QObject::connect(reply, &WsmanReply::finished, client,
         [reply, client, partial, cb, to]() mutable {
-            const QByteArray body = reply->readAll();
-            const bool err = reply->hasError();
-            const QString errStr = reply->errorString();
-            reply->deleteLater();
-            if (err) {
-                partial->error = errStr;
+            if (reply->hasError()) {
+                partial->error = reply->errorString();
+                reply->deleteLater();
                 (*cb)(*partial);
                 return;
             }
+            const QByteArray body = reply->readAll();
+            reply->deleteLater();
             const SoapResponse soap = parseResponse(body);
             if (soap.isFault()) {
                 partial->error = soap.fault;
@@ -5118,12 +5130,15 @@ void setKvmOptInPolicy(WsmanClient *client, bool policyRequired,
     auto *reply = client->sendEnvelope(getEnv);
     QObject::connect(reply, &WsmanReply::finished, client,
         [reply, client, policyRequired, to, cb]() {
-            const QByteArray body = reply->readAll();
-            const bool err = reply->hasError();
-            const QString errStr = reply->errorString();
-            reply->deleteLater();
             InvokeResult r;
-            if (err) { r.error = errStr; (*cb)(r); return; }
+            if (reply->hasError()) {
+                r.error = reply->errorString();
+                reply->deleteLater();
+                (*cb)(r);
+                return;
+            }
+            const QByteArray body = reply->readAll();
+            reply->deleteLater();
             const SoapResponse soap = parseResponse(body);
             if (soap.isFault()) { r.error = soap.fault; (*cb)(r); return; }
 
@@ -5204,12 +5219,15 @@ void setKvmSettings(WsmanClient *client, const KvmSettingsPatch &patch,
     auto *reply = client->sendEnvelope(getEnv);
     QObject::connect(reply, &WsmanReply::finished, client,
         [reply, client, to, cb, p]() {
-            const QByteArray body = reply->readAll();
-            const bool err = reply->hasError();
-            const QString errStr = reply->errorString();
-            reply->deleteLater();
             InvokeResult r;
-            if (err) { r.error = errStr; (*cb)(r); return; }
+            if (reply->hasError()) {
+                r.error = reply->errorString();
+                reply->deleteLater();
+                (*cb)(r);
+                return;
+            }
+            const QByteArray body = reply->readAll();
+            reply->deleteLater();
             const SoapResponse soap = parseResponse(body);
             if (soap.isFault()) { r.error = soap.fault; (*cb)(r); return; }
 
@@ -5425,11 +5443,14 @@ void enumerateAll(WsmanClient *client, const char *resourceUri,
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc, pullStep, onDoneShared]() mutable {
+                if (reply->hasError()) {
+                    const QString errString = reply->errorString();
+                    reply->deleteLater();
+                    (*onDoneShared)({}, errString);
+                    return;
+                }
                 const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
-                const auto errString = reply->errorString();
                 reply->deleteLater();
-                if (err) { (*onDoneShared)({}, errString); return; }
                 const SoapResponse soap = parseResponse(body);
                 if (soap.isFault()) { (*onDoneShared)({}, soap.fault); return; }
                 const PullChunk chunk = parsePullResponse(soap.bodyXml);
@@ -5452,11 +5473,14 @@ void enumerateAll(WsmanClient *client, const char *resourceUri,
     WsmanReply *reply = client->sendEnvelope(env);
     QObject::connect(reply, &WsmanReply::finished, client,
         [reply, pullStep, onDoneShared, acc]() mutable {
+            if (reply->hasError()) {
+                const QString errString = reply->errorString();
+                reply->deleteLater();
+                (*onDoneShared)({}, errString);
+                return;
+            }
             const QByteArray body = reply->readAll();
-            const auto err = reply->hasError();
-            const auto errString = reply->errorString();
             reply->deleteLater();
-            if (err) { (*onDoneShared)({}, errString); return; }
             const SoapResponse soap = parseResponse(body);
             if (soap.isFault()) { (*onDoneShared)({}, soap.fault); return; }
             const QString ctx = parseEnumerateContext(soap.bodyXml);
@@ -5737,11 +5761,14 @@ void enumerateAuditLog(WsmanClient *client,
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, acc, pullStep, finish, startIndex]() mutable {
+                if (reply->hasError()) {
+                    const QString errString = reply->errorString();
+                    reply->deleteLater();
+                    finish(errString);
+                    return;
+                }
                 const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
-                const auto errString = reply->errorString();
                 reply->deleteLater();
-                if (err) { finish(errString); return; }
                 const SoapResponse soap = parseResponse(body);
                 if (soap.isFault()) { finish(soap.fault); return; }
 
@@ -6902,20 +6929,21 @@ void getRemoteAccess(WsmanClient *client,
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, k, st, maybeFire]() mutable {
-                const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
-                const auto errString = reply->errorString();
-                reply->deleteLater();
                 const int idx = int(k);
-                if (!err) {
-                    const SoapResponse soap = parseResponse(body);
-                    if (!soap.isFault())
-                        st->items[idx].append(soap.bodyXml);
-                    else
-                        st->errors[idx] = soap.fault;
-                } else {
-                    st->errors[idx] = errString;
+                if (reply->hasError()) {
+                    st->errors[idx] = reply->errorString();
+                    reply->deleteLater();
+                    st->done[idx] = true;
+                    maybeFire();
+                    return;
                 }
+                const QByteArray body = reply->readAll();
+                reply->deleteLater();
+                const SoapResponse soap = parseResponse(body);
+                if (!soap.isFault())
+                    st->items[idx].append(soap.bodyXml);
+                else
+                    st->errors[idx] = soap.fault;
                 st->done[idx] = true;
                 maybeFire();
             });
@@ -7206,20 +7234,21 @@ void getWireless(WsmanClient *client,
         WsmanReply *reply = client->sendEnvelope(env);
         QObject::connect(reply, &WsmanReply::finished, client,
             [reply, k, st, maybeFire]() mutable {
-                const QByteArray body = reply->readAll();
-                const auto err = reply->hasError();
-                const auto errString = reply->errorString();
-                reply->deleteLater();
                 const int idx = int(k);
-                if (!err) {
-                    const SoapResponse soap = parseResponse(body);
-                    if (!soap.isFault())
-                        st->items[idx].append(soap.bodyXml);
-                    else
-                        st->errors[idx] = soap.fault;
-                } else {
-                    st->errors[idx] = errString;
+                if (reply->hasError()) {
+                    st->errors[idx] = reply->errorString();
+                    reply->deleteLater();
+                    st->done[idx] = true;
+                    maybeFire();
+                    return;
                 }
+                const QByteArray body = reply->readAll();
+                reply->deleteLater();
+                const SoapResponse soap = parseResponse(body);
+                if (!soap.isFault())
+                    st->items[idx].append(soap.bodyXml);
+                else
+                    st->errors[idx] = soap.fault;
                 st->done[idx] = true;
                 maybeFire();
             });
