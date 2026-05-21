@@ -153,6 +153,20 @@ Dialog {
                         height: 32
                         color: hover.hovered ? Colors.elevated : "transparent"
 
+                        // Make each scan-result row addressable to screen readers (#379).
+                        // Mirror the ComputerListView pattern.
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("%1, %2, AMT %3, %4, TLS %5")
+                            .arg(rowItem.ip)
+                            .arg(rowItem.reverseDns.length > 0
+                                ? rowItem.reverseDns
+                                : qsTr("no PTR"))
+                            .arg(rowItem.amtVersion)
+                            .arg(rowItem.provisioning)
+                            .arg(rowItem.tlsCapable ? qsTr("yes") : qsTr("no"))
+                        Accessible.selected: rowItem.selected
+                        Accessible.selectable: true
+
                         HoverHandler { id: hover }
 
                         RowLayout {

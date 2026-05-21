@@ -304,6 +304,18 @@ AppWindow {
                                 ? Colors.accentSoft
                                 : "transparent"
 
+                            // Make each record row addressable to screen readers (#379).
+                            // Mirror the ComputerListView pattern.
+                            Accessible.role: Accessible.ListItem
+                            Accessible.name: {
+                                const rec = root.snapshot.records[recordRow.index];
+                                const n = rec ? rec.variables.length : 0;
+                                return qsTr("Record %1, %2 variables")
+                                    .arg(recordRow.index + 1).arg(n);
+                            }
+                            Accessible.selected: recordList.currentIndex === recordRow.index
+                            Accessible.selectable: true
+
                             MouseArea {
                                 anchors.fill: parent
                                 onClicked: root.selectedRecord = recordRow.index
@@ -439,6 +451,14 @@ AppWindow {
                             radius: 6
                             border.color: Colors.border
                             border.width: 1
+
+                            // Make each variable row addressable to screen readers (#379).
+                            // Mirror the ComputerListView pattern.
+                            Accessible.role: Accessible.ListItem
+                            Accessible.name: qsTr("Variable %1/%2 %3")
+                                .arg(varRow.modelData.moduleId)
+                                .arg(varRow.modelData.varId)
+                                .arg(varRow.modelData.name)
 
                             ColumnLayout {
                                 anchors.fill: parent

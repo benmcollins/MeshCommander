@@ -104,6 +104,15 @@ Flickable {
                         spacing: 2
                         Layout.fillWidth: true
 
+                        // Make each subscription row addressable to screen readers (#379).
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("Subscription %1, %2, destination %3")
+                            .arg(subRow.modelData.filterInstanceId || qsTr("unnamed filter"))
+                            .arg(subRow.modelData.deliveryModeLabel || "")
+                            .arg(subRow.modelData.destination
+                                || subRow.modelData.listenerName
+                                || qsTr("unknown"))
+
                         RowLayout {
                             spacing: 10
                             Layout.fillWidth: true
@@ -182,6 +191,13 @@ Flickable {
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 1
+
+                        // Make each listener row addressable to screen readers (#379).
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("Listener %1, %2, %3")
+                            .arg(listenerRow.modelData.name || qsTr("unnamed"))
+                            .arg(listenerRow.modelData.deliveryModeLabel || "")
+                            .arg(listenerRow.modelData.destination || "")
 
                         Text {
                             text: listenerRow.modelData.name

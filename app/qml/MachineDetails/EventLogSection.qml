@@ -37,11 +37,22 @@ ColumnLayout {
         ScrollBar.vertical: ScrollBar {}
 
         delegate: Rectangle {
+            id: eventRow
             required property var modelData
             required property int index
             width: ListView.view.width
             implicitHeight: 36
             color: index % 2 === 0 ? "transparent" : Colors.elevated
+
+            // Make each event-log row addressable to screen readers (#379).
+            // Mirror the ComputerListView pattern: ListItem role + composed
+            // name from the visible fields (severity, timestamp, message).
+            Accessible.role: Accessible.ListItem
+            Accessible.name: qsTr("Severity %1, %2, %3")
+                .arg(eventRow.modelData.severity || "—")
+                .arg(eventRow.modelData.timestamp || "—")
+                .arg(eventRow.modelData.message || "")
+
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 8

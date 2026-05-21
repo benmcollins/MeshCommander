@@ -111,6 +111,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftPolicyName = text
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Policy name")
                 }
 
                 Text {
@@ -128,6 +130,8 @@ Dialog {
                         to: 65535
                         editable: true
                         onValueModified: root.draftPriority = value
+                        // #379 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Priority")
                     }
                     Text {
                         text: qsTr("higher = applied first")

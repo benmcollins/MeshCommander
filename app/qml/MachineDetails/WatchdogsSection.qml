@@ -112,6 +112,7 @@ ColumnLayout {
         spacing: 6
 
         delegate: Rectangle {
+            id: watchdogRow
             required property var modelData
             required property int index
             width: ListView.view.width
@@ -120,6 +121,17 @@ ColumnLayout {
             border.color: Colors.borderMuted
             border.width: 1
             radius: 8
+
+            // Make each watchdog card addressable to screen readers (#379).
+            // Mirror the ComputerListView pattern.
+            Accessible.role: Accessible.ListItem
+            Accessible.name: qsTr("Watchdog %1, %2, monitors %3, timeout %4 seconds")
+                .arg(watchdogRow.modelData.description
+                     || watchdogRow.modelData.deviceIdGuid
+                     || qsTr("unnamed"))
+                .arg(watchdogRow.modelData.currentStateLabel || "")
+                .arg(watchdogRow.modelData.monitoredEntityLabel || "")
+                .arg(watchdogRow.modelData.timeoutIntervalSec || 0)
 
             ColumnLayout {
                 id: watchdogCol

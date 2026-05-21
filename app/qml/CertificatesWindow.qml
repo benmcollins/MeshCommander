@@ -245,6 +245,18 @@ Layout.alignment: Qt.AlignHCenter
                 implicitHeight: 56
                 color: list.currentIndex === row.index ? Colors.accentSoft : "transparent"
 
+                // Make each cert row addressable to screen readers (#379).
+                // Mirror the ComputerListView pattern.
+                Accessible.role: Accessible.ListItem
+                Accessible.name: qsTr("Certificate %1, issued by %2%3")
+                    .arg(row.subject.length > 0
+                        ? row.subject
+                        : qsTr("no common name"))
+                    .arg(row.issuer.length > 0 ? row.issuer : "—")
+                    .arg(row.hasPrivateKey ? qsTr(", has private key") : "")
+                Accessible.selected: list.currentIndex === row.index
+                Accessible.selectable: true
+
                 MouseArea {
                     anchors.fill: parent
                     onClicked: root.selectedRow = row.index
