@@ -214,18 +214,26 @@ ApplicationWindow {
 
     Loader {
         id: certificatesLoader
-        active: false
+        // `launchId` is the rebuild trigger: each `launch()` bumps it
+        // through `-1` and back to a fresh non-negative value, which
+        // churns the `active` predicate and forces a tear-down +
+        // reconstruct even when the window was already open. Using a
+        // predicate (instead of imperative `active = false; active = true`)
+        // means future bindings on `active` survive across launches —
+        // see issue #369 for the regression class this guards against.
+        property int launchId: -1
+        active: launchId >= 0
         asynchronous: true
 
         function launch() {
-            active = false;
-            active = true;
+            launchId = -1;
+            launchId = launchId + 1;
         }
 
         onStatusChanged: if (status === Loader.Ready && item !== null) item.visible = true
 
         sourceComponent: CertificatesWindow {
-            onClosing: certificatesLoader.active = false
+            onClosing: certificatesLoader.launchId = -1
         }
     }
 
