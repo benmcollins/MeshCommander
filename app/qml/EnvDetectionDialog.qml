@@ -59,9 +59,9 @@ Dialog {
                     Layout.fillWidth: true
                 }
                 ScrollView {
+                    clip: true
                     Layout.fillWidth: true
                     Layout.preferredHeight: 180
-                    clip: true
                     TextArea {
                         placeholderText: "corp.example.com\nintranet.example.com"
                         text: root.draftDomainsText

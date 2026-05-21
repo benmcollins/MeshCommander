@@ -366,12 +366,12 @@ Dialog {
                     id: clientCertCombo
                     visible: root.draftEnterprise
                           && root.draftAuthenticationProtocol === 0
-                    Layout.fillWidth: true
                     font.family: Type.sans
                     font.pixelSize: Type.sizeS
                     model: (root.controller.deviceCertStore
                              && root.controller.deviceCertStore.certificates) || []
                     textRole: "subjectCn"
+                    Layout.fillWidth: true
                     delegate: ItemDelegate {
                         required property var modelData
                         width: clientCertCombo.width
@@ -454,12 +454,12 @@ Dialog {
                 ComboBox {
                     id: caCertCombo
                     visible: root.draftEnterprise
-                    Layout.fillWidth: true
                     font.family: Type.sans
                     font.pixelSize: Type.sizeS
                     model: (root.controller.deviceCertStore
                              && root.controller.deviceCertStore.certificates) || []
                     textRole: "subjectCn"
+                    Layout.fillWidth: true
                     delegate: ItemDelegate {
                         required property var modelData
                         width: caCertCombo.width

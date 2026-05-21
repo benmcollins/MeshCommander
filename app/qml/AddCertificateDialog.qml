@@ -93,9 +93,9 @@ Dialog {
                 }
 
                 ScrollView {
+                    clip: true
                     Layout.fillWidth: true
                     Layout.preferredHeight: 240
-                    clip: true
                     TextArea {
                         placeholderText: "-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"
                         text: root.draftPem

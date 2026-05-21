@@ -97,9 +97,9 @@ Dialog {
                     Layout.fillWidth: true
                 }
                 ScrollView {
+                    clip: true
                     Layout.fillWidth: true
                     Layout.preferredHeight: 120
-                    clip: true
                     TextArea {
                         placeholderText: "operator.example.com\nadmin.example.com"
                         text: root.draftTrustedCnText

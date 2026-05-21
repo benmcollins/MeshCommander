@@ -74,10 +74,10 @@ Dialog {
         ListView {
             id: jobList
             clip: true
-            Layout.fillWidth: true
-            Layout.fillHeight: true
             spacing: 2
             model: BatchController.jobs
+            Layout.fillWidth: true
+            Layout.fillHeight: true
 
             delegate: Rectangle {
                 id: jobRow
@@ -151,8 +151,8 @@ Dialog {
 
         // Footer — retry / close buttons.
         RowLayout {
-            Layout.fillWidth: true
             spacing: 8
+            Layout.fillWidth: true
 
             FlatButton {
                 text: qsTr("Retry failed (%1)").arg(BatchController.failedCount)

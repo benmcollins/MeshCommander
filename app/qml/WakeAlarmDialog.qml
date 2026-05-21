@@ -177,8 +177,8 @@ Dialog {
                     text: root.draftDate
                     font.family: Type.mono
                     font.pixelSize: Type.sizeM
-                    Layout.preferredWidth: 160
                     inputMask: "9999-99-99"
+                    Layout.preferredWidth: 160
                     onTextEdited: root.draftDate = text
                 }
 
@@ -194,8 +194,8 @@ Dialog {
                     text: root.draftTime
                     font.family: Type.mono
                     font.pixelSize: Type.sizeM
-                    Layout.preferredWidth: 100
                     inputMask: "99:99"
+                    Layout.preferredWidth: 100
                     onTextEdited: root.draftTime = text
                 }
             }

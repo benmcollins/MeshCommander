@@ -34,6 +34,8 @@ Item {
     signal peerCertVerifiedByPin(string fingerprint)
 
     onSshConfigChanged: controller.setSshConfig(root.sshConfig || ({}))
+    onVisibleChanged: if (visible) term.forceActiveFocus()
+    Component.onCompleted: if (visible) term.forceActiveFocus()
 
     function start() {
         controller.host = root.targetHost;
@@ -118,16 +120,18 @@ Item {
 
     FileDialog {
         id: screenshotDialog
-        fileMode: FileDialog.SaveFile
-        defaultSuffix: "png"
-        nameFilters: [qsTr("PNG images (*.png)"), qsTr("All files (*)")]
-        title: qsTr("Save SOL screenshot")
+
         // `grabToImage` is asynchronous and the QQuickItemGrabResult is
         // garbage-collected once its JS reference drops, taking the FBO
         // texture with it — losing the image before saveToFile runs.
         // Stashing the result on a QML id keeps it alive across the
         // async boundary; we drop the reference right after saving.
         property var pendingGrab: null
+
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "png"
+        nameFilters: [qsTr("PNG images (*.png)"), qsTr("All files (*)")]
+        title: qsTr("Save SOL screenshot")
         onAccepted: {
             const path = Paths.urlToLocalFile(screenshotDialog.selectedFile);
             if (path.length === 0) return;
@@ -252,7 +256,4 @@ Item {
             onControlSequence: function(seq) { controller.sendText(seq); }
         }
     }
-
-    onVisibleChanged: if (visible) term.forceActiveFocus()
-    Component.onCompleted: if (visible) term.forceActiveFocus()
 }

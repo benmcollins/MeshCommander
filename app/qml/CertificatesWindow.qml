@@ -12,13 +12,13 @@ import QuMesh
 AppWindow {
     id: root
 
+    property int selectedRow: -1
+
     width: 920
     height: 560
     minimumWidth: 720
     minimumHeight: 380
     title: qsTr("QuMesh — Certificates")
-
-    property int selectedRow: -1
 
     // Selection is a row index, not a row identity — once the model
     // shrinks or resets, the stale index can either point at the wrong
@@ -53,9 +53,11 @@ AppWindow {
 
     FileDialog {
         id: exportDialog
+
+        property bool wantPem: false
+
         title: qsTr("Export certificate")
         fileMode: FileDialog.SaveFile
-        property bool wantPem: false
         nameFilters: wantPem
             ? [qsTr("PEM (*.pem)"), qsTr("All files (*)")]
             : [qsTr("DER (*.cer)"), qsTr("All files (*)")]
@@ -72,12 +74,13 @@ AppWindow {
 
     Dialog {
         id: passwordPrompt
+
+        property string path
+
         title: qsTr("PKCS#12 password")
         modal: true
         anchors.centerIn: parent
         standardButtons: Dialog.NoButton
-
-        property string path
 
         contentItem: ColumnLayout {
             spacing: 8
@@ -90,10 +93,10 @@ AppWindow {
             TextField {
                 id: pwField
                 echoMode: TextInput.Password
-                Layout.fillWidth: true
-                Layout.preferredWidth: 280
                 font.family: Type.mono
                 font.pixelSize: Type.sizeM
+                Layout.fillWidth: true
+                Layout.preferredWidth: 280
                 onAccepted: importBtn.clicked()
             }
             RowLayout {

@@ -169,8 +169,8 @@ Rectangle {
                             font.family: Type.mono
                             font.pixelSize: Type.sizeS
                             visible: root.machineDigestRealm.length > 0
-                            Layout.fillWidth: true
                             wrapMode: Text.WrapAnywhere
+                            Layout.fillWidth: true
                         }
                     }
                 }
@@ -298,10 +298,10 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
             MigrationController.state !== MigrationController.NoLegacyData
 
         AppMark {
+            opacity: 0.5
             Layout.preferredWidth: 72
             Layout.preferredHeight: 72
             Layout.alignment: Qt.AlignHCenter
-            opacity: 0.5
         }
         Text {
             text: qsTr("QUMESH")

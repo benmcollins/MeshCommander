@@ -121,8 +121,8 @@ Dialog {
                     text: root.draftPasswordConfirm
                     font.family: Type.mono
                     font.pixelSize: Type.sizeM
-                    Layout.fillWidth: true
                     color: root.passwordsAgree() ? Colors.text : Colors.standby
+                    Layout.fillWidth: true
                     onTextEdited: root.draftPasswordConfirm = text
                 }
             }

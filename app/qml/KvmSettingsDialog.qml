@@ -16,13 +16,6 @@ Dialog {
 
     property var controller: null
 
-    title: qsTr("KVM settings")
-    modal: true
-    closePolicy: Popup.CloseOnEscape
-    anchors.centerIn: parent
-    standardButtons: Dialog.Cancel | Dialog.Apply
-    implicitWidth: 520
-
     // Snapshot at open so we can diff against the firmware's reality
     // and Put only the dirty fields. Leaving a checkbox unchanged
     // means the patch omits that field entirely.
@@ -30,6 +23,13 @@ Dialog {
     property bool initialOptIn: false
     property int  initialTimeout: 0
     property bool initialGrey: false
+
+    title: qsTr("KVM settings")
+    modal: true
+    closePolicy: Popup.CloseOnEscape
+    anchors.centerIn: parent
+    standardButtons: Dialog.Cancel | Dialog.Apply
+    implicitWidth: 520
 
     onAboutToShow: {
         if (root.controller) {
@@ -115,11 +115,11 @@ Dialog {
             }
             TextField {
                 id: timeoutField
-                Layout.preferredWidth: 80
                 inputMethodHints: Qt.ImhDigitsOnly
                 validator: IntValidator { bottom: 0; top: 65535 }
                 font.family: Type.mono
                 font.pixelSize: Type.sizeS
+                Layout.preferredWidth: 80
             }
         }
 
@@ -135,11 +135,11 @@ Dialog {
             }
             TextField {
                 id: passwordField
-                Layout.fillWidth: true
                 placeholderText: qsTr("Leave empty to keep existing")
                 echoMode: TextInput.Password
                 font.family: Type.mono
                 font.pixelSize: Type.sizeS
+                Layout.fillWidth: true
             }
             CheckBox {
                 id: clearPwCheck

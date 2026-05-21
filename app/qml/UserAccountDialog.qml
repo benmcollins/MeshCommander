@@ -247,8 +247,8 @@ Dialog {
                         color: Colors.textMuted
                         font.family: Type.sans
                         font.pixelSize: Type.sizeS
-                        Layout.preferredWidth: 110
                         visible: root.draftPassword.length > 0
+                        Layout.preferredWidth: 110
                     }
                     TextField {
                         visible: root.draftPassword.length > 0
@@ -256,8 +256,8 @@ Dialog {
                         text: root.draftPasswordConfirm
                         font.family: Type.mono
                         font.pixelSize: Type.sizeM
-                        Layout.fillWidth: true
                         color: root.passwordsAgree() ? Colors.text : Colors.standby
+                        Layout.fillWidth: true
                         onTextEdited: root.draftPasswordConfirm = text
                     }
                 }

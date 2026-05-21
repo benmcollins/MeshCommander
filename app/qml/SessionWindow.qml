@@ -172,9 +172,9 @@ AppWindow {
 
         // -- Title bar with Power ▾ ------------------------------------
         Rectangle {
+            color: Colors.surface
             Layout.fillWidth: true
             Layout.preferredHeight: 44
-            color: Colors.surface
 
             RowLayout {
                 anchors.fill: parent
