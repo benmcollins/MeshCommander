@@ -21,6 +21,7 @@
 #include <QGuiApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
+#include <QQuickStyle>
 #include <QTimer>
 
 int main(int argc, char *argv[])
@@ -33,6 +34,21 @@ int main(int argc, char *argv[])
     // Ctrl is always Ctrl across platforms — Cmd remains usable via
     // `MetaModifier` if the QML side ever needs it.
     QCoreApplication::setAttribute(Qt::AA_MacDontSwapCtrlAndMeta);
+
+    // Pin the Qt Quick Controls style explicitly (#388). Without this,
+    // Qt picks per-platform defaults — `macos` on macOS, `windows` on
+    // Windows, `Default` on Linux — so the same QML renders differently
+    // across the three targets. Basic matches what every QML file in
+    // this app already pins with `import QtQuick.Controls.Basic`, so
+    // the C++ declaration and the QML imports agree: unstyled,
+    // theme-driven controls that our own themed wrappers
+    // (FlatButton/AccentButton/Section/ConfirmDialog/etc.) layer on top
+    // of. Picking Fusion (or any other style) here would have no visible
+    // effect — explicit `.Basic` imports in QML override the C++
+    // selection — but the declaration would then misrepresent what the
+    // app actually renders. Must be set before any QML loads a Controls
+    // module; placing it before QGuiApplication is the safe spot.
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     QGuiApplication app(argc, argv);
 
