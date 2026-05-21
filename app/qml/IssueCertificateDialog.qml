@@ -72,6 +72,32 @@ Dialog {
         }
     }
 
+    function submitIfReady() {
+        if (root.step === 0) {
+            // Step 0 → Generate. Mirror the AccentButton enabled gate.
+            if (subjectField.text.trim().length === 0) return;
+            statusBar.text = qsTr("Generating key pair and CSR…");
+            root.controller.generateKeyPairAndCsr(
+                keyLengthBox.model[keyLengthBox.currentIndex],
+                /*keyAlgorithm RSA=*/0,
+                subjectField.text.trim(),
+                signingAlgoBox.currentIndex);
+        } else if (root.step === 1) {
+            // Step 1 → Next. Only progress once the CSR has populated.
+            if (root.csrPem.length === 0) return;
+            root.step = 2;
+        } else if (root.step === 2) {
+            // Step 2 → Install & bind. Same gate as the AccentButton.
+            if (root.signedCertPem.trim().length === 0) return;
+            if (tlsEndpointBox.currentIndex < 0) return;
+            const tls = tlsEndpointBox.model[tlsEndpointBox.currentIndex];
+            statusBar.text = qsTr("Installing and binding…");
+            root.controller.installSignedCertAndBindTls(
+                root.signedCertPem.trim(),
+                tls ? tls.instanceId : "");
+        }
+    }
+
     Connections {
         target: root.controller
         function onCsrReady(pem) {
@@ -96,6 +122,9 @@ Dialog {
 
     contentItem: ColumnLayout {
         spacing: 12
+
+        Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+        Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
         // Step indicator strip.
         RowLayout {
@@ -226,14 +255,7 @@ Dialog {
                     font.family: Type.sans
                     font.pixelSize: Type.sizeS
                     enabled: subjectField.text.trim().length > 0
-                    onClicked: {
-                        statusBar.text = qsTr("Generating key pair and CSR…");
-                        root.controller.generateKeyPairAndCsr(
-                            keyLengthBox.model[keyLengthBox.currentIndex],
-                            /*keyAlgorithm RSA=*/0,
-                            subjectField.text.trim(),
-                            signingAlgoBox.currentIndex);
-                    }
+                    onClicked: root.submitIfReady()
                 }
             }
         }
@@ -297,7 +319,7 @@ Dialog {
                     text: qsTr("Next")
                     font.family: Type.sans
                     font.pixelSize: Type.sizeS
-                    onClicked: root.step = 2
+                    onClicked: root.submitIfReady()
                 }
             }
         }
@@ -379,13 +401,7 @@ Dialog {
                     font.pixelSize: Type.sizeS
                     enabled: root.signedCertPem.trim().length > 0
                           && tlsEndpointBox.currentIndex >= 0
-                    onClicked: {
-                        const tls = tlsEndpointBox.model[tlsEndpointBox.currentIndex];
-                        statusBar.text = qsTr("Installing and binding…");
-                        root.controller.installSignedCertAndBindTls(
-                            root.signedCertPem.trim(),
-                            tls ? tls.instanceId : "");
-                    }
+                    onClicked: root.submitIfReady()
                 }
             }
         }

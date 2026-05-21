@@ -105,8 +105,56 @@ Dialog {
         return draftPsk.length >= 8;
     }
 
+    function submitReady() {
+        if (draftElementName.length === 0) return false;
+        if (draftSsid.length === 0) return false;
+        if (draftEnterprise) {
+            if (draftAuthenticationProtocol === 0) {
+                // EAP-TLS needs a picked client cert.
+                return draftClientCertInstanceId.length > 0;
+            }
+            // PEAP / TTLS / EAP-FAST need username+password.
+            return draftEapUsername.length > 0
+                && draftEapPassword.length > 0;
+        }
+        // PSK path: Add needs ≥ 8 chars; Edit allows blank
+        // (keep current) but non-blank still needs ≥ 8.
+        if (!isEdit) return pskValid();
+        if (draftPsk.length === 0) return true;
+        return pskValid();
+    }
+
+    function submitIfReady() {
+        if (!submitReady()) return;
+        const fields = {
+            "elementName": draftElementName,
+            "ssid": draftSsid,
+            "authenticationMethod": draftAuthenticationMethod,
+            "encryptionMethod": draftEncryptionMethod,
+            "priority": draftPriority,
+            "psk": draftPsk,
+            "enterpriseEnabled": draftEnterprise,
+            "authenticationProtocol": draftAuthenticationProtocol,
+            "eapUsername": draftEapUsername,
+            "eapPassword": draftEapPassword,
+            "eapServerCertificateName": draftEapServerCertificateName,
+            "eapServerCertificateNameComparison":
+                draftEapServerCertificateNameComparison,
+            "clientCertificateInstanceId": draftClientCertInstanceId,
+            "caCertificateInstanceId": draftCaCertInstanceId,
+        };
+        if (isEdit)
+            controller.updateWiFiPskProfile(fields);
+        else
+            controller.addWiFiPskProfile(fields);
+        accept();
+    }
+
     contentItem: ColumnLayout {
         spacing: 14
+
+        Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+        Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
         Section {
             title: qsTr("PROFILE")
@@ -474,48 +522,8 @@ Dialog {
                 text: root.isEdit ? qsTr("Save changes") : qsTr("Add profile")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
-                enabled: {
-                    if (root.draftElementName.length === 0) return false;
-                    if (root.draftSsid.length === 0) return false;
-                    if (root.draftEnterprise) {
-                        if (root.draftAuthenticationProtocol === 0) {
-                            // EAP-TLS needs a picked client cert.
-                            return root.draftClientCertInstanceId.length > 0;
-                        }
-                        // PEAP / TTLS / EAP-FAST need username+password.
-                        return root.draftEapUsername.length > 0
-                            && root.draftEapPassword.length > 0;
-                    }
-                    // PSK path: Add needs ≥ 8 chars; Edit allows blank
-                    // (keep current) but non-blank still needs ≥ 8.
-                    if (!root.isEdit) return root.pskValid();
-                    if (root.draftPsk.length === 0) return true;
-                    return root.pskValid();
-                }
-                onClicked: {
-                    const fields = {
-                        "elementName": root.draftElementName,
-                        "ssid": root.draftSsid,
-                        "authenticationMethod": root.draftAuthenticationMethod,
-                        "encryptionMethod": root.draftEncryptionMethod,
-                        "priority": root.draftPriority,
-                        "psk": root.draftPsk,
-                        "enterpriseEnabled": root.draftEnterprise,
-                        "authenticationProtocol": root.draftAuthenticationProtocol,
-                        "eapUsername": root.draftEapUsername,
-                        "eapPassword": root.draftEapPassword,
-                        "eapServerCertificateName": root.draftEapServerCertificateName,
-                        "eapServerCertificateNameComparison":
-                            root.draftEapServerCertificateNameComparison,
-                        "clientCertificateInstanceId": root.draftClientCertInstanceId,
-                        "caCertificateInstanceId": root.draftCaCertInstanceId,
-                    };
-                    if (root.isEdit)
-                        root.controller.updateWiFiPskProfile(fields);
-                    else
-                        root.controller.addWiFiPskProfile(fields);
-                    root.accept();
-                }
+                enabled: root.submitReady()
+                onClicked: root.submitIfReady()
             }
         }
     }

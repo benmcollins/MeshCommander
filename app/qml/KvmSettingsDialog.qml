@@ -45,7 +45,7 @@ Dialog {
         }
     }
 
-    onApplied: {
+    function submitIfReady() {
         if (!root.controller) return;
         const fields = {};
         if (portCheck.checked !== root.initialPortEnabled)
@@ -70,8 +70,13 @@ Dialog {
         root.close();
     }
 
+    onApplied: root.submitIfReady()
+
     contentItem: ColumnLayout {
         spacing: 12
+
+        Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+        Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
         Text {
             text: qsTr("These settings live on the device and apply to every KVM session, not just this one.")

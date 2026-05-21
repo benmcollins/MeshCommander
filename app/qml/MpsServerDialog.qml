@@ -66,8 +66,42 @@ Dialog {
     standardButtons: Dialog.NoButton
     implicitWidth: 560
 
+    function submitReady() {
+        return draftAccessInfo.trim().length > 0
+            && draftPort > 0 && draftPort <= 65535
+            && (isEdit
+                 || draftAuthMethod === 1
+                 || (draftUsername.length > 0
+                      && draftPassword.length > 0));
+    }
+
+    function submitIfReady() {
+        if (!submitReady()) return;
+        if (isEdit) {
+            controller.updateMpServer(editName, {
+                "accessInfo": draftAccessInfo,
+                "port":       draftPort,
+                "commonName": draftCommonName,
+            });
+        } else {
+            controller.addMpServer({
+                "accessInfo": draftAccessInfo,
+                "port":       draftPort,
+                "commonName": draftCommonName,
+                "mpsType":    draftMpsType,
+                "authMethod": draftAuthMethod,
+                "username":   draftUsername,
+                "password":   draftPassword,
+            });
+        }
+        accept();
+    }
+
     contentItem: ColumnLayout {
         spacing: 14
+
+        Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+        Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
         Section {
             title: qsTr("SERVER")
@@ -252,32 +286,8 @@ Dialog {
                 text: root.isEdit ? qsTr("Save changes") : qsTr("Add server")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
-                enabled: root.draftAccessInfo.trim().length > 0
-                         && root.draftPort > 0 && root.draftPort <= 65535
-                         && (root.isEdit
-                              || root.draftAuthMethod === 1
-                              || (root.draftUsername.length > 0
-                                   && root.draftPassword.length > 0))
-                onClicked: {
-                    if (root.isEdit) {
-                        root.controller.updateMpServer(root.editName, {
-                            "accessInfo": root.draftAccessInfo,
-                            "port":       root.draftPort,
-                            "commonName": root.draftCommonName,
-                        });
-                    } else {
-                        root.controller.addMpServer({
-                            "accessInfo": root.draftAccessInfo,
-                            "port":       root.draftPort,
-                            "commonName": root.draftCommonName,
-                            "mpsType":    root.draftMpsType,
-                            "authMethod": root.draftAuthMethod,
-                            "username":   root.draftUsername,
-                            "password":   root.draftPassword,
-                        });
-                    }
-                    root.accept();
-                }
+                enabled: root.submitReady()
+                onClicked: root.submitIfReady()
             }
         }
     }
