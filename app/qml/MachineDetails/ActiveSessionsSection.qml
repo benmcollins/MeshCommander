@@ -25,44 +25,19 @@ Flickable {
         spacing: 18
         width: parent.width
 
-        ColumnLayout {
-            spacing: 4
-            Layout.fillWidth: true
-            Layout.topMargin: 24
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-
-            Text {
-                text: qsTr("ACTIVE SESSIONS")
-                color: Colors.textMuted
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-                font.letterSpacing: 2
-                font.weight: Font.Medium
+        SectionHeader {
+            eyebrow: qsTr("ACTIVE SESSIONS")
+            title: {
+                const a = controller.activeSessions;
+                if (!a) return qsTr("Not yet fetched");
+                const total = ((a.sol  || []).length)
+                             + ((a.kvm  || []).length)
+                             + ((a.ider || []).length);
+                return total === 0
+                    ? qsTr("No redirection sessions are active.")
+                    : qsTr("%1 active session(s)").arg(total);
             }
-            Text {
-                text: {
-                    const a = controller.activeSessions;
-                    if (!a) return qsTr("Not yet fetched");
-                    const total = ((a.sol  || []).length)
-                                 + ((a.kvm  || []).length)
-                                 + ((a.ider || []).length);
-                    return total === 0
-                        ? qsTr("No redirection sessions are active.")
-                        : qsTr("%1 active session(s)").arg(total);
-                }
-                color: Colors.text
-                font.family: Type.sans
-                font.pixelSize: 20
-            }
-            Text {
-                text: qsTr("Useful when a SOL / KVM / IDE-R launch is rejected: AMT allows one session per channel, so this pane shows who's already holding it.")
-                color: Colors.textFaint
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-            }
+            hint: qsTr("Useful when a SOL / KVM / IDE-R launch is rejected: AMT allows one session per channel, so this pane shows who's already holding it.")
         }
 
         // Reusable Section delegate — declared as an inline

@@ -55,34 +55,21 @@ ColumnLayout {
             spacing: 12
             Layout.fillWidth: true
 
-            ColumnLayout {
-                spacing: 4
-                Layout.fillWidth: true
+            SectionHeader {
+                padded: false
+                eyebrow: qsTr("WATCHDOGS")
+                title: {
+                    const ap = root.controller.agentPresence || {};
+                    const w = ap.watchdogs || [];
+                    if (Object.keys(ap).length === 0)
+                        return qsTr("Not yet fetched");
+                    if (w.length === 0)
+                        return qsTr("No agent presence watchdog configured.");
+                    return qsTr("%1 watchdog%2 configured")
+                        .arg(w.length)
+                        .arg(w.length === 1 ? "" : "s");
+                }
 
-                Text {
-                    text: qsTr("WATCHDOGS")
-                    color: Colors.textMuted
-                    font.family: Type.sans
-                    font.pixelSize: Type.sizeXs
-                    font.letterSpacing: 2
-                    font.weight: Font.Medium
-                }
-                Text {
-                    text: {
-                        const ap = root.controller.agentPresence || {};
-                        const w = ap.watchdogs || [];
-                        if (Object.keys(ap).length === 0)
-                            return qsTr("Not yet fetched");
-                        if (w.length === 0)
-                            return qsTr("No agent presence watchdog configured.");
-                        return qsTr("%1 watchdog%2 configured")
-                            .arg(w.length)
-                            .arg(w.length === 1 ? "" : "s");
-                    }
-                    color: Colors.text
-                    font.family: Type.sans
-                    font.pixelSize: 20
-                }
                 Text {
                     visible: (root.controller.agentPresence
                                && root.controller.agentPresence.maxTotalAgents > 0)

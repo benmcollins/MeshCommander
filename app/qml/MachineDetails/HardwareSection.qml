@@ -25,34 +25,14 @@ Flickable {
         spacing: 18
         width: parent.width
 
-        ColumnLayout {
-            spacing: 4
-            Layout.fillWidth: true
-            Layout.topMargin: 24
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-
-            Text {
-                text: qsTr("HARDWARE")
-                color: Colors.textMuted
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-                font.letterSpacing: 2
-                font.weight: Font.Medium
-            }
-            Text {
-                text: {
-                    const inv = controller.hardwareInventory;
-                    if (!inv || Object.keys(inv).length === 0)
-                        return qsTr("Not yet fetched");
-                    return (inv.platformManufacturer || "") + " "
-                        + (inv.platformModel || "");
-                }
-                color: Colors.text
-                font.family: Type.sans
-                font.pixelSize: 20
-                elide: Text.ElideRight
-                Layout.fillWidth: true
+        SectionHeader {
+            eyebrow: qsTr("HARDWARE")
+            title: {
+                const inv = controller.hardwareInventory;
+                if (!inv || Object.keys(inv).length === 0)
+                    return qsTr("Not yet fetched");
+                return (inv.platformManufacturer || "") + " "
+                    + (inv.platformModel || "");
             }
         }
 

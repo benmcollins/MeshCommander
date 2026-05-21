@@ -31,45 +31,21 @@ Flickable {
         spacing: 18
         width: parent.width
 
-        ColumnLayout {
-            spacing: 4
-            Layout.fillWidth: true
-            Layout.topMargin: 24
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Text {
-                text: qsTr("WIRELESS")
-                color: Colors.textMuted
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-                font.letterSpacing: 2
-                font.weight: Font.Medium
+        SectionHeader {
+            eyebrow: qsTr("WIRELESS")
+            title: {
+                const w = controller.wireless;
+                if (!w || !w.ok)
+                    return qsTr("Not yet fetched");
+                if (w.port && w.port.present)
+                    return w.port.currentSsid
+                        ? w.port.currentSsid
+                        : qsTr("Wireless interface");
+                return qsTr("No wireless interface");
             }
-            Text {
-                text: {
-                    const w = controller.wireless;
-                    if (!w || !w.ok)
-                        return qsTr("Not yet fetched");
-                    if (w.port && w.port.present)
-                        return w.port.currentSsid
-                            ? w.port.currentSsid
-                            : qsTr("Wireless interface");
-                    return qsTr("No wireless interface");
-                }
-                color: Colors.text
-                font.family: Type.sans
-                font.pixelSize: 20
-                elide: Text.ElideRight
-                Layout.fillWidth: true
-            }
-            Text {
-                visible: !controller.wireless
-                      || !controller.wireless.ok
-                text: qsTr("Click Refresh to fetch wireless state.")
-                color: Colors.textFaint
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-            }
+            hint: (!controller.wireless || !controller.wireless.ok)
+                ? qsTr("Click Refresh to fetch wireless state.")
+                : ""
         }
 
         // --- WiFi port + radio --------------------------

@@ -31,28 +31,14 @@ ColumnLayout {
             spacing: 12
             Layout.fillWidth: true
 
-            ColumnLayout {
-                spacing: 4
-                Layout.fillWidth: true
-
-                Text {
-                    text: qsTr("WAKE ALARMS")
-                    color: Colors.textMuted
-                    font.family: Type.sans
-                    font.pixelSize: Type.sizeXs
-                    font.letterSpacing: 2
-                    font.weight: Font.Medium
-                }
-                Text {
-                    text: root.controller.wakeAlarms.length === 0
-                        ? qsTr("No wake alarms registered.")
-                        : qsTr("%1 alarm%2 scheduled")
-                              .arg(root.controller.wakeAlarms.length)
-                              .arg(root.controller.wakeAlarms.length === 1 ? "" : "s")
-                    color: Colors.text
-                    font.family: Type.sans
-                    font.pixelSize: 20
-                }
+            SectionHeader {
+                padded: false
+                eyebrow: qsTr("WAKE ALARMS")
+                title: root.controller.wakeAlarms.length === 0
+                    ? qsTr("No wake alarms registered.")
+                    : qsTr("%1 alarm%2 scheduled")
+                          .arg(root.controller.wakeAlarms.length)
+                          .arg(root.controller.wakeAlarms.length === 1 ? "" : "s")
             }
 
             AccentButton {

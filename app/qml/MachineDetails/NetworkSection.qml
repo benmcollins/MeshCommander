@@ -25,29 +25,12 @@ Flickable {
         spacing: 18
         width: parent.width
 
-        ColumnLayout {
-            spacing: 4
-            Layout.fillWidth: true
-            Layout.topMargin: 24
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Text {
-                text: qsTr("NETWORK")
-                color: Colors.textMuted
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-                font.letterSpacing: 2
-                font.weight: Font.Medium
-            }
-            Text {
-                text: controller.networkInterfaces.length === 0
-                    ? qsTr("Not yet fetched")
-                    : qsTr("%1 interface(s)")
-                        .arg(controller.networkInterfaces.length)
-                color: Colors.text
-                font.family: Type.sans
-                font.pixelSize: 20
-            }
+        SectionHeader {
+            eyebrow: qsTr("NETWORK")
+            title: controller.networkInterfaces.length === 0
+                ? qsTr("Not yet fetched")
+                : qsTr("%1 interface(s)")
+                    .arg(controller.networkInterfaces.length)
         }
 
         Repeater {

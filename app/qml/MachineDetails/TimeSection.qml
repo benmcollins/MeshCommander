@@ -21,29 +21,13 @@ ColumnLayout {
     // Time data is fetched centrally via `root.refreshCurrent()`
     // when this section becomes active.
 
-    ColumnLayout {
-        spacing: 4
-        Layout.fillWidth: true
-        Layout.topMargin: 24
-        Layout.leftMargin: 24
-        Layout.rightMargin: 24
-        Text {
-            text: qsTr("TIME")
-            color: Colors.textMuted
-            font.family: Type.sans
-            font.pixelSize: Type.sizeXs
-            font.letterSpacing: 2
-            font.weight: Font.Medium
-        }
-        Text {
-            text: root.controller.amtEpoch === 0
-                ? qsTr("Not yet fetched")
-                : Qt.formatDateTime(new Date(root.controller.amtEpoch * 1000),
-                                     "yyyy-MM-dd  HH:mm:ss  t")
-            color: Colors.text
-            font.family: Type.mono
-            font.pixelSize: 20
-        }
+    SectionHeader {
+        eyebrow: qsTr("TIME")
+        monoTitle: true
+        title: root.controller.amtEpoch === 0
+            ? qsTr("Not yet fetched")
+            : Qt.formatDateTime(new Date(root.controller.amtEpoch * 1000),
+                                 "yyyy-MM-dd  HH:mm:ss  t")
     }
 
     Section {

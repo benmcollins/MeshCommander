@@ -30,42 +30,20 @@ Flickable {
         spacing: 18
         width: parent.width
 
-        ColumnLayout {
-            spacing: 4
-            Layout.fillWidth: true
-            Layout.topMargin: 24
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Text {
-                text: qsTr("REMOTE ACCESS (CIRA)")
-                color: Colors.textMuted
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-                font.letterSpacing: 2
-                font.weight: Font.Medium
+        SectionHeader {
+            eyebrow: qsTr("REMOTE ACCESS (CIRA)")
+            title: {
+                const r = controller.remoteAccess;
+                if (!r || !r.ok)
+                    return qsTr("Not yet fetched");
+                const n = (r.servers || []).length;
+                return n === 0
+                    ? qsTr("No MPS servers configured")
+                    : qsTr("%1 management server(s)").arg(n);
             }
-            Text {
-                text: {
-                    const r = controller.remoteAccess;
-                    if (!r || !r.ok)
-                        return qsTr("Not yet fetched");
-                    const n = (r.servers || []).length;
-                    return n === 0
-                        ? qsTr("No MPS servers configured")
-                        : qsTr("%1 management server(s)").arg(n);
-                }
-                color: Colors.text
-                font.family: Type.sans
-                font.pixelSize: 20
-            }
-            Text {
-                visible: !controller.remoteAccess
-                      || !controller.remoteAccess.ok
-                text: qsTr("Click Refresh to fetch the CIRA configuration.")
-                color: Colors.textFaint
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-            }
+            hint: (!controller.remoteAccess || !controller.remoteAccess.ok)
+                ? qsTr("Click Refresh to fetch the CIRA configuration.")
+                : ""
         }
 
         // --- Environment detection -------------------
