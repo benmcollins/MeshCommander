@@ -344,6 +344,87 @@ AppWindow {
         }
     }
 
+    // Small inline prompt for "Bind policy to port". AMT machines
+    // typically have 1-2 Ethernet ports; the user picks the index
+    // (DeviceID is `"Intel(r) AMT Ethernet Port <N>"`). Inline here
+    // rather than a separate file — it's a single SpinBox + Confirm.
+    Dialog {
+        id: portBindingPrompt
+        title: qsTr("Bind policy to port")
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.NoButton
+        implicitWidth: 460
+
+        property string pendingPolicyInstanceId
+        property string pendingPolicyLabel
+        property int draftPortIndex: 0
+
+        function openForBind(instanceId, label) {
+            pendingPolicyInstanceId = instanceId;
+            pendingPolicyLabel = label;
+            draftPortIndex = 0;
+            open();
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Text {
+                text: qsTr("Bind %1 to which Ethernet port?")
+                    .arg(portBindingPrompt.pendingPolicyLabel)
+                color: Colors.text
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                spacing: 6
+                Text {
+                    text: qsTr("Port index")
+                    color: Colors.textMuted
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeXs
+                }
+                SpinBox {
+                    value: portBindingPrompt.draftPortIndex
+                    from: 0
+                    to: 7
+                    editable: true
+                    onValueModified: portBindingPrompt.draftPortIndex = value
+                }
+                Text {
+                    text: qsTr("(typically 0 — the wired interface)")
+                    color: Colors.textFaint
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeXs
+                }
+                Item { Layout.fillWidth: true }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                FlatButton {
+                    text: qsTr("Cancel")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    onClicked: portBindingPrompt.reject()
+                }
+                AccentButton {
+                    text: qsTr("Bind")
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    onClicked: {
+                        controller.bindSystemDefensePolicy(
+                            portBindingPrompt.draftPortIndex,
+                            portBindingPrompt.pendingPolicyInstanceId);
+                        portBindingPrompt.accept();
+                    }
+                }
+            }
+        }
+    }
+
     ConfirmDialog {
         id: systemDefenseConfirmDialog
         property string pendingInstanceId: ""

@@ -690,6 +690,18 @@ public:
     /// InstanceIDs (the controller extracts the trailing handle).
     /// On success refreshes the section. See #357.
     Q_INVOKABLE void addSystemDefensePolicyAction(const QVariantMap &fields);
+    /// WS-Transfer Create of an `AMT_NetworkPortSystemDefensePolicy`
+    /// row binding `policyInstanceId` to the Ethernet port indexed
+    /// by `portIndex`. AMT supports at most one policy per port; the
+    /// caller is expected to unbind any prior policy first. On
+    /// success refreshes the section. See #359.
+    Q_INVOKABLE void bindSystemDefensePolicy(int portIndex,
+                                                const QString &policyInstanceId);
+    /// WS-Transfer Delete on the join row identified by
+    /// (portIndex, policyInstanceId). On success refreshes the
+    /// section. See #359.
+    Q_INVOKABLE void unbindSystemDefensePolicy(int portIndex,
+                                                  const QString &policyInstanceId);
     /// WS-Transfer Delete on `AMT_IPHeadersFilter`. See #346.
     Q_INVOKABLE void deleteSystemDefenseIpFilter(const QString &instanceId);
     /// Enumerate `AMT_SystemPowerScheme` and resolve the active one.

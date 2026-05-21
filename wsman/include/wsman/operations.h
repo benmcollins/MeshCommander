@@ -738,6 +738,19 @@ struct ActiveFilterStatRow
     quint64 packetsDropped = 0;
 };
 
+/// One row from `AMT_NetworkPortSystemDefensePolicy` — the join
+/// linking a `CIM_EthernetPort` (Antecedent) to an
+/// `AMT_SystemDefensePolicy` (Dependent). The read side surfaces
+/// just the two scalar keys; the controller rebuilds the EPRs when
+/// the operator changes the binding. See #359.
+struct PortPolicyBinding
+{
+    /// Ethernet port DeviceID as AMT reports it, e.g.
+    /// `"Intel(r) AMT Ethernet Port 0"`.
+    QString portDeviceId;
+    QString policyInstanceId;
+};
+
 /// Snapshot of the System Defense classes (#165 phase A). ACM-only —
 /// the controller decides visibility off `provisioningMode`. `supported`
 /// is `false` when the firmware doesn't expose the classes at all
@@ -751,6 +764,9 @@ struct SystemDefenseResult
     QList<Hdr8021Filter>       hdrFilters;
     QList<IpHeadersFilter>     ipFilters;
     QList<NetworkFilterRow>    subFilters;
+    /// #359 — port → policy bindings. Empty if no port has a policy
+    /// activated on it (the firmware's "no defense" default).
+    QList<PortPolicyBinding>   portBindings;
     /// #346 — live per-filter counters. Empty when the firmware
     /// rejects the AMT_ActiveFilterStatistics enumeration (older
     /// boxes that expose the policy/filter classes but not the
@@ -820,6 +836,35 @@ void addSystemDefensePolicy(WsmanClient *client,
     const SystemDefensePolicy &policy,
     const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
     const QString &messageId = QStringLiteral("uuid:add-sd-policy-test"));
+
+/// WS-Transfer Create of a new `AMT_NetworkPortSystemDefensePolicy`
+/// row, binding the policy with `policyInstanceId` to the Ethernet
+/// port indexed by `portIndex` (the firmware naming convention is
+/// `"Intel(r) AMT Ethernet Port <portIndex>"`). Both Antecedent and
+/// Dependent are EPRs embedded in the Create body. See #359.
+void bindSystemDefensePolicyToPort(WsmanClient *client,
+                                      int portIndex,
+                                      const QString &policyInstanceId,
+                                      std::function<void(InvokeResult)> callback);
+
+/// WS-Transfer Delete on `AMT_NetworkPortSystemDefensePolicy` keyed
+/// by EPR-valued `Antecedent` + `Dependent` selectors. Same EPR
+/// shape as the Create — the join row is identified by both
+/// endpoints. See #359.
+void unbindSystemDefensePolicyFromPort(WsmanClient *client,
+                                          int portIndex,
+                                          const QString &policyInstanceId,
+                                          std::function<void(InvokeResult)> callback);
+
+/// Test-only seams for the bind / unbind envelopes.
+[[nodiscard]] QByteArray buildBindSystemDefensePolicyEnvelopeForTesting(
+    int portIndex, const QString &policyInstanceId,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:bind-sd-test"));
+[[nodiscard]] QByteArray buildUnbindSystemDefensePolicyEnvelopeForTesting(
+    int portIndex, const QString &policyInstanceId,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:unbind-sd-test"));
 
 /// Extract the trailing integer handle from a System Defense filter's
 /// `InstanceID` (e.g. `"Intel(r) AMT:IP Filter Set:Handle 5"` → `5`,

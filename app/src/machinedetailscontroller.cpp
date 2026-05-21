@@ -1945,6 +1945,16 @@ void MachineDetailsController::refreshSystemDefense()
                 statsByInstance.insert(s.filterInstanceId, m);
             }
 
+            // Per-policy port bindings — flatten the join rows into a
+            // map keyed by the policy InstanceID so the QML row binding
+            // can render the bound port without scanning a list.
+            QVariantMap portBindingsByPolicy;
+            for (const auto &b : r.portBindings) {
+                QVariantMap m;
+                m.insert(QStringLiteral("portDeviceId"), b.portDeviceId);
+                portBindingsByPolicy.insert(b.policyInstanceId, m);
+            }
+
             QVariantMap sd;
             sd.insert(QStringLiteral("ok"),         r.ok);
             sd.insert(QStringLiteral("supported"),  r.supported);
@@ -1952,6 +1962,7 @@ void MachineDetailsController::refreshSystemDefense()
             sd.insert(QStringLiteral("hdrFilters"), hdrFilters);
             sd.insert(QStringLiteral("ipFilters"),  ipFilters);
             sd.insert(QStringLiteral("stats"),      statsByInstance);
+            sd.insert(QStringLiteral("portBindings"), portBindingsByPolicy);
             m_systemDefense = std::move(sd);
             emit systemDefenseChanged();
         });
@@ -2061,6 +2072,64 @@ void MachineDetailsController::deleteSystemDefenseIpFilter(const QString &instan
                 setLastError(r.error.isEmpty()
                     ? QStringLiteral("Delete L3/L4 filter: failed.")
                     : QStringLiteral("Delete L3/L4 filter: %1").arg(r.error));
+                return;
+            }
+            refreshSystemDefense();
+        });
+}
+
+void MachineDetailsController::bindSystemDefensePolicy(int portIndex,
+                                                          const QString &policyInstanceId)
+{
+    setLastError({});
+    if (portIndex < 0) {
+        setLastError(QStringLiteral("Bind policy: port index must be >= 0."));
+        return;
+    }
+    if (policyInstanceId.isEmpty()) {
+        setLastError(QStringLiteral("Bind policy: missing policy InstanceID."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Bind policy: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::bindSystemDefensePolicyToPort(m_client, portIndex, policyInstanceId,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Bind policy: failed.")
+                    : QStringLiteral("Bind policy: %1").arg(r.error));
+                return;
+            }
+            refreshSystemDefense();
+        });
+}
+
+void MachineDetailsController::unbindSystemDefensePolicy(int portIndex,
+                                                            const QString &policyInstanceId)
+{
+    setLastError({});
+    if (portIndex < 0 || policyInstanceId.isEmpty()) {
+        setLastError(QStringLiteral("Unbind policy: port index and policy are required."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Unbind policy: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::unbindSystemDefensePolicyFromPort(m_client, portIndex, policyInstanceId,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Unbind policy: failed.")
+                    : QStringLiteral("Unbind policy: %1").arg(r.error));
                 return;
             }
             refreshSystemDefense();

@@ -47,6 +47,8 @@ private slots:
     void extractFilterHandleFromInstanceIdParsesTrailingInt();
     void addSystemDefensePolicyEnvelopeShape();
     void addSystemDefensePolicyEnvelopeRepeatsFilterHandles();
+    void bindSystemDefensePolicyEnvelopeEmbedsBothEprs();
+    void unbindSystemDefensePolicyEnvelopeHasEprValuedSelectors();
 };
 
 namespace {
@@ -938,6 +940,61 @@ void TestSoapEnvelope::addSystemDefensePolicyEnvelopeRepeatsFilterHandles()
     QVERIFY(env.contains(">7<"));
     QVERIFY(env.contains(">12<"));
     QVERIFY(env.contains(">33<"));
+}
+
+void TestSoapEnvelope::bindSystemDefensePolicyEnvelopeEmbedsBothEprs()
+{
+    // Port 0 + a policy InstanceID. Both EPRs land inside the
+    // Create body — Antecedent points at the Ethernet port, Dependent
+    // at the policy. Locks the legacy reference shape.
+    const QByteArray env = buildBindSystemDefensePolicyEnvelopeForTesting(
+        0, QStringLiteral("Intel(r) AMT:Policy 42"));
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Create action + target class.
+    QVERIFY(env.contains("http://schemas.xmlsoap.org/ws/2004/09/transfer/Create"));
+    QVERIFY(env.contains("AMT_NetworkPortSystemDefensePolicy"));
+
+    // Antecedent EPR → CIM_EthernetPort with the AMT DeviceID.
+    QVERIFY(env.contains("Antecedent"));
+    QVERIFY(env.contains("CIM_EthernetPort"));
+    QVERIFY(env.contains("Intel(r) AMT Ethernet Port 0"));
+    QVERIFY(env.contains("CreationClassName"));
+
+    // Dependent EPR → AMT_SystemDefensePolicy by InstanceID.
+    QVERIFY(env.contains("Dependent"));
+    QVERIFY(env.contains("AMT_SystemDefensePolicy"));
+    QVERIFY(env.contains("Intel(r) AMT:Policy 42"));
+}
+
+void TestSoapEnvelope::unbindSystemDefensePolicyEnvelopeHasEprValuedSelectors()
+{
+    // Delete uses EPR-valued selectors (same pattern as the WS-Eventing
+    // Unsubscribe from #352). Two named selectors — Antecedent +
+    // Dependent — each containing a full EPR.
+    const QByteArray env = buildUnbindSystemDefensePolicyEnvelopeForTesting(
+        1, QStringLiteral("Intel(r) AMT:Policy 7"));
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Delete action + target class.
+    QVERIFY(env.contains("http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete"));
+    QVERIFY(env.contains("AMT_NetworkPortSystemDefensePolicy"));
+
+    // Selector names "Antecedent" and "Dependent" in the SelectorSet.
+    QVERIFY(env.contains("Name=\"Antecedent\"") || env.contains("Name='Antecedent'"));
+    QVERIFY(env.contains("Name=\"Dependent\"") || env.contains("Name='Dependent'"));
+    // Both selector values are full EPRs.
+    QVERIFY(env.contains("EndpointReference"));
+    QVERIFY(env.contains("CIM_EthernetPort"));
+    QVERIFY(env.contains("Intel(r) AMT Ethernet Port 1"));
+    QVERIFY(env.contains("AMT_SystemDefensePolicy"));
+    QVERIFY(env.contains("Intel(r) AMT:Policy 7"));
 }
 
 QTEST_GUILESS_MAIN(TestSoapEnvelope)
