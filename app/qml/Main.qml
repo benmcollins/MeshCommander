@@ -236,19 +236,27 @@ ApplicationWindow {
         // the type-aware editor Components inside its delegates only
         // load when their owning row exists, so we want that path
         // exercised at build time.
+        // `launchId` is the rebuild trigger: each `launch()` bumps it
+        // through `-1` and back to a fresh non-negative value, which
+        // churns the `active` predicate and forces a tear-down +
+        // reconstruct even when the window was already open. Using a
+        // predicate (instead of imperative `active = false; active = true`)
+        // means future bindings on `active` survive across launches —
+        // see issue #369 for the regression class this guards against.
+        property int launchId: -1
         objectName: "setupBinLoader"
-        active: false
+        active: launchId >= 0
         asynchronous: true
 
         function launch() {
-            active = false;
-            active = true;
+            launchId = -1;
+            launchId = launchId + 1;
         }
 
         onStatusChanged: if (status === Loader.Ready && item !== null) item.visible = true
 
         sourceComponent: SetupBinWindow {
-            onClosing: setupBinLoader.active = false
+            onClosing: setupBinLoader.launchId = -1
         }
     }
 
@@ -258,15 +266,22 @@ ApplicationWindow {
         // to force MachineDetailsWindow to construct under the smoke
         // test — that's where the Icon-style regression class (#251)
         // actually lives.
-        objectName: "detailsLoader"
-        active: false
-        asynchronous: true
+        // `targetRow` is both the rebuild trigger and the source of
+        // truth `applyMachine()` reads to populate the window. Driving
+        // `active` from a predicate (instead of imperative
+        // `active = false; active = true`) means future bindings on
+        // `active` survive across launches — see issue #369 for the
+        // regression class this guards against. `launchFor()` churns
+        // through `-1` to force a tear-down + reconstruct even when
+        // reopening the same row.
         property int targetRow: -1
+        objectName: "detailsLoader"
+        active: targetRow >= 0
+        asynchronous: true
 
         function launchFor(row) {
+            targetRow = -1;
             targetRow = row;
-            active = false;
-            active = true;
         }
 
         function applyMachine() {
@@ -287,7 +302,7 @@ ApplicationWindow {
         onStatusChanged: if (status === Loader.Ready) applyMachine()
 
         sourceComponent: MachineDetailsWindow {
-            onClosing: detailsLoader.active = false
+            onClosing: detailsLoader.targetRow = -1
             onTrustedFingerprintPersistRequested: function(fp) {
                 if (detailsLoader.targetRow >= 0)
                     ComputerModel.addTrustedFingerprint(detailsLoader.targetRow, fp);
