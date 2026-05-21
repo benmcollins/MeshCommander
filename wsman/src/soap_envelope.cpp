@@ -464,7 +464,7 @@ QByteArray buildInvokeEnvelope(const QString &resourceUri,
 QByteArray buildInvokeEnvelopeOrdered(const QString &resourceUri,
                                        const QString &methodName,
                                        const QHash<QString, QString> &selectors,
-                                       const QList<QPair<QString, QString>> &parameters,
+                                       const QList<std::pair<QString, QString>> &parameters,
                                        const QString &to,
                                        const QString &messageId)
 {

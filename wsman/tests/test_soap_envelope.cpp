@@ -248,7 +248,7 @@ void TestSoapEnvelope::buildInvokeEnvelopeOrderedRepeatsKeys()
     // The Realms parameter on AddUserAclEntryEx is a repeated element —
     // the QHash overload would collapse duplicates. Verify the ordered
     // overload preserves them.
-    QList<QPair<QString, QString>> params{
+    QList<std::pair<QString, QString>> params{
         { QStringLiteral("DigestUsername"), QStringLiteral("alice") },
         { QStringLiteral("Realms"),         QStringLiteral("0") },
         { QStringLiteral("Realms"),         QStringLiteral("2") },

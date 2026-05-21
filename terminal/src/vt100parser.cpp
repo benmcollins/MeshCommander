@@ -5,6 +5,7 @@
 
 #include "terminal/terminalscreen.h"
 
+#include <algorithm>
 #include <optional>
 
 namespace qumesh::terminal {
@@ -75,7 +76,7 @@ void Vt100Parser::feed(QByteArrayView bytes)
             } else if (b < 0x20) {
                 handleC0(b);
             } else if (b < 0x80) {
-                const QChar c(b);
+                const char16_t c = b;
                 putChar(QStringView(&c, 1));
             } else {
                 const QString s = consumeUtf8(b);
@@ -287,9 +288,9 @@ quint8 quantizeRgbTo256(int r, int g, int b)
         if (v < 115) return 1;
         return (v - 35) / 40; // 2..5 for the 135/175/215/255 buckets
     };
-    const int ri = qBound(0, step(r), 5);
-    const int gi = qBound(0, step(g), 5);
-    const int bi = qBound(0, step(b), 5);
+    const int ri = std::clamp(step(r), 0, 5);
+    const int gi = std::clamp(step(g), 0, 5);
+    const int bi = std::clamp(step(b), 0, 5);
     return static_cast<quint8>(16 + 36 * ri + 6 * gi + bi);
 }
 
@@ -314,7 +315,7 @@ std::optional<quint8> consumeExtendedColor(const QVector<int> &params, int *i)
         }
         const int idx = params.at(*i + 2);
         *i += 2;
-        return static_cast<quint8>(qBound(0, idx, 255));
+        return static_cast<quint8>(std::clamp(idx, 0, 255));
     }
     if (mode == 2) {
         if (*i + 4 >= n) {

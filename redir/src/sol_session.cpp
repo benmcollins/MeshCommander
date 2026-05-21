@@ -8,6 +8,8 @@
 
 #include <QTimer>
 
+#include <algorithm>
+
 namespace qumesh::redir {
 
 namespace {
@@ -46,7 +48,7 @@ void SolSession::sendInput(const QByteArray &input)
     if (!m_open) return;
     constexpr int kChunk = 0xFFFF;
     for (int off = 0; off < input.size(); off += kChunk) {
-        const int n = qMin(kChunk, input.size() - off);
+        const int n = static_cast<int>((std::min<qsizetype>)(kChunk, input.size() - off));
         const QByteArray frame = buildSolDataToHost(QByteArrayView(input.data() + off, n));
         m_client->writeRaw(frame);
     }

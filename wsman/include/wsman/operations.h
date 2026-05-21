@@ -7,6 +7,7 @@
 #include <QList>
 #include <QString>
 #include <functional>
+#include <utility>
 
 namespace qumesh::wsman {
 
@@ -161,7 +162,7 @@ struct MeVersionResult
     /// Every `InstanceID → VersionString` pair returned by the firmware,
     /// in the order received. Lets the UI surface unknown / vendor-
     /// specific rows without code changes.
-    QList<QPair<QString, QString>> identities;
+    QList<std::pair<QString, QString>> identities;
 };
 
 /// Per-redirection-channel enabled state. Decoded from

@@ -12,6 +12,7 @@
 #include <QMutexLocker>
 #include <QPointer>
 #include <QThread>
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -163,7 +164,7 @@ SshSessionWorker::SshSessionWorker(QObject *parent) : QObject(parent) {}
 int SshSessionWorker::waitForLibssh(const std::function<int()> &call, int timeoutMs)
 {
     constexpr int kTickMs = 50;
-    if (timeoutMs <= 0) timeoutMs = qMax(1, m_params.connectTimeoutMs);
+    if (timeoutMs <= 0) timeoutMs = (std::max)(1, m_params.connectTimeoutMs);
     QElapsedTimer deadline;
     deadline.start();
     while (true) {
@@ -246,7 +247,7 @@ void SshSessionWorker::open(SshSession::Params p)
     const QByteArray hostBytes = resolved.toUtf8();
     const QByteArray userBytes = m_params.user.toUtf8();
     const unsigned int portU = m_params.port;
-    const long timeoutSec = qMax(1L, long(m_params.connectTimeoutMs / 1000));
+    const long timeoutSec = (std::max)(1L, long(m_params.connectTimeoutMs / 1000));
 
     if (ssh_options_set(m_session, SSH_OPTIONS_HOST,
                         hostBytes.constData()) != SSH_OK

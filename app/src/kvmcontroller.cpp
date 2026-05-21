@@ -13,6 +13,8 @@
 #include "ssh_tunnel_opener.h"
 #include "sshtunnelhost.h"
 
+#include <algorithm>
+
 namespace qumesh::app {
 
 using qumesh::kvm::KvmSession;
@@ -272,8 +274,8 @@ void KvmController::sendPointer(int buttonMask, int x, int y)
 {
     if (m_session) {
         m_session->sendPointer(static_cast<quint8>(buttonMask & 0xFF),
-                                static_cast<quint16>(qBound(0, x, 65535)),
-                                static_cast<quint16>(qBound(0, y, 65535)));
+                                static_cast<quint16>(std::clamp(x, 0, 65535)),
+                                static_cast<quint16>(std::clamp(y, 0, 65535)));
     }
 }
 

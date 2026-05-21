@@ -11,6 +11,8 @@
 #include <QRect>
 #include <QWheelEvent>
 
+#include <algorithm>
+
 namespace qumesh::app {
 
 namespace {
@@ -72,7 +74,7 @@ void KvmViewer::paint(QPainter *painter)
     const QImage &img = m_framebuffer->image();
     const qreal sx = width() / static_cast<qreal>(img.width());
     const qreal sy = height() / static_cast<qreal>(img.height());
-    const qreal s = qMin(sx, sy);
+    const qreal s = (std::min)(sx, sy);
     const qreal w = img.width() * s;
     const qreal h = img.height() * s;
     const qreal ox = (width() - w) * 0.5;
@@ -87,15 +89,15 @@ QPoint KvmViewer::toFramebufferCoords(const QPointF &local) const
     const QImage &img = m_framebuffer->image();
     const qreal sx = width() / static_cast<qreal>(img.width());
     const qreal sy = height() / static_cast<qreal>(img.height());
-    const qreal s = qMin(sx, sy);
+    const qreal s = (std::min)(sx, sy);
     const qreal w = img.width() * s;
     const qreal h = img.height() * s;
     const qreal ox = (width() - w) * 0.5;
     const qreal oy = (height() - h) * 0.5;
     const qreal fx = (local.x() - ox) / s;
     const qreal fy = (local.y() - oy) / s;
-    return QPoint(qBound(0, static_cast<int>(fx), img.width() - 1),
-                   qBound(0, static_cast<int>(fy), img.height() - 1));
+    return QPoint(std::clamp(static_cast<int>(fx), 0, img.width() - 1),
+                   std::clamp(static_cast<int>(fy), 0, img.height() - 1));
 }
 
 quint8 KvmViewer::mouseButtons(Qt::MouseButtons buttons) const
@@ -191,8 +193,7 @@ quint32 KvmViewer::qtKeyToKeysym(int key, const QString &text)
         return kXkF1Base + (key - Qt::Key_F1);
     }
     if (!text.isEmpty()) {
-        const QChar c = text.at(0);
-        const ushort u = c.unicode();
+        const char16_t u = text.at(0).unicode();
         if (u >= 0x20 && u <= 0x7E) return u;
         if (u >= 0xA0 && u <= 0xFF) return u; // Latin-1 maps to X11 keysym 1:1
     }
