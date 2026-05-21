@@ -11,6 +11,8 @@
 #include <QFileInfo>
 #include <QTimer>
 
+#include <algorithm>
+
 namespace qumesh::ider {
 
 using namespace qumesh::ider::scsi;
@@ -414,7 +416,7 @@ void IderSession::sendNextScsiChunk()
         m_scsiReadInFlight = false;
         return;
     }
-    const qint64 want = static_cast<qint64>(qMin(m_remainingReadBytes, m_chunkSize));
+    const qint64 want = static_cast<qint64>((std::min)(m_remainingReadBytes, m_chunkSize));
     QByteArray data = m_isoFile.read(want);
     if (data.size() != want) {
         sendError(m_chunkDev, kSenseIllegalRequest, 0x21, 0x00);

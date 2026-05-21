@@ -3,6 +3,7 @@
 
 #include "terminal/terminalscreen.h"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace qumesh::terminal {
@@ -105,8 +106,8 @@ void TerminalScreen::resize(int newRows, int newColumns)
     if (newRows == m_rows && newColumns == m_columns) return;
 
     QVector<Cell> next(newRows * newColumns);
-    const int copyRows = qMin(m_rows, newRows);
-    const int copyCols = qMin(m_columns, newColumns);
+    const int copyRows = (std::min)(m_rows, newRows);
+    const int copyCols = (std::min)(m_columns, newColumns);
     for (int r = 0; r < copyRows; ++r) {
         for (int c = 0; c < copyCols; ++c) {
             next[r * newColumns + c] = m_cells.at(r * m_columns + c);
@@ -115,8 +116,8 @@ void TerminalScreen::resize(int newRows, int newColumns)
     m_cells = std::move(next);
     m_rows = newRows;
     m_columns = newColumns;
-    m_cursorRow = qBound(0, m_cursorRow, m_rows - 1);
-    m_cursorColumn = qBound(0, m_cursorColumn, m_columns - 1);
+    m_cursorRow = std::clamp(m_cursorRow, 0, m_rows - 1);
+    m_cursorColumn = std::clamp(m_cursorColumn, 0, m_columns - 1);
     emit geometryChanged();
     emit cursorMoved();
     touch();
@@ -227,8 +228,8 @@ void TerminalScreen::putCellAtCursor(QStringView fragment)
 
 void TerminalScreen::setCursor(int row, int column)
 {
-    m_cursorRow = qBound(0, row, m_rows - 1);
-    m_cursorColumn = qBound(0, column, m_columns - 1);
+    m_cursorRow = std::clamp(row, 0, m_rows - 1);
+    m_cursorColumn = std::clamp(column, 0, m_columns - 1);
     emit cursorMoved();
 }
 

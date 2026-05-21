@@ -9,6 +9,8 @@
 #include <QTimer>
 #include <QUdpSocket>
 
+#include <algorithm>
+
 namespace qumesh::rmcp {
 
 namespace {
@@ -102,7 +104,7 @@ void Scanner::onSendBurst()
         return;
 
     const QByteArray ping = buildPing(m_tag);
-    const int end = qMin(m_nextIndex + kBurstSize, m_pending.size());
+    const int end = static_cast<int>((std::min<qsizetype>)(m_nextIndex + kBurstSize, m_pending.size()));
     for (int i = m_nextIndex; i < end; ++i)
         m_socket->writeDatagram(ping, m_pending[i], kAmtRmcpPort);
     m_nextIndex = end;

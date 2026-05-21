@@ -1716,10 +1716,10 @@ QString humanizeIsoDuration(const QString &iso)
         if (j == i || j >= iso.size()) break;
         const int n = iso.mid(i, j - i).toInt(&conv);
         if (!conv) return {};
-        const QChar unit = iso.at(j);
-        if (!inTime && unit == QLatin1Char('D')) days = n;
-        else if (inTime && unit == QLatin1Char('H')) hours = n;
-        else if (inTime && unit == QLatin1Char('M')) mins = n;
+        const char16_t unit = iso.at(j).unicode();
+        if (!inTime && unit == u'D') days = n;
+        else if (inTime && unit == u'H') hours = n;
+        else if (inTime && unit == u'M') mins = n;
         i = j + 1;
     }
     QStringList parts;

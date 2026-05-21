@@ -1297,11 +1297,12 @@ QString encodeWatchdogDeviceId(const QString &guid)
 {
     QString hex;
     hex.reserve(32);
-    for (QChar c : guid) {
-        if (c == QLatin1Char('-') || c == QLatin1Char('{') || c == QLatin1Char('}'))
+    for (QChar qc : guid) {
+        const char16_t c = qc.unicode();
+        if (c == u'-' || c == u'{' || c == u'}')
             continue;
-        if (!c.isLetterOrNumber()) return {};
-        hex.append(c.toLower());
+        if (!QChar::isLetterOrNumber(c)) return {};
+        hex.append(QChar(QChar::toLower(c)));
     }
     if (hex.size() != 32) return {};
     const QByteArray raw = QByteArray::fromHex(hex.toLatin1());
@@ -3078,10 +3079,11 @@ QString encodeFilterAddress(const QString &input, int ipVersion)
     if (ipVersion == 6) {
         QString hex;
         hex.reserve(32);
-        for (QChar c : trimmed) {
-            if (c == QLatin1Char(':')) continue;
-            if (!c.isLetterOrNumber()) return {};
-            hex.append(c.toUpper());
+        for (QChar qc : trimmed) {
+            const char16_t c = qc.unicode();
+            if (c == u':') continue;
+            if (!QChar::isLetterOrNumber(c)) return {};
+            hex.append(QChar(QChar::toUpper(c)));
         }
         return hex.size() == 32 ? hex : QString{};
     }
@@ -3712,7 +3714,7 @@ void setHighAccuracyTimeSync(WsmanClient *client,
     // AMT's XSD requires Ta0/Tm1/Tm2 in this exact order; the
     // unordered overload iterates a QHash and trips
     // SchemaValidationError when the hash spits them out shuffled.
-    const QList<QPair<QString, QString>> params{
+    const QList<std::pair<QString, QString>> params{
         { QStringLiteral("Ta0"), QString::number(ta0) },
         { QStringLiteral("Tm1"), QString::number(tm1) },
         { QStringLiteral("Tm2"), QString::number(tm2) },
@@ -4814,9 +4816,9 @@ auto aclReturnValueExtractor(const QString &what)
     };
 }
 
-QList<QPair<QString, QString>> realmsAsRepeatedParams(const QList<int> &realms)
+QList<std::pair<QString, QString>> realmsAsRepeatedParams(const QList<int> &realms)
 {
-    QList<QPair<QString, QString>> out;
+    QList<std::pair<QString, QString>> out;
     out.reserve(realms.size());
     for (int r : realms) {
         out.append({ QStringLiteral("Realms"), QString::number(r) });
@@ -4835,7 +4837,7 @@ void addUserAclEntryEx(WsmanClient *client, const QString &digestUsername,
     // The XML order matches the legacy MeshCommander invocation; AMT
     // is order-tolerant but matching the legacy shape avoids surprises
     // with older firmware.
-    QList<QPair<QString, QString>> params;
+    QList<std::pair<QString, QString>> params;
     params.append({ QStringLiteral("DigestUsername"), digestUsername });
     params.append({ QStringLiteral("DigestPassword"), digestPassword });
     params.append({ QStringLiteral("AccessPermission"),
@@ -4856,7 +4858,7 @@ void updateUserAclEntryEx(WsmanClient *client, int handle,
                           const UserAclEntryPatch &patch,
                           std::function<void(InvokeResult)> callback)
 {
-    QList<QPair<QString, QString>> params;
+    QList<std::pair<QString, QString>> params;
     params.append({ QStringLiteral("Handle"), QString::number(handle) });
     if (patch.setDigestUsername)
         params.append({ QStringLiteral("DigestUsername"), patch.digestUsername });
@@ -4915,7 +4917,7 @@ void setAdminAclEntryEx(WsmanClient *client, const QString &username,
                         const QString &digestPassword,
                         std::function<void(InvokeResult)> callback)
 {
-    QList<QPair<QString, QString>> params;
+    QList<std::pair<QString, QString>> params;
     params.append({ QStringLiteral("Username"), username });
     params.append({ QStringLiteral("DigestPassword"), digestPassword });
     const QByteArray env = buildInvokeEnvelopeOrdered(
