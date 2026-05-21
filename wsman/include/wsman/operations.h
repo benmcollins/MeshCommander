@@ -719,14 +719,6 @@ struct IpHeadersFilter
     int dstPortEnd = -1;
 };
 
-/// One `AMT_NetworkFilter` sub-rule reference.
-struct NetworkFilterRow
-{
-    QString instanceId;
-    QString name;
-    QString filterClass;            ///< Either `Hdr8021Filter` or `IPHeadersFilter`.
-};
-
 /// One row from `AMT_ActiveFilterStatistics` — packets-passed /
 /// packets-dropped counters for a single filter, keyed by the same
 /// `InstanceID` that identifies the filter row in
@@ -763,7 +755,6 @@ struct SystemDefenseResult
     QList<SystemDefensePolicy> policies;
     QList<Hdr8021Filter>       hdrFilters;
     QList<IpHeadersFilter>     ipFilters;
-    QList<NetworkFilterRow>    subFilters;
     /// #359 — port → policy bindings. Empty if no port has a policy
     /// activated on it (the firmware's "no defense" default).
     QList<PortPolicyBinding>   portBindings;

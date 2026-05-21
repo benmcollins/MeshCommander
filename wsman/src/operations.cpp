@@ -92,9 +92,6 @@ constexpr char kHdr8021FilterResource[] =
 constexpr char kIpHeadersFilterResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_IPHeadersFilter";
 
-constexpr char kNetworkFilterResource[] =
-    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_NetworkFilter";
-
 constexpr char kActiveFilterStatisticsResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_ActiveFilterStatistics";
 
@@ -2414,25 +2411,31 @@ ActiveFilterStatRow parseActiveFilterStat(const QByteArray &itemXml)
 void getSystemDefense(WsmanClient *client,
                       std::function<void(SystemDefenseResult)> callback)
 {
-    // Six parallel enumerates. The firmware returns SOAP fault on
-    // every class for non-ACM / pre-AMT-6 boxes; treat consistent
-    // failure across all four *core* classes (excluding stats and
-    // the port-binding join, which some firmware drops separately)
-    // as "not supported" rather than an error.
+    // Five parallel enumerates: three core classes (policies + L2 +
+    // L3 filters), plus best-effort enumerates over the stats class
+    // and the port-policy join. The firmware returns SOAP fault on
+    // every core class for non-ACM / pre-AMT-6 boxes; treat consistent
+    // failure across all three core classes (excluding stats and
+    // port-bindings, which some firmware drops separately) as "not
+    // supported" rather than an error.
+    //
+    // The old setup also enumerated `AMT_NetworkFilter`, but that
+    // class is just the polymorphic parent of `AMT_Hdr8021Filter` and
+    // `AMT_IPHeadersFilter` — its rows duplicate what those two
+    // classes return. See #356.
     struct Acc {
         SystemDefenseResult r;
         bool gotPolicies     = false;
         bool gotHdr          = false;
         bool gotIp           = false;
-        bool gotSub          = false;
         bool gotStats        = false;
         bool gotPortBindings = false;
         int faulted          = 0;
         std::function<void(SystemDefenseResult)> cb;
         void maybeFire() {
-            if (!gotPolicies || !gotHdr || !gotIp || !gotSub
+            if (!gotPolicies || !gotHdr || !gotIp
                 || !gotStats || !gotPortBindings) return;
-            if (faulted == 4) {
+            if (faulted == 3) {
                 r.supported = false;
                 r.ok = true;
             } else {
@@ -2532,22 +2535,6 @@ void getSystemDefense(WsmanClient *client,
                 if (!conv) f.dstPort = -1;
                 if (!f.instanceId.isEmpty())
                     acc->r.ipFilters.append(std::move(f));
-            }
-            acc->maybeFire();
-        });
-
-    enumerateAll(client, kNetworkFilterResource,
-        [acc](QList<QByteArray> items, QString err) {
-            acc->gotSub = true;
-            if (!err.isEmpty()) ++acc->faulted;
-            for (const QByteArray &it : items) {
-                NetworkFilterRow n;
-                n.instanceId  = findScalar(it, QStringLiteral("InstanceID"));
-                n.name        = findScalar(it, QStringLiteral("Name"));
-                n.filterClass = findScalar(it,
-                    QStringLiteral("CreationClassName"));
-                if (!n.instanceId.isEmpty())
-                    acc->r.subFilters.append(std::move(n));
             }
             acc->maybeFire();
         });
