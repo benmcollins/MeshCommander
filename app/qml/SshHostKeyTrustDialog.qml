@@ -85,7 +85,7 @@ Dialog {
                 text: root.controller ? root.controller.pendingSshHostKeyFingerprint : ""
                 color: Colors.text
                 font.family: Type.mono
-                font.pixelSize: 11
+                font.pixelSize: Type.sizeMicro
                 wrapMode: Text.WrapAnywhere
                 Layout.fillWidth: true
             }

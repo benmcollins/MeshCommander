@@ -300,7 +300,7 @@ Layout.alignment: Qt.AlignHCenter
                         text: row.fingerprint
                         color: Colors.textFaint
                         font.family: Type.mono
-                        font.pixelSize: 10
+                        font.pixelSize: Type.sizeMicro
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }

@@ -47,7 +47,7 @@ ColumnLayout {
             text: controller.powerStateLabel
             color: Colors.text
             font.family: Type.sans
-            font.pixelSize: 24
+            font.pixelSize: Type.sizeXl
             font.weight: Font.Medium
         }
     }

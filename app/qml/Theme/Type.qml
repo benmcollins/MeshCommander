@@ -12,7 +12,10 @@ QtObject {
 
     // Scale follows a 1.25× progression for cleaner hierarchy than the
     // older 11/12/13/16 cluster. Reserve sizeXs for chip-style labels;
-    // everything else picks from sizeS upward.
+    // everything else picks from sizeS upward. sizeMicro sits below the
+    // scale proper and is reserved for dense mono info (fingerprints,
+    // list-row hex) where staying visibly smaller than sizeXs matters.
+    readonly property int sizeMicro: 11 // dense mono (fingerprints)
     readonly property int sizeXs: 12   // chip / micro label
     readonly property int sizeS:  13   // body small
     readonly property int sizeM:  15   // body

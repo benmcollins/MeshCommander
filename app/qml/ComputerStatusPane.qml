@@ -76,7 +76,7 @@ Rectangle {
                               : qsTr("Unnamed")
                         color: Colors.text
                         font.family: Type.sans
-                        font.pixelSize: 22
+                        font.pixelSize: Type.sizeXl
                         font.weight: Font.Medium
                         elide: Text.ElideRight
                         Layout.fillWidth: true

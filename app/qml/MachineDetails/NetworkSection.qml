@@ -65,7 +65,7 @@ Flickable {
                             || nicDelegate.modelData.instanceId
                         color: Colors.text
                         font.family: Type.mono
-                        font.pixelSize: 18
+                        font.pixelSize: Type.sizeL
                     }
                 }
 
