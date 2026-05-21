@@ -56,14 +56,25 @@ const Palette &palette()
     return p;
 }
 
-QString escapeHtml(QChar c)
+QString escapeHtml(const Cell &cell)
 {
-    switch (c.unicode()) {
+    // Non-BMP code points keep both halves of the surrogate pair
+    // (`ch` is the high surrogate, `lowSurrogate` is the low). HTML
+    // metacharacters are always single BMP code points, so the switch
+    // below only inspects `ch`. See #370.
+    if (cell.lowSurrogate != QChar(0)) {
+        QString out;
+        out.reserve(2);
+        out.append(cell.ch);
+        out.append(cell.lowSurrogate);
+        return out;
+    }
+    switch (cell.ch.unicode()) {
     case u'<': return QStringLiteral("&lt;");
     case u'>': return QStringLiteral("&gt;");
     case u'&': return QStringLiteral("&amp;");
     case u' ': return QStringLiteral("&nbsp;");
-    default: return QString(c);
+    default: return QString(cell.ch);
     }
 }
 
@@ -162,7 +173,7 @@ QString TerminalScreen::lineHtml(int row) const
             out += QStringLiteral("\">");
         }
         for (int i = runStart; i < endExclusive; ++i) {
-            out += escapeHtml(m_cells.at(row * m_columns + i).ch);
+            out += escapeHtml(m_cells.at(row * m_columns + i));
         }
         if (!styles.isEmpty()) out += QStringLiteral("</span>");
     };
@@ -183,8 +194,9 @@ QString TerminalScreen::lineHtml(int row) const
     return out;
 }
 
-void TerminalScreen::putCellAtCursor(QChar c)
+void TerminalScreen::putCellAtCursor(QStringView fragment)
 {
+    if (fragment.isEmpty()) return;
     if (m_cursorColumn >= m_columns) {
         // Stay on the last column until an explicit move; matches most
         // BIOS firmware that emits its own CR before wrapping.
@@ -192,7 +204,17 @@ void TerminalScreen::putCellAtCursor(QChar c)
     }
     Cell &dst = cellMut(m_cursorRow, m_cursorColumn);
     dst = m_pen;
-    dst.ch = c;
+    dst.ch = fragment.at(0);
+    // Surrogate pair: parser hands us both halves of one non-BMP
+    // scalar value. Store the low surrogate alongside so `lineHtml`
+    // can emit valid UTF-16. Any trailing code units beyond a pair
+    // (which the parser should never produce for a single decoded
+    // codepoint) are dropped — one cell holds exactly one scalar
+    // value. See #370.
+    dst.lowSurrogate = (fragment.size() >= 2 && fragment.at(0).isHighSurrogate()
+                        && fragment.at(1).isLowSurrogate())
+                       ? fragment.at(1)
+                       : QChar(0);
     if (m_cursorColumn < m_columns - 1) {
         ++m_cursorColumn;
     } else {

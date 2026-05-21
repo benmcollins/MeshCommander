@@ -75,10 +75,11 @@ void Vt100Parser::feed(QByteArrayView bytes)
             } else if (b < 0x20) {
                 handleC0(b);
             } else if (b < 0x80) {
-                putChar(QChar(b));
+                const QChar c(b);
+                putChar(QStringView(&c, 1));
             } else {
-                const QChar c = consumeUtf8(b);
-                if (!c.isNull()) putChar(c);
+                const QString s = consumeUtf8(b);
+                if (!s.isEmpty()) putChar(QStringView(s));
             }
             break;
 
@@ -144,7 +145,7 @@ void Vt100Parser::feed(QByteArrayView bytes)
     }
 }
 
-QChar Vt100Parser::consumeUtf8(unsigned char b)
+QString Vt100Parser::consumeUtf8(unsigned char b)
 {
     if (m_utf8Remaining == 0) {
         if ((b & 0xE0) == 0xC0) {
@@ -154,7 +155,7 @@ QChar Vt100Parser::consumeUtf8(unsigned char b)
         } else if ((b & 0xF8) == 0xF0) {
             m_utf8Remaining = 3;
         } else {
-            return QChar(u'?');
+            return QStringLiteral("?");
         }
         m_utf8.clear();
         m_utf8.append(static_cast<char>(b));
@@ -163,9 +164,12 @@ QChar Vt100Parser::consumeUtf8(unsigned char b)
 
     m_utf8.append(static_cast<char>(b));
     if (--m_utf8Remaining == 0) {
-        const QString s = QString::fromUtf8(m_utf8);
+        // Decode the complete UTF-8 sequence. For non-BMP code points
+        // this is a 2-`QChar` surrogate pair; passing the whole string
+        // through (not just `s.at(0)`) is what fixes #370.
+        QString s = QString::fromUtf8(m_utf8);
         m_utf8.clear();
-        return s.isEmpty() ? QChar(u'?') : s.at(0);
+        return s.isEmpty() ? QStringLiteral("?") : s;
     }
     return {};
 }
@@ -186,7 +190,7 @@ void Vt100Parser::handleC0(unsigned char b)
     }
 }
 
-void Vt100Parser::putChar(QChar c) { m_screen->putCellAtCursor(c); }
+void Vt100Parser::putChar(QStringView fragment) { m_screen->putCellAtCursor(fragment); }
 
 void Vt100Parser::handleCsi()
 {

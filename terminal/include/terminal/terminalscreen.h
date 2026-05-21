@@ -23,8 +23,16 @@ enum CellAttr : quint8 {
 
 /// Single character cell. Colors are 16-color ANSI indices (0..15),
 /// with 0xFF meaning "default".
+///
+/// For BMP code points (U+0000..U+FFFF) the glyph lives in `ch` and
+/// `lowSurrogate` is null (`QChar(0)`). For non-BMP code points
+/// (U+10000+) the parser stores the UTF-16 surrogate pair: `ch` holds
+/// the high surrogate and `lowSurrogate` holds the low surrogate. Both
+/// halves must be emitted together (see `TerminalScreen::lineHtml`) so
+/// downstream HTML / clipboard output is valid UTF-16. See #370.
 struct Cell {
     QChar ch = u' ';
+    QChar lowSurrogate = QChar(0);
     quint8 fg = 0xFF;
     quint8 bg = 0xFF;
     quint8 attrs = AttrNone;
@@ -77,7 +85,13 @@ public:
     Q_INVOKABLE QString lineHtml(int row) const;
 
     /// Internal: cursor and attribute mutators driven by the parser.
-    void putCellAtCursor(QChar c);
+    ///
+    /// `fragment` is the UTF-16 representation of exactly one Unicode
+    /// scalar value: one `QChar` for BMP code points or a high+low
+    /// surrogate pair for non-BMP code points (#370). The parser is
+    /// responsible for never passing a wider grapheme cluster — the
+    /// cell only stores up to one surrogate pair.
+    void putCellAtCursor(QStringView fragment);
     void setCursor(int row, int column);
     void moveCursor(int rowDelta, int columnDelta);
     void carriageReturn();
