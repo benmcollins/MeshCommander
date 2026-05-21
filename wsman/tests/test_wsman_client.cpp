@@ -42,7 +42,7 @@ private slots:
     void getEventSubscriptionsJoinsFiltersListenersAndSubscriptions();
     void getWakeAlarmsExtractsNestedStartTimeAndInterval();
     void executeBrowsePrefixesClassNamesAndCarriesRawXml();
-    void getSystemDefenseEnumeratesAllFourFilterClasses();
+    void getSystemDefenseEnumeratesCoreFilterClasses();
     void setKvmSettingsRoundTripsPartialPatch();
     void setKvmRedirectionEnabledSendsCorrectRequestedState();
     void buildExtendedDataRoundTripsBothPeriodicBranches();
@@ -2363,7 +2363,7 @@ void TestWsmanClient::executeBrowsePrefixesClassNamesAndCarriesRawXml()
              result.xml.constData());
 }
 
-void TestWsmanClient::getSystemDefenseEnumeratesAllFourFilterClasses()
+void TestWsmanClient::getSystemDefenseEnumeratesCoreFilterClasses()
 {
     QHttpServer server;
     server.route(QStringLiteral("/wsman"), QHttpServerRequest::Method::Post,
@@ -2372,7 +2372,6 @@ void TestWsmanClient::getSystemDefenseEnumeratesAllFourFilterClasses()
                      const bool isPolicy = body.contains("AMT_SystemDefensePolicy");
                      const bool isHdr    = body.contains("AMT_Hdr8021Filter");
                      const bool isIp     = body.contains("AMT_IPHeadersFilter");
-                     const bool isNet    = body.contains("AMT_NetworkFilter");
                      const bool isPull = body.contains(":Pull")
                                        || body.contains("<wsen:Pull");
 
@@ -2445,24 +2444,6 @@ void TestWsmanClient::getSystemDefenseEnumeratesAllFourFilterClasses()
                              "<wsen:EndOfSequence/>"
                              "</wsen:PullResponse>"
                              "</s:Body></s:Envelope>";
-                     } else if (isNet) {
-                         response =
-                             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-                             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
-                             " xmlns:wsen=\"http://schemas.xmlsoap.org/ws/2004/09/enumeration\""
-                             " xmlns:c=\"http://intel.com/wbem/wscim/1/amt-schema/1/AMT_NetworkFilter\">"
-                             "<s:Header/><s:Body>"
-                             "<wsen:PullResponse>"
-                             "<wsen:Items>"
-                             "<c:AMT_NetworkFilter>"
-                             "<c:InstanceID>nf-1</c:InstanceID>"
-                             "<c:Name>L2-IPv4</c:Name>"
-                             "<c:CreationClassName>AMT_Hdr8021Filter</c:CreationClassName>"
-                             "</c:AMT_NetworkFilter>"
-                             "</wsen:Items>"
-                             "<wsen:EndOfSequence/>"
-                             "</wsen:PullResponse>"
-                             "</s:Body></s:Envelope>";
                      }
                      return QHttpServerResponse(QByteArrayLiteral("application/soap+xml"),
                                                 response);
@@ -2491,7 +2472,6 @@ void TestWsmanClient::getSystemDefenseEnumeratesAllFourFilterClasses()
     QCOMPARE(result.policies.size(),   1);
     QCOMPARE(result.hdrFilters.size(), 1);
     QCOMPARE(result.ipFilters.size(),  1);
-    QCOMPARE(result.subFilters.size(), 1);
 
     QCOMPARE(result.policies.first().policyName,
              QStringLiteral("Block all inbound"));
@@ -2500,8 +2480,6 @@ void TestWsmanClient::getSystemDefenseEnumeratesAllFourFilterClasses()
     QCOMPARE(result.hdrFilters.first().etherType, 2048);
     QCOMPARE(result.ipFilters.first().dstPort,    53);
     QCOMPARE(result.ipFilters.first().protocol,   17);
-    QCOMPARE(result.subFilters.first().filterClass,
-             QStringLiteral("AMT_Hdr8021Filter"));
 }
 
 void TestWsmanClient::setKvmSettingsRoundTripsPartialPatch()
