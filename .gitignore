@@ -16,3 +16,5 @@ branding/build/*
 !branding/build/qumesh-dmg.icns
 !branding/build/png/
 !branding/build/png/qumesh-mark-*.png
+
+/.claude/
