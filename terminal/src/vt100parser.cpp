@@ -38,6 +38,15 @@ QVector<int> parseParams(QByteArrayView body, int *outIntermediateStart)
             n = -1;
         } else if (b >= '0' && b <= '9') {
             if (n < 0) n = 0;
+            // Real VT/xterm params never exceed five digits (DECSLPP,
+            // DECSCUSR, SGR, CUP all fit comfortably). With the 4 KB
+            // CSI cap (#289) a malformed stream could still drop up
+            // to ~4000 digits here, which would overflow signed `int`
+            // — UB even though every downstream consumer `qBound`s.
+            // Drop further digits once we've already exceeded any
+            // plausible value; the loop still advances so we keep
+            // parsing ';', intermediates, and the final byte.
+            if (n >= 100000) continue;
             n = n * 10 + (b - '0');
         } else {
             break; // intermediate or junk — stop parsing params

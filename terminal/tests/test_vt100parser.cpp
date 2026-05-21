@@ -31,6 +31,7 @@ private slots:
     void osCSequenceIsIgnored();
     void scrolling();
     void csiOverflowResetsToGround();
+    void csiNumericParamAccumulatorIsCapped();
 };
 
 namespace {
@@ -293,6 +294,45 @@ void TestVt100Parser::csiOverflowResetsToGround()
     // wouldn't have re-entered.
     s.feed(QByteArrayLiteral("\x1B[H!"));
     QCOMPARE(s.cell(0, 0).ch, QChar(u'!'));
+}
+
+/// #376 — `parseParams` accumulates digits into a plain `int` with
+/// `n = n * 10 + (b - '0')`. The 4 KB CSI cap (#289) bounds how many
+/// digits can land here, but ~4000 digits still overflows signed `int`
+/// past `INT_MAX` — UB, even though every downstream consumer happens
+/// to `qBound`. The parser now caps the accumulator at five digits
+/// (more than any real VT/xterm parameter), so additional digits are
+/// dropped before the multiply. We feed a CUP whose row param is
+/// 3000 nines (well above the cap), assert it doesn't trip a
+/// sanitizer / wrap, and confirm the cursor ends up clamped inside
+/// the screen rather than at some compiler-defined wraparound value.
+void TestVt100Parser::csiNumericParamAccumulatorIsCapped()
+{
+    TerminalScreen s;
+    s.resize(24, 80);
+
+    QByteArray seq;
+    seq.append('\x1B');
+    seq.append('[');
+    // 3000 digits in a single numeric param — far past INT_MAX once
+    // accumulated naively (10^10 already overflows 32-bit int), but
+    // still well under the 4 KB CSI buffer cap so we exercise the
+    // accumulator, not the buffer cap.
+    seq.append(QByteArray(3000, '9'));
+    seq.append(";1H");  // CUP — row from the runaway param, column 1.
+    seq.append('X');
+
+    s.feed(seq);
+
+    // Cursor must be clamped inside the 24x80 screen — not at a
+    // signed-wrap value like INT_MIN or a garbage row index.
+    QVERIFY(s.cursorRow() >= 0 && s.cursorRow() < 24);
+    QVERIFY(s.cursorColumn() >= 0 && s.cursorColumn() < 80);
+
+    // The trailing `X` lands on the clamped row at column 1
+    // (cursorColumn() advances to 2 after the put).
+    QCOMPARE(s.cell(s.rows() - 1, 0).ch, QChar(u'X'));
+    QCOMPARE(s.cursorColumn(), 1);
 }
 
 QTEST_GUILESS_MAIN(TestVt100Parser)
