@@ -58,12 +58,15 @@ QByteArray md5Hex(const QByteArray &in)
 QHash<QByteArray, QByteArray> parseDigestChallenge(const QByteArray &headerValue)
 {
     QHash<QByteArray, QByteArray> out;
-    int i = 0;
-    // Skip leading "Digest " token if present (case-insensitive).
-    if (headerValue.size() >= 7
-        && headerValue.left(6).toLower() == "digest") {
-        i = 6;
-    }
+    // Strict prefix check: require an exact case-insensitive `Digest`
+    // token followed by whitespace, so a `DigestX realm=...` header
+    // doesn't get parsed as a Digest challenge (which would otherwise
+    // produce a garbage `x realm` key and bogus state).
+    if (headerValue.size() <= 6
+        || headerValue.left(6).toLower() != "digest") return out;
+    const char sep = headerValue.at(6);
+    if (sep != ' ' && sep != '\t') return out;
+    int i = 7;
     while (i < headerValue.size()) {
         while (i < headerValue.size() && (headerValue[i] == ' ' || headerValue[i] == ','))
             ++i;
@@ -371,17 +374,28 @@ void wireSocketHandlers(WsmanReply *reply, WsmanClient *client,
         });
     }
 
+    // Capture the reply by QPointer and re-derive `rd` on each call.
+    // The socket is parented to `reply`, so the connections are auto-
+    // disconnected when `reply` is destroyed — but using QPointer here
+    // is a belt-and-braces guard against any signal that might already
+    // be sitting in the event queue when the reply goes away.
+    QPointer<WsmanReply> wr(reply);
     QObject::connect(sock, &QSslSocket::errorOccurred, reply,
-                     [reply, &rd](QAbstractSocket::SocketError) {
+                     [wr](QAbstractSocket::SocketError) {
+        if (wr.isNull()) return;
+        auto &rd = *wr->d;
         if (rd.finished) return;
         rd.errorString = rd.socket->errorString();
         rd.state = WsmanReply::Private::Failed;
         rd.finished = true;
-        emit reply->finished();
+        emit wr->finished();
     });
 
     QObject::connect(sock, &QSslSocket::readyRead, reply,
-                     [reply, client, &cd, &rd]() { readMore(reply, client, cd, rd); });
+                     [wr, client, &cd]() {
+        if (wr.isNull()) return;
+        readMore(wr.data(), client, cd, *wr->d);
+    });
 }
 
 /// Close an orphaned tunnel fd when the consuming reply died before
@@ -570,15 +584,26 @@ void retryWithDigest(WsmanReply *reply, WsmanClient *client,
                                               cd.user.toUtf8(), cd.pass.toUtf8(),
                                               ++cd.nc);
 
-    auto doWrite = [reply, auth]() {
-        auto &rd = *reply->d;
+    // Capture the reply by QPointer in every inner connect lambda
+    // below, and re-derive `rd` on each entry. If the reply is
+    // destroyed mid-retry (e.g. UI cancels in flight), the QPointer
+    // goes null and the lambda bails before touching freed memory.
+    // `cd` (the client's `Private`) is safe to capture by reference:
+    // the client parents the reply, so the client outlives any
+    // lambda whose `wr` is non-null.
+    QPointer<WsmanReply> wrTop(reply);
+
+    auto doWrite = [wrTop, auth]() {
+        if (wrTop.isNull()) return;
+        auto &rd = *wrTop->d;
         if (rd.finished) return;
         writeRequestBytes(rd.socket, rd.method, rd.requestPath, rd.hostHeader,
                           rd.soapAction, rd.envelope, auth);
         rd.state = WsmanReply::Private::ReadingHeaders;
     };
 
-    auto wireFactorySocket = [client, &cd, &rd, doWrite, tls](WsmanReply *r, QSslSocket *sock) {
+    auto wireFactorySocket = [client, &cd, doWrite, tls](WsmanReply *r, QSslSocket *sock) {
+        auto &rd = *r->d;
         wireSocketHandlers(r, client, cd, rd, sock, /*prompts=*/false);
         if (tls) {
             QObject::connect(sock, &QSslSocket::encrypted, r, doWrite);
@@ -593,8 +618,9 @@ void retryWithDigest(WsmanReply *reply, WsmanClient *client,
     if (cd.socketFactory) {
         rd.state = WsmanReply::Private::Connecting;
         QPointer<WsmanReply> wr(reply);
-        cd.socketFactory([wr, &rd, wireFactorySocket](qintptr fd, QString error) {
+        cd.socketFactory([wr, wireFactorySocket](qintptr fd, QString error) {
             if (wr.isNull()) { closeOrphanFd(fd); return; }
+            auto &rd = *wr->d;
             if (rd.finished) { closeOrphanFd(fd); return; }
             if (fd < 0) {
                 finishReply(wr.data(), rd,
@@ -617,8 +643,9 @@ void retryWithDigest(WsmanReply *reply, WsmanClient *client,
     // Direct TCP connect.
     auto *sock = new QSslSocket(reply);
     wireSocketHandlers(reply, client, cd, rd, sock, /*prompts=*/false);
-    QObject::connect(sock, &QSslSocket::connected, reply, [sock, tls, &cd, doWrite, reply]() {
-        auto &rd = *reply->d;
+    QObject::connect(sock, &QSslSocket::connected, reply, [sock, tls, &cd, doWrite, wrTop]() {
+        if (wrTop.isNull()) return;
+        auto &rd = *wrTop->d;
         if (rd.finished) return;
         if (tls) {
             rd.state = WsmanReply::Private::TlsHandshaking;
