@@ -141,6 +141,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
         Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
@@ -288,6 +293,8 @@ Dialog {
                         Layout.fillWidth: true
                         onActivated: root.draftOldState =
                             root.watchdogStates[currentIndex].code
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("From state")
                     }
 
                     Text {
@@ -305,6 +312,8 @@ Dialog {
                         Layout.fillWidth: true
                         onActivated: root.draftNewState =
                             root.watchdogStates[currentIndex].code
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("To state")
                     }
 
                     Text {
@@ -322,6 +331,8 @@ Dialog {
                         Layout.fillWidth: true
                         onActivated: root.draftActionSac =
                             root.actionSacs[currentIndex].code
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Action")
                     }
 
                     Item { Layout.preferredWidth: 180 }
@@ -329,6 +340,8 @@ Dialog {
                         text: qsTr("Also log an event on the transition")
                         checked: root.draftEventOnTransition
                         onToggled: root.draftEventOnTransition = checked
+                        // #423 — pair the checkbox with its label for AX.
+                        Accessible.name: qsTr("Log event on transition")
                     }
                 }
 

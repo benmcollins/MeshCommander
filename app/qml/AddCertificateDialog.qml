@@ -66,6 +66,11 @@ Dialog {
         id: formColumn
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Section {
             title: qsTr("CERTIFICATE")
             Layout.fillWidth: true
@@ -103,6 +108,8 @@ Dialog {
                         font.pixelSize: Type.sizeXs
                         wrapMode: TextArea.NoWrap
                         onTextChanged: root.draftPem = text
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Certificate PEM")
                     }
                 }
             }
@@ -118,11 +125,15 @@ Dialog {
                     text: qsTr("Trusted root — anchor for cert-chain verification")
                     checked: root.asTrustedRoot
                     onClicked: root.asTrustedRoot = true
+                    // #423 — pair the radio with its label for AX.
+                    Accessible.name: qsTr("Trusted root")
                 }
                 RadioButton {
                     text: qsTr("Chain / intermediate CA")
                     checked: !root.asTrustedRoot
                     onClicked: root.asTrustedRoot = false
+                    // #423 — pair the radio with its label for AX.
+                    Accessible.name: qsTr("Chain or intermediate CA")
                 }
             }
         }

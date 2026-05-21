@@ -47,6 +47,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
         Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
@@ -74,6 +79,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftAccessInfo = text
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Address")
                 }
 
                 Text {
@@ -90,6 +97,8 @@ Dialog {
                     Layout.preferredWidth: 100
                     validator: IntValidator { bottom: 1; top: 65535 }
                     onTextEdited: root.draftPort = parseInt(text) || 0
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Port")
                 }
 
                 Text {
@@ -106,6 +115,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftDnsSuffix = text
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("DNS suffix")
                 }
             }
         }

@@ -160,6 +160,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
         Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
@@ -229,6 +234,8 @@ Dialog {
                     Layout.preferredWidth: 120
                     validator: IntValidator { bottom: 0; top: 86400 }
                     onTextEdited: root.draftTunnelLifeTime = parseInt(text) || 0
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Tunnel lifetime in seconds")
                 }
             }
         }
@@ -278,6 +285,8 @@ Dialog {
                         Layout.preferredWidth: 120
                         validator: IntValidator { bottom: 1; top: 86400 }
                         onTextEdited: root.draftPeriodicSeconds = parseInt(text) || 0
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Periodic interval seconds")
                     }
                 }
 
@@ -300,6 +309,8 @@ Dialog {
                         Layout.preferredWidth: 60
                         validator: IntValidator { bottom: 0; top: 23 }
                         onTextEdited: root.draftPeriodicHour = parseInt(text) || 0
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Hour")
                     }
                     Text {
                         text: ":"
@@ -314,6 +325,8 @@ Dialog {
                         Layout.preferredWidth: 60
                         validator: IntValidator { bottom: 0; top: 59 }
                         onTextEdited: root.draftPeriodicMinute = parseInt(text) || 0
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Minute")
                     }
                     Item { Layout.fillWidth: true }
                 }

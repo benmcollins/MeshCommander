@@ -37,6 +37,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Section {
             title: qsTr("MODE")
             Layout.fillWidth: true

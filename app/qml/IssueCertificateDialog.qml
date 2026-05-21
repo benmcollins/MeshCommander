@@ -123,6 +123,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 12
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
         Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
@@ -199,6 +204,8 @@ Dialog {
                     font.family: Type.sans
                     font.pixelSize: Type.sizeS
                     Layout.preferredWidth: 140
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Key length")
                 }
                 Text {
                     text: qsTr("Signing algorithm")
@@ -215,6 +222,8 @@ Dialog {
                     font.family: Type.sans
                     font.pixelSize: Type.sizeS
                     Layout.fillWidth: true
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Signing algorithm")
                 }
             }
 
@@ -230,6 +239,8 @@ Dialog {
                 font.family: Type.mono
                 font.pixelSize: Type.sizeS
                 Layout.fillWidth: true
+                // #423 — pair the field with its label for AX.
+                Accessible.name: qsTr("Subject DN")
             }
 
             Text {
@@ -289,6 +300,8 @@ Dialog {
                     wrapMode: TextEdit.Wrap
                     font.family: Type.mono
                     font.pixelSize: Type.sizeXs
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("CSR PEM")
                 }
             }
 
@@ -354,6 +367,8 @@ Dialog {
                     font.pixelSize: Type.sizeXs
                     placeholderText: "-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"
                     onTextChanged: root.signedCertPem = text
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Signed certificate PEM")
                 }
             }
 
@@ -375,6 +390,8 @@ Dialog {
                     textRole: "instanceId"
                     valueRole: "instanceId"
                     Layout.fillWidth: true
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("TLS endpoint to bind")
                     delegate: ItemDelegate {
                         required property var modelData
                         width: tlsEndpointBox.width
