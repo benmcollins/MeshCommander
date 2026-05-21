@@ -769,6 +769,41 @@ AppWindow {
                     boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar {}
 
+                    // Keyboard accessibility (#384). Pre-#384 the sidebar
+                    // was driven by `TapHandler` only — there was no
+                    // arrow-key nav, no Return / Space activation, and
+                    // the delegate had no `Accessible.role`, so screen
+                    // readers and keyboard-only users could not move
+                    // between sections. Mirrors `ComputerListView`'s
+                    // pattern: `keyNavigationEnabled` for arrow nav,
+                    // `activeFocusOnTab` so the list joins the tab
+                    // chain, and `Keys.onReturn/Enter/SpacePressed` on
+                    // the ListView commits the focused row to
+                    // `root.currentSection`.
+                    keyNavigationEnabled: true
+                    activeFocusOnTab: true
+                    focus: true
+                    highlightMoveDuration: Motion.fast
+
+                    Keys.onReturnPressed: function(event) {
+                        if (currentIndex >= 0) {
+                            root.currentSection = currentIndex;
+                            event.accepted = true;
+                        }
+                    }
+                    Keys.onEnterPressed: function(event) {
+                        if (currentIndex >= 0) {
+                            root.currentSection = currentIndex;
+                            event.accepted = true;
+                        }
+                    }
+                    Keys.onSpacePressed: function(event) {
+                        if (currentIndex >= 0) {
+                            root.currentSection = currentIndex;
+                            event.accepted = true;
+                        }
+                    }
+
                     // Keep the active row in view when the section
                     // changes programmatically (e.g. host reload sets
                     // currentSection back to 0 while the user has
@@ -776,6 +811,7 @@ AppWindow {
                     onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
 
                     delegate: Rectangle {
+                        id: navRow
                         required property int index
                         required property var modelData
                         width: nav.width
@@ -785,13 +821,25 @@ AppWindow {
                             : (hover.hovered ? Colors.elevated : "transparent")
                         Behavior on color { ColorAnimation { duration: Motion.fast } }
 
+                        // Expose the row to AX. Mirrors the pattern on
+                        // `ComputerListView`'s delegate (lines 211-215):
+                        // role + name + selected so VoiceOver / NVDA
+                        // can announce "Overview, selected" and the
+                        // operator can drive the list from a screen
+                        // reader. See #384.
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: navRow.modelData.label
+                        Accessible.selected: nav.currentIndex === navRow.index
+                        Accessible.selectable: true
+                        Accessible.onPressAction: root.currentSection = navRow.index
+
                         HoverHandler { id: hover }
                         TapHandler {
                             // currentIndex is bound to root.currentSection
                             // above, so setting that alone keeps the binding
                             // alive and lets programmatic section changes
                             // (e.g. on host reload) keep moving the highlight.
-                            onTapped: root.currentSection = index
+                            onTapped: root.currentSection = navRow.index
                         }
 
                         Rectangle {
