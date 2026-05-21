@@ -15,7 +15,7 @@ import QuMesh
 Dialog {
     id: root
 
-    required property var controller
+    required property MachineDetailsController controller
 
     property string instanceId
     property bool isLocal: false

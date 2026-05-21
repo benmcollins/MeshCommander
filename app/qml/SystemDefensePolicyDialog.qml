@@ -14,7 +14,7 @@ import QuMesh
 Dialog {
     id: root
 
-    required property var controller
+    required property MachineDetailsController controller
 
     property string draftPolicyName
     property int draftPriority: 0
@@ -29,7 +29,7 @@ Dialog {
     /// Selected filter InstanceIDs. The controller pulls the trailing
     /// integer handle out of each for the on-wire `FilterCreationHandles`
     /// repeated element.
-    property var draftFilterInstanceIds: []
+    property list<string> draftFilterInstanceIds: []
 
     function openForAdd() {
         draftPolicyName = "";

@@ -15,7 +15,7 @@ import QuMesh
 Dialog {
     id: root
 
-    required property var controller
+    required property MachineDetailsController controller
 
     property bool draftEnabled: false
     property int draftAuthenticationProtocol: 0

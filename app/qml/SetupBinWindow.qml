@@ -20,6 +20,10 @@ AppWindow {
     title: qsTr("QuMesh — Setup.bin editor")
 
     property int selectedRecord: 0
+    // `snapshot` / `catalog` come back from SetupBinController as
+    // QVariantMap and QVariantList respectively. QML's typed-property
+    // syntax has no concrete value-type for either; promoting them to a
+    // `Q_GADGET` is out of scope for #387. Leave as `var`.
     property var snapshot: ({ version: 2, doNotConsumeRecords: false, records: [] })
     property var catalog: []
 

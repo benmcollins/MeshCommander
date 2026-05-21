@@ -20,7 +20,10 @@ AppWindow {
     property string user
     property string password
     property bool tls: false
-    property var trustedFingerprints: []
+    property list<string> trustedFingerprints: []
+    // `machineSshConfig` is a QVariantMap from `ComputerModel.sshConfigFor()`;
+    // QML's only typed declaration for that shape is still `var`. A `Q_GADGET`
+    // would help qmlsc but is out of scope for #387.
     property var machineSshConfig: ({})
     property string label: qsTr("Session")
 

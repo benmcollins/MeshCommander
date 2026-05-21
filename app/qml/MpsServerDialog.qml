@@ -16,7 +16,7 @@ import QuMesh
 Dialog {
     id: root
 
-    required property var controller
+    required property MachineDetailsController controller
 
     property bool isEdit: false
     property string editName
