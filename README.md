@@ -29,6 +29,7 @@ QuMesh manages Intel AMT (vPro) hardware over WSMAN and the Intel redirection pr
 
 - **WSMAN client** — connect, inventory, power control, event log, power-state changes.
 - **Redirection transport** — TLS on 16994/16995 with Intel's framing.
+- **Per-machine SSH tunnel** — reach AMT through a jump host when 16992–16995 aren't routable; password or key auth (with passphrase), optional compression, all transports (WSMAN, redirection, KVM, IDE-R) ride the same `direct-tcpip` channel.
 - **Serial-over-LAN terminal** — a QML VT100 widget on top of the redirection channel.
 - **IDE-R** — mount a local ISO as remote IDE/USB.
 - **KVM viewer** — Intel's RFB-variant codec with input forwarding.
