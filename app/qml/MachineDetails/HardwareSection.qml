@@ -30,18 +30,22 @@ Flickable {
             title: {
                 const inv = controller.hardwareInventory;
                 if (!inv || Object.keys(inv).length === 0)
-                    return qsTr("Not yet fetched");
+                    return controller.busy
+                        ? qsTr("Loading…")
+                        : qsTr("Not available");
                 return (inv.platformManufacturer || "") + " "
                     + (inv.platformModel || "");
             }
         }
 
-        // Empty-state placeholder until the user hits
-        // Refresh / lands on the section for the first time.
+        // Show "Loading…" while the fetch is in flight (MachineDetailsWindow
+        // auto-fires it on section switch) and the section-specific empty
+        // noun once the response comes back empty. Telling the user to
+        // click Refresh while the app is already fetching is misleading
+        // (#378).
         Text {
             visible: Object.keys(controller.hardwareInventory).length === 0
-                && !controller.busy
-            text: qsTr("Click Refresh to fetch hardware inventory.")
+            text: controller.busy ? qsTr("Loading…") : qsTr("Not available")
             color: Colors.textFaint
             font.family: Type.sans
             font.pixelSize: Type.sizeS

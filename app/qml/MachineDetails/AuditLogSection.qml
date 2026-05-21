@@ -25,7 +25,7 @@ ColumnLayout {
             const s = controller.auditLogState;
             if (!s || !s.ok)
                 return controller.auditLogEntries.length === 0
-                    ? qsTr("Not yet fetched")
+                    ? (controller.busy ? qsTr("Loading…") : qsTr("No entries"))
                     : qsTr("%1 entries").arg(controller.auditLogEntries.length);
             let parts = [];
             parts.push(s.enabled ? qsTr("Enabled") : qsTr("Disabled"));
@@ -46,10 +46,14 @@ ColumnLayout {
             font.family: Type.sans
             font.pixelSize: Type.sizeXs
         }
+        // Show "Loading…" while the fetch is in flight (MachineDetailsWindow
+        // auto-fires it on section switch) and the section-specific empty
+        // noun once the response comes back empty. Telling the user to
+        // click Refresh while the app is already fetching is misleading
+        // (#378).
         Text {
             visible: controller.auditLogEntries.length === 0
-                && !controller.busy
-            text: qsTr("Click Refresh to fetch the audit log.")
+            text: controller.busy ? qsTr("Loading…") : qsTr("No entries")
             color: Colors.textFaint
             font.family: Type.sans
             font.pixelSize: Type.sizeXs

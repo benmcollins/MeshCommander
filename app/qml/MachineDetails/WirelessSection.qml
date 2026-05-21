@@ -36,15 +36,23 @@ Flickable {
             title: {
                 const w = controller.wireless;
                 if (!w || !w.ok)
-                    return qsTr("Not yet fetched");
+                    return controller.busy
+                        ? qsTr("Loading…")
+                        : qsTr("No wireless profiles");
                 if (w.port && w.port.present)
                     return w.port.currentSsid
                         ? w.port.currentSsid
                         : qsTr("Wireless interface");
                 return qsTr("No wireless interface");
             }
+            // Show "Loading…" while the fetch is in flight
+            // (MachineDetailsWindow auto-fires it on section switch).
+            // Once it returns empty, surface the empty-state noun
+            // instead of telling the user to click a button (#378).
             hint: (!controller.wireless || !controller.wireless.ok)
-                ? qsTr("Click Refresh to fetch wireless state.")
+                ? (controller.busy
+                    ? qsTr("Loading…")
+                    : qsTr("No wireless profiles"))
                 : ""
         }
 
