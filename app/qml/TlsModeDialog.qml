@@ -53,6 +53,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Section {
             title: qsTr("MODE")
             Layout.fillWidth: true
@@ -64,18 +69,24 @@ Dialog {
                     text: qsTr("Enable TLS on this endpoint")
                     checked: root.draftEnabled
                     onToggled: root.draftEnabled = checked
+                    // #423 — pair the checkbox with its label for AX.
+                    Accessible.name: qsTr("Enable TLS")
                 }
                 CheckBox {
                     text: qsTr("Require mutual (client-cert) authentication")
                     enabled: root.draftEnabled
                     checked: root.draftMutualAuth
                     onToggled: root.draftMutualAuth = checked
+                    // #423 — pair the checkbox with its label for AX.
+                    Accessible.name: qsTr("Require mutual authentication")
                 }
                 CheckBox {
                     text: qsTr("Also accept plain (non-TLS) connections")
                     enabled: root.draftEnabled
                     checked: root.draftAcceptNonSecureConnections
                     onToggled: root.draftAcceptNonSecureConnections = checked
+                    // #423 — pair the checkbox with its label for AX.
+                    Accessible.name: qsTr("Accept non-TLS connections")
                 }
             }
         }
@@ -106,6 +117,8 @@ Dialog {
                         font.family: Type.mono
                         font.pixelSize: Type.sizeS
                         onTextChanged: root.draftTrustedCnText = text
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Trusted client cert CNs")
                     }
                 }
             }

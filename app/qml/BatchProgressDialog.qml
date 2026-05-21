@@ -41,6 +41,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 10
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         // Header — summary counts as the batch progresses.
         RowLayout {
             spacing: 16

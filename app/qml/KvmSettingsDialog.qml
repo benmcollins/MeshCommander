@@ -75,6 +75,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 12
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
         Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
@@ -90,16 +95,22 @@ Dialog {
         CheckBox {
             id: portCheck
             text: qsTr("Enable VNC listener on port 5900")
+            // #423 — pair the checkbox with its label for AX.
+            Accessible.name: qsTr("Enable VNC port 5900")
         }
 
         CheckBox {
             id: optInCheck
             text: qsTr("Require user consent for KVM sessions")
+            // #423 — pair the checkbox with its label for AX.
+            Accessible.name: qsTr("Require user consent")
         }
 
         CheckBox {
             id: greyCheck
             text: qsTr("Request 8-bit greyscale (bandwidth saver)")
+            // #423 — pair the checkbox with its label for AX.
+            Accessible.name: qsTr("Request greyscale")
         }
 
         RowLayout {
@@ -120,6 +131,8 @@ Dialog {
                 font.family: Type.mono
                 font.pixelSize: Type.sizeS
                 Layout.preferredWidth: 80
+                // #423 — pair the field with its label for AX.
+                Accessible.name: qsTr("Idle timeout minutes")
             }
         }
 
@@ -140,11 +153,15 @@ Dialog {
                 font.family: Type.mono
                 font.pixelSize: Type.sizeS
                 Layout.fillWidth: true
+                // #423 — pair the field with its label for AX.
+                Accessible.name: qsTr("RFB password")
             }
             CheckBox {
                 id: clearPwCheck
                 text: qsTr("Clear existing RFB password")
                 enabled: passwordField.text.length === 0
+                // #423 — pair the checkbox with its label for AX.
+                Accessible.name: qsTr("Clear existing RFB password")
             }
         }
     }

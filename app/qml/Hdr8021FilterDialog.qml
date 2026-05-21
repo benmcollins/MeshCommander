@@ -81,6 +81,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
         Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
@@ -108,6 +113,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftName = text
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Name")
                 }
 
                 Text {
@@ -127,6 +134,8 @@ Dialog {
                     currentIndex: root.draftFilterType
                     Layout.fillWidth: true
                     onActivated: root.draftFilterType = currentIndex
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Filter type")
                 }
 
                 Text {
@@ -149,6 +158,8 @@ Dialog {
                         if (!isNaN(parsed) && parsed >= 0 && parsed <= 0xffff)
                             root.draftCustomEtherType = parsed;
                     }
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Custom ethertype")
                 }
 
                 Text {
@@ -167,6 +178,8 @@ Dialog {
                     currentIndex: root.draftDirection
                     Layout.fillWidth: true
                     onActivated: root.draftDirection = currentIndex
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Direction")
                 }
             }
         }
@@ -201,6 +214,8 @@ Dialog {
                     currentIndex: root.draftFilterProfile
                     Layout.fillWidth: true
                     onActivated: root.draftFilterProfile = currentIndex
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Profile")
                 }
 
                 Text {
@@ -220,6 +235,8 @@ Dialog {
                         to: 1000000
                         editable: true
                         onValueModified: root.draftRateLimit = value
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Rate limit packets per second")
                     }
                     Text {
                         text: qsTr("packets per second")
@@ -241,6 +258,8 @@ Dialog {
                     text: qsTr("Log an event when this filter matches a packet")
                     checked: root.draftEventOnMatch
                     onToggled: root.draftEventOnMatch = checked
+                    // #423 — pair the checkbox with its label for AX.
+                    Accessible.name: qsTr("Event on match")
                 }
             }
         }

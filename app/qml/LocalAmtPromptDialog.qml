@@ -51,6 +51,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         // Enter / Return submits the form (#279). Bound at the
         // contentItem level so the ColumnLayout receives the key
         // event when focus is in any of its TextFields.
@@ -80,6 +85,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftUser = text
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Username")
                 }
 
                 Text {
@@ -99,6 +106,8 @@ Dialog {
                         font.pixelSize: Type.sizeM
                         Layout.fillWidth: true
                         onTextEdited: root.draftPassword = text
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Password")
                     }
                     FlatButton {
                         text: root.revealPassword ? qsTr("Hide") : qsTr("Show")
@@ -118,6 +127,8 @@ Dialog {
                 Switch {
                     checked: root.useTls
                     onCheckedChanged: root.useTls = checked
+                    // #423 — pair the switch with its label for AX.
+                    Accessible.name: qsTr("TLS")
                 }
             }
         }

@@ -135,6 +135,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
         Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
@@ -163,6 +168,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftElementName = text
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Name")
                 }
 
                 Text {
@@ -180,6 +187,8 @@ Dialog {
                     inputMask: "9999-99-99"
                     Layout.preferredWidth: 160
                     onTextEdited: root.draftDate = text
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Date")
                 }
 
                 Text {
@@ -197,6 +206,8 @@ Dialog {
                     inputMask: "99:99"
                     Layout.preferredWidth: 100
                     onTextEdited: root.draftTime = text
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Time")
                 }
             }
         }
@@ -234,6 +245,8 @@ Dialog {
                             to: 365
                             editable: true
                             onValueModified: root.draftDays = value
+                            // #423 — pair the field with its label for AX.
+                            Accessible.name: qsTr("Days")
                         }
                     }
                     ColumnLayout {
@@ -250,6 +263,8 @@ Dialog {
                             to: 23
                             editable: true
                             onValueModified: root.draftHours = value
+                            // #423 — pair the field with its label for AX.
+                            Accessible.name: qsTr("Hours")
                         }
                     }
                     ColumnLayout {
@@ -266,6 +281,8 @@ Dialog {
                             to: 59
                             editable: true
                             onValueModified: root.draftMinutes = value
+                            // #423 — pair the field with its label for AX.
+                            Accessible.name: qsTr("Minutes")
                         }
                     }
                     Item { Layout.fillWidth: true }
@@ -275,6 +292,8 @@ Dialog {
                     text: qsTr("Delete after firing")
                     checked: root.draftDeleteOnCompletion
                     onToggled: root.draftDeleteOnCompletion = checked
+                    // #423 — pair the checkbox with its label for AX.
+                    Accessible.name: qsTr("Delete after firing")
                 }
             }
         }

@@ -90,6 +90,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
         Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
@@ -117,6 +122,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftName = text
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Name")
                 }
 
                 Text {
@@ -135,6 +142,8 @@ Dialog {
                     currentIndex: root.draftIpVersion === 6 ? 1 : 0
                     Layout.fillWidth: true
                     onActivated: root.draftIpVersion = currentIndex === 1 ? 6 : 4
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("IP version")
                 }
 
                 Text {
@@ -153,6 +162,8 @@ Dialog {
                     currentIndex: root.draftDirection
                     Layout.fillWidth: true
                     onActivated: root.draftDirection = currentIndex
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Direction")
                 }
             }
         }
@@ -215,6 +226,8 @@ Dialog {
                             default: root.draftProtocol = -1;
                             }
                         }
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Protocol")
                     }
 
                     Text {
@@ -233,6 +246,8 @@ Dialog {
                         font.pixelSize: Type.sizeM
                         Layout.fillWidth: true
                         onTextEdited: root.draftSrcAddress = text
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Source IP")
                     }
 
                     Text {
@@ -251,6 +266,8 @@ Dialog {
                         font.pixelSize: Type.sizeM
                         Layout.fillWidth: true
                         onTextEdited: root.draftDstAddress = text
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Destination IP")
                     }
 
                     Text {
@@ -268,6 +285,8 @@ Dialog {
                             to: 65535
                             editable: true
                             onValueModified: root.draftSrcPort = value
+                            // #423 — pair the field with its label for AX.
+                            Accessible.name: qsTr("Source port")
                         }
                         Text {
                             text: qsTr("through")
@@ -284,6 +303,8 @@ Dialog {
                             to: 65535
                             editable: true
                             onValueModified: root.draftSrcPortEnd = value
+                            // #423 — pair the field with its label for AX.
+                            Accessible.name: qsTr("Source port end")
                         }
                         Item { Layout.fillWidth: true }
                     }
@@ -303,6 +324,8 @@ Dialog {
                             to: 65535
                             editable: true
                             onValueModified: root.draftDstPort = value
+                            // #423 — pair the field with its label for AX.
+                            Accessible.name: qsTr("Destination port")
                         }
                         Text {
                             text: qsTr("through")
@@ -319,6 +342,8 @@ Dialog {
                             to: 65535
                             editable: true
                             onValueModified: root.draftDstPortEnd = value
+                            // #423 — pair the field with its label for AX.
+                            Accessible.name: qsTr("Destination port end")
                         }
                         Item { Layout.fillWidth: true }
                     }
@@ -355,6 +380,8 @@ Dialog {
                     currentIndex: root.draftFilterProfile
                     Layout.fillWidth: true
                     onActivated: root.draftFilterProfile = currentIndex
+                    // #423 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Profile")
                 }
 
                 Text {
@@ -374,6 +401,8 @@ Dialog {
                         to: 1000000
                         editable: true
                         onValueModified: root.draftRateLimit = value
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Rate limit packets per second")
                     }
                     Text {
                         text: qsTr("packets per second")
@@ -395,6 +424,8 @@ Dialog {
                     text: qsTr("Log an event when this filter matches a packet")
                     checked: root.draftEventOnMatch
                     onToggled: root.draftEventOnMatch = checked
+                    // #423 — pair the checkbox with its label for AX.
+                    Accessible.name: qsTr("Event on match")
                 }
             }
         }

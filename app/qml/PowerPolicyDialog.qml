@@ -44,6 +44,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 10
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Text {
             text: qsTr("Select the power policy AMT should enforce. The choice persists across reboots.")
             color: Colors.text

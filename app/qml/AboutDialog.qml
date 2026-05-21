@@ -27,6 +27,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 16
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         RowLayout {
             spacing: 14
             Layout.fillWidth: true

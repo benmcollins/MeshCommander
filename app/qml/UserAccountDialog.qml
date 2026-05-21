@@ -179,6 +179,11 @@ Dialog {
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         contentWidth: availableWidth
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ScrollView).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         ColumnLayout {
             id: formColumn
             width: parent ? parent.width : 0

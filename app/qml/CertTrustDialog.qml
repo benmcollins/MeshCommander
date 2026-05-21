@@ -33,6 +33,11 @@ Dialog {
         spacing: 10
         Layout.preferredWidth: 460
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Text {
             text: qsTr("The remote machine presented a certificate we haven't "
                        + "seen before. Verify the fingerprint out-of-band before "
@@ -125,6 +130,8 @@ Dialog {
             font.family: Type.sans
             font.pixelSize: Type.sizeS
             Layout.fillWidth: true
+            // #423 — pair the checkbox with its label for AX.
+            Accessible.name: qsTr("Remember this fingerprint")
         }
 
         RowLayout {

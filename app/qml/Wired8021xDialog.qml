@@ -46,6 +46,11 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 14
 
+        // #423 — Dialog extends Popup, not Item, so Accessible.* must
+        // sit on the contentItem (Item-derived ColumnLayout).
+        Accessible.role: Accessible.Dialog
+        Accessible.name: root.title
+
         Section {
             title: qsTr("PROFILE")
             Layout.fillWidth: true
@@ -56,6 +61,8 @@ Dialog {
                     text: qsTr("Enabled")
                     checked: root.draftEnabled
                     onToggled: root.draftEnabled = checked
+                    // #423 — pair the checkbox with its label for AX.
+                    Accessible.name: qsTr("Enabled")
                 }
                 GridLayout {
                     columns: 2
@@ -83,6 +90,8 @@ Dialog {
                         onActivated: function(idx) {
                             root.draftAuthenticationProtocol = model[idx].code;
                         }
+                        // #423 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Authentication protocol")
                     }
                 }
             }
