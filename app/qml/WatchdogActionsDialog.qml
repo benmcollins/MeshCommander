@@ -238,6 +238,7 @@ Dialog {
                                 text: qsTr("Remove")
                                 font.family: Type.sans
                                 font.pixelSize: Type.sizeXs
+                                destructive: true
                                 onClicked: root.removeRequested(
                                     root.watchdogDeviceIdGuid,
                                     actionRow.modelData.oldState,

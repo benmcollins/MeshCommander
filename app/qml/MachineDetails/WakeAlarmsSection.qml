@@ -141,6 +141,7 @@ ColumnLayout {
                         text: qsTr("Delete")
                         font.family: Type.sans
                         font.pixelSize: Type.sizeXs
+                        destructive: true
                         onClicked: {
                             wakeAlarmConfirmDialog.pendingInstanceId =
                                 alarmCol.parent.modelData.instanceId || "";

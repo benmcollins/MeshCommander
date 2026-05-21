@@ -224,6 +224,7 @@ Flickable {
                                 text: qsTr("Delete")
                                 font.family: Type.sans
                                 font.pixelSize: Type.sizeXs
+                                destructive: true
                                 onClicked: {
                                     wifiProfileConfirmDialog.ask(
                                         qsTr("Delete WiFi profile?"),
