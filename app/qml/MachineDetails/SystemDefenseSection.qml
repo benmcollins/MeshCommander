@@ -72,7 +72,7 @@ Flickable {
                 }
                 color: Colors.text
                 font.family: Type.sans
-                font.pixelSize: 20
+                font.pixelSize: Type.sizeL
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
             }

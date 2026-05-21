@@ -47,7 +47,7 @@ Flickable {
                 text: root.machineName.length > 0 ? root.machineName : root.machineHost
                 color: Colors.text
                 font.family: Type.sans
-                font.pixelSize: 24
+                font.pixelSize: Type.sizeXl
                 font.weight: Font.Medium
             }
             // The "via …" line that used to live here is now rendered
