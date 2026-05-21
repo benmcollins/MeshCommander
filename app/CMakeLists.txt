@@ -185,6 +185,7 @@ qt_add_qml_module(qumesh_appcore
         qml/MachineDetails/ActiveSessionsSection.qml
         qml/MachineDetails/WsmanBrowserSection.qml
         qml/MachineDetails/SystemDefenseSection.qml
+        qml/MachineDetails/RuleCard.qml
         qml/MachineDetails/UserAccountsSection.qml
         qml/MachineDetails/PinnedCertificatesSection.qml
         qml/MachineDetails/NetworkSection.qml
