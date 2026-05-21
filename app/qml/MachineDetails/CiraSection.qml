@@ -181,6 +181,7 @@ Flickable {
                                 text: qsTr("Delete")
                                 font.family: Type.sans
                                 font.pixelSize: Type.sizeXs
+                                destructive: true
                                 onClicked: {
                                     ciraPolicyConfirmDialog.ask(
                                         qsTr("Delete CIRA policy?"),
@@ -294,6 +295,7 @@ Flickable {
                             text: qsTr("Delete")
                             font.family: Type.sans
                             font.pixelSize: Type.sizeXs
+                            destructive: true
                             onClicked: {
                                 mpsConfirmDialog.ask(
                                     qsTr("Delete MPS server?"),
@@ -367,6 +369,7 @@ Flickable {
                             text: qsTr("Delete")
                             font.family: Type.sans
                             font.pixelSize: Type.sizeXs
+                            destructive: true
                             onClicked: controller.deleteHttpProxy(modelData.name || "")
                         }
                     }

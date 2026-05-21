@@ -341,6 +341,7 @@ AppWindow {
                             text: qsTr("Remove")
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
+                            destructive: true
                             enabled: root.snapshot.records.length > 0
                                   && root.selectedRecord >= 0
                                   && root.selectedRecord < root.snapshot.records.length
@@ -485,6 +486,7 @@ AppWindow {
                                         text: qsTr("Remove")
                                         font.family: Type.sans
                                         font.pixelSize: Type.sizeXs
+                                        destructive: true
                                         onClicked: controller.removeVariable(
                                             root.selectedRecord, varRow.index)
                                     }

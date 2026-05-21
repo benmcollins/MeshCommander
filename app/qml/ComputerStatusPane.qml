@@ -240,7 +240,16 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
                             font.family: Type.sans
                             font.pixelSize: Type.sizeS
                             destructive: true
-                            onClicked: confirmDelete.open()
+                            onClicked: {
+                                confirmDelete.pendingRow = root.row;
+                                confirmDelete.ask(
+                                    qsTr("Delete machine"),
+                                    qsTr("Remove %1 from the list? This does not change anything on the AMT device itself.")
+                                        .arg(root.machineName.length > 0
+                                             ? root.machineName : root.machineHost),
+                                    qsTr("Delete"),
+                                    true);
+                            }
                         }
                     }
                 }
@@ -248,45 +257,19 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
         }
     }
 
-    Dialog {
+    /// Pre-#368 this was an inline `Dialog` with an `AccentButton`
+    /// (blue) for the proceed action. Now routes through the shared
+    /// `ConfirmDialog` like every other delete prompt in the app —
+    /// the row to remove is pinned on `pendingRow` so the proceed
+    /// handler doesn't race a possibly-cleared `root.row`.
+    ConfirmDialog {
         id: confirmDelete
-        title: qsTr("Delete machine")
-        modal: true
-        anchors.centerIn: parent
-        standardButtons: Dialog.NoButton
-        implicitWidth: 420
-        contentItem: ColumnLayout {
-            spacing: 12
-            Text {
-                text: qsTr("Remove %1 from the list? This does not change anything on the AMT device itself.")
-                      .arg(root.machineName.length > 0 ? root.machineName : root.machineHost)
-                color: Colors.text
-                font.family: Type.sans
-                font.pixelSize: Type.sizeS
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-            }
-            RowLayout {
-                spacing: 8
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                FlatButton {
-                    text: qsTr("Cancel")
-                    font.family: Type.sans
-                    font.pixelSize: Type.sizeS
-                    onClicked: confirmDelete.reject()
-                }
-                AccentButton {
-                    text: qsTr("Delete")
-                    font.family: Type.sans
-                    font.pixelSize: Type.sizeS
-                    onClicked: {
-                        if (root.hasSelection) ComputerModel.removeAt(root.row);
-                        confirmDelete.accept();
-                    }
-                }
-            }
+        property int pendingRow: -1
+        onProceed: {
+            if (pendingRow >= 0) ComputerModel.removeAt(pendingRow);
+            pendingRow = -1;
         }
+        onRejected: pendingRow = -1
     }
 
     ColumnLayout {

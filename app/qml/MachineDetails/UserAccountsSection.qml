@@ -205,6 +205,9 @@ ColumnLayout {
                             : qsTr("Enable")
                         font.family: Type.sans
                         font.pixelSize: Type.sizeXs
+                        // Only tint when the visible label is "Disable" —
+                        // re-enabling an account is not destructive.
+                        destructive: modelData.enabled
                         onClicked: {
                             const isOwnRow = modelData.digestUsername
                                 === controller.user;
@@ -227,6 +230,7 @@ ColumnLayout {
                         text: qsTr("Delete")
                         font.family: Type.sans
                         font.pixelSize: Type.sizeXs
+                        destructive: true
                         onClicked: {
                             const isOwnRow = modelData.digestUsername
                                 === controller.user;

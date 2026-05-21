@@ -250,6 +250,7 @@ Flickable {
                                     text: qsTr("Delete")
                                     font.family: Type.sans
                                     font.pixelSize: Type.sizeXs
+                                    destructive: true
                                     onClicked: {
                                         certConfirmDialog.ask(
                                             modelData.active === true
@@ -305,6 +306,7 @@ Flickable {
                             text: qsTr("Delete")
                             font.family: Type.sans
                             font.pixelSize: Type.sizeXs
+                            destructive: true
                             onClicked: {
                                 certConfirmDialog.ask(
                                     qsTr("Delete orphan private key?"),

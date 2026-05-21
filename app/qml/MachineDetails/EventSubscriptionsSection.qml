@@ -136,6 +136,7 @@ Flickable {
                                 text: qsTr("Delete")
                                 font.family: Type.sans
                                 font.pixelSize: Type.sizeXs
+                                destructive: true
                                 onClicked: {
                                     eventSubscriptionConfirmDialog.pendingFilterInstanceId =
                                         subRow.modelData.filterInstanceId || "";

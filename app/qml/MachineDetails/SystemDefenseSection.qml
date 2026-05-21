@@ -192,6 +192,7 @@ Flickable {
                             text: qsTr("Unbind")
                             font.family: Type.sans
                             font.pixelSize: Type.sizeXs
+                            destructive: true
                             visible: parent.boundPort.length > 0
                             onClicked: {
                                 // The DeviceID ends in the port index;
@@ -212,6 +213,7 @@ Flickable {
                             text: qsTr("Delete")
                             font.family: Type.sans
                             font.pixelSize: Type.sizeXs
+                            destructive: true
                             onClicked: {
                                 systemDefenseConfirmDialog.pendingInstanceId =
                                     parent.modelData.instanceId || "";
@@ -319,6 +321,7 @@ Flickable {
                             text: qsTr("Delete")
                             font.family: Type.sans
                             font.pixelSize: Type.sizeXs
+                            destructive: true
                             onClicked: {
                                 systemDefenseConfirmDialog.pendingInstanceId =
                                     parent.modelData.instanceId || "";
@@ -431,6 +434,7 @@ Flickable {
                                 text: qsTr("Delete")
                                 font.family: Type.sans
                                 font.pixelSize: Type.sizeXs
+                                destructive: true
                                 onClicked: {
                                     systemDefenseConfirmDialog.pendingInstanceId =
                                         parent.parent.modelData.instanceId || "";

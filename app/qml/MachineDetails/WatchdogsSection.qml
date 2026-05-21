@@ -203,6 +203,7 @@ ColumnLayout {
                         text: qsTr("Delete")
                         font.family: Type.sans
                         font.pixelSize: Type.sizeXs
+                        destructive: true
                         onClicked: {
                             watchdogConfirmDialog.pendingDeviceIdGuid =
                                 watchdogCol.parent.modelData.deviceIdGuid || "";
