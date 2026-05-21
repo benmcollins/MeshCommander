@@ -15,7 +15,7 @@ import QuMesh
 Dialog {
     id: root
 
-    property var controller: null
+    required property MachineDetailsController controller
 
     signal confirmed(string instanceId)
 
@@ -32,15 +32,12 @@ Dialog {
     property string selectedInstanceId: ""
 
     onAboutToShow: {
-        root.selectedInstanceId = root.controller
-            ? root.controller.currentPowerSchemeId
-            : "";
+        root.selectedInstanceId = root.controller.currentPowerSchemeId;
     }
 
     onAccepted: {
         if (root.selectedInstanceId.length > 0
-            && root.selectedInstanceId !== (root.controller
-                ? root.controller.currentPowerSchemeId : ""))
+            && root.selectedInstanceId !== root.controller.currentPowerSchemeId)
             root.confirmed(root.selectedInstanceId);
     }
 
@@ -61,7 +58,7 @@ Dialog {
         }
 
         Repeater {
-            model: root.controller ? root.controller.powerSchemes : []
+            model: root.controller.powerSchemes
 
             delegate: RadioButton {
                 id: schemeRadio

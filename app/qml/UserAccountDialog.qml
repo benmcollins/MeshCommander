@@ -20,7 +20,7 @@ import QuMesh
 Dialog {
     id: root
 
-    required property var controller
+    required property MachineDetailsController controller
 
     property int handle: -1
     readonly property bool isAdd: handle === -1

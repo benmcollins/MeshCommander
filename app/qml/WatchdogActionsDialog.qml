@@ -20,7 +20,7 @@ import QuMesh
 Dialog {
     id: root
 
-    required property var controller
+    required property MachineDetailsController controller
 
     /// The watchdog this dialog is scoped to.
     property string watchdogDeviceIdGuid
