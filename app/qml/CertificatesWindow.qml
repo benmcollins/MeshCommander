@@ -318,20 +318,20 @@ Layout.alignment: Qt.AlignHCenter
             spacing: 8
             Layout.fillWidth: true
 
-            Button {
+            FlatButton {
                 text: qsTr("Import…")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 onClicked: importDialog.open()
             }
-            Button {
+            FlatButton {
                 text: qsTr("Export .cer")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 enabled: root.selectedRow >= 0
                 onClicked: { exportDialog.wantPem = false; exportDialog.open() }
             }
-            Button {
+            FlatButton {
                 text: qsTr("Export .pem")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
@@ -341,11 +341,12 @@ Layout.alignment: Qt.AlignHCenter
 
             Item { Layout.fillWidth: true }
 
-            Button {
+            FlatButton {
                 text: qsTr("Delete")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 enabled: root.selectedRow >= 0
+                destructive: true
                 // Pre-#278 this called removeAt() directly. Cert
                 // entries embed PEM private keys; deletion is
                 // irreversible.
