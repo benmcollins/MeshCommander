@@ -312,6 +312,17 @@ AppWindow {
         onRejected: pendingDeviceIdGuid = ""
     }
 
+    WatchdogActionsDialog {
+        id: watchdogActionsDialog
+        controller: controller
+        onAddRequested: function(fields) {
+            controller.addWatchdogAction(fields);
+        }
+        onRemoveRequested: function(watchdogDeviceIdGuid, oldState, newState) {
+            controller.deleteWatchdogAction(watchdogDeviceIdGuid, oldState, newState);
+        }
+    }
+
     EventSubscriptionDialog {
         id: eventSubscriptionDialog
         controller: controller
@@ -1046,6 +1057,7 @@ AppWindow {
                         anchors.fill: parent
                         controller: controller
                         watchdogDialog: watchdogDialog
+                        watchdogActionsDialog: watchdogActionsDialog
                     }
                 }
 

@@ -1384,11 +1384,27 @@ void MachineDetailsController::refreshAgentPresence()
                 m.insert(QStringLiteral("timeoutIntervalSec"), w.timeoutIntervalSec);
                 watchdogs.append(m);
             }
+            QVariantList actions;
+            actions.reserve(r.actions.size());
+            for (const auto &a : r.actions) {
+                QVariantMap m;
+                m.insert(QStringLiteral("watchdogDeviceIdGuid"), a.watchdogDeviceIdGuid);
+                m.insert(QStringLiteral("oldState"),             a.oldState);
+                m.insert(QStringLiteral("oldStateLabel"),        a.oldStateLabel);
+                m.insert(QStringLiteral("newState"),             a.newState);
+                m.insert(QStringLiteral("newStateLabel"),        a.newStateLabel);
+                m.insert(QStringLiteral("eventOnTransition"),    a.eventOnTransition);
+                m.insert(QStringLiteral("actionSac"),            a.actionSac);
+                m.insert(QStringLiteral("actionSacLabel"),       a.actionSacLabel);
+                m.insert(QStringLiteral("actionEac"),            a.actionEac);
+                actions.append(m);
+            }
             QVariantMap ap;
             ap.insert(QStringLiteral("ok"),              r.ok);
             ap.insert(QStringLiteral("maxTotalAgents"),  r.maxTotalAgents);
             ap.insert(QStringLiteral("maxTotalActions"), r.maxTotalActions);
             ap.insert(QStringLiteral("watchdogs"),       watchdogs);
+            ap.insert(QStringLiteral("actions"),         actions);
             m_agentPresence = std::move(ap);
             emit agentPresenceChanged();
         });
@@ -1520,6 +1536,98 @@ void MachineDetailsController::replaceAgentPresenceWatchdog(const QString &oldDe
                     }
                     refreshAgentPresence();
                 });
+        });
+}
+
+void MachineDetailsController::addWatchdogAction(const QVariantMap &fields)
+{
+    setLastError({});
+    const QString deviceId = fields.value(QStringLiteral("watchdogDeviceIdGuid"))
+                                   .toString().trimmed();
+    if (deviceId.isEmpty()) {
+        setLastError(QStringLiteral("Add action: missing watchdog DeviceID."));
+        return;
+    }
+    bool conv = false;
+    const int oldState = fields.value(QStringLiteral("oldState")).toInt(&conv);
+    if (!conv) {
+        setLastError(QStringLiteral("Add action: OldState is required."));
+        return;
+    }
+    conv = false;
+    const int newState = fields.value(QStringLiteral("newState")).toInt(&conv);
+    if (!conv) {
+        setLastError(QStringLiteral("Add action: NewState is required."));
+        return;
+    }
+    conv = false;
+    const int actionSac = fields.value(QStringLiteral("actionSac")).toInt(&conv);
+    if (!conv) {
+        setLastError(QStringLiteral("Add action: action type is required."));
+        return;
+    }
+    int actionEac = -1;
+    if (fields.contains(QStringLiteral("actionEac"))) {
+        bool eacConv = false;
+        const int e = fields.value(QStringLiteral("actionEac")).toInt(&eacConv);
+        if (eacConv && e >= 0) actionEac = e;
+    }
+    const bool eventOnTransition =
+        fields.value(QStringLiteral("eventOnTransition")).toBool();
+
+    // Cap-check against the firmware ceiling from
+    // AMT_AgentPresenceCapabilities, mirroring the watchdog add path.
+    const int cap = m_agentPresence.value(QStringLiteral("maxTotalActions")).toInt();
+    const int current = m_agentPresence.value(QStringLiteral("actions")).toList().size();
+    if (cap > 0 && current >= cap) {
+        setLastError(QStringLiteral("Add action: at the firmware ceiling (%1).").arg(cap));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Add action: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::addAgentPresenceWatchdogAction(m_client, deviceId,
+        oldState, newState, eventOnTransition, actionSac, actionEac,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Add action: failed.")
+                    : QStringLiteral("Add action: %1").arg(r.error));
+                return;
+            }
+            refreshAgentPresence();
+        });
+}
+
+void MachineDetailsController::deleteWatchdogAction(const QString &watchdogDeviceIdGuid,
+                                                     int oldState, int newState)
+{
+    setLastError({});
+    if (watchdogDeviceIdGuid.isEmpty()) {
+        setLastError(QStringLiteral("Delete action: missing watchdog DeviceID."));
+        return;
+    }
+    rebuildEndpoint();
+    if (m_host.isEmpty()) {
+        setLastError(QStringLiteral("Delete action: host is empty."));
+        return;
+    }
+    incInflight();
+    qumesh::wsman::deleteAgentPresenceWatchdogAction(m_client,
+        watchdogDeviceIdGuid, oldState, newState,
+        [this](qumesh::wsman::InvokeResult r) {
+            decInflight();
+            if (!r.ok) {
+                setLastError(r.error.isEmpty()
+                    ? QStringLiteral("Delete action: failed.")
+                    : QStringLiteral("Delete action: %1").arg(r.error));
+                return;
+            }
+            refreshAgentPresence();
         });
 }
 

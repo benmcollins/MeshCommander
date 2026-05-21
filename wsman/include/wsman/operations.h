@@ -431,10 +431,30 @@ struct AgentPresenceWatchdog
     int timeoutIntervalSec = 0;
 };
 
+/// One `AMT_AgentPresenceWatchdogAction` row. Tied to its parent
+/// `AMT_AgentPresenceWatchdog` by `watchdogDeviceIdGuid`. The triple
+/// `(watchdogDeviceIdGuid, oldState, newState)` is the CIM key set
+/// the firmware uses to address the row on Delete. See #350.
+struct AgentPresenceWatchdogAction
+{
+    /// Parent watchdog's DeviceID — the formatted 8-4-4-4-12 GUID
+    /// (the read side decoded from base-64 on the way in).
+    QString watchdogDeviceIdGuid;
+    int oldState = -1;                ///< Raw watchdog state code (1/2/4/8/16).
+    QString oldStateLabel;
+    int newState = -1;                ///< Raw watchdog state code (1/2/4/8/16).
+    QString newStateLabel;
+    bool eventOnTransition = false;
+    int actionSac = -1;               ///< System Action Code.
+    QString actionSacLabel;
+    int actionEac = -1;               ///< Extended Action Code (-1 = absent).
+};
+
 /// Snapshot of `AMT_AgentPresenceCapabilities` (the per-firmware
 /// max-watchdog / max-action ceiling) plus every
-/// `AMT_AgentPresenceWatchdog` row. Phase A (#164) — no
-/// transitions/actions association walking yet.
+/// `AMT_AgentPresenceWatchdog` row and the
+/// `AMT_AgentPresenceWatchdogAction` rows currently attached to them.
+/// See #164 (read) + #350 (actions).
 struct AgentPresenceResult
 {
     bool ok = false;
@@ -442,6 +462,7 @@ struct AgentPresenceResult
     int maxTotalAgents = 0;
     int maxTotalActions = 0;
     QList<AgentPresenceWatchdog> watchdogs;
+    QList<AgentPresenceWatchdogAction> actions;
 };
 
 /// Enumerate `AMT_AgentPresenceWatchdog` and read
@@ -472,6 +493,44 @@ void registerWatchdogAgent(WsmanClient *client,
 void deleteAgentPresenceWatchdog(WsmanClient *client,
                                    const QString &deviceIdGuid,
                                    std::function<void(InvokeResult)> callback);
+
+/// Invoke `AMT_AgentPresenceService.AddAction` to attach an action
+/// to the watchdog identified by `watchdogDeviceIdGuid`. The
+/// `Watchdog` parameter is an endpoint reference (EPR) into
+/// `AMT_AgentPresenceWatchdog`, so the envelope is hand-built (the
+/// flat-scalar `buildInvokeEnvelope` helper can't carry EPRs).
+///
+/// `oldState` / `newState` are the watchdog state-machine codes
+/// (1=Not Started, 2=Stopped, 4=Running, 8=Expired, 16=Suspended);
+/// the action fires when the watchdog transitions from `oldState`
+/// to `newState`. `actionSac` is the AMT System Action Code (1=Alert,
+/// 2=Event Log, 16=Power off, 17=Reset, 18=Power cycle). Pass
+/// `actionEac < 0` to omit the optional Extended Action Code. See #350.
+void addAgentPresenceWatchdogAction(WsmanClient *client,
+                                     const QString &watchdogDeviceIdGuid,
+                                     int oldState, int newState,
+                                     bool eventOnTransition,
+                                     int actionSac, int actionEac,
+                                     std::function<void(InvokeResult)> callback);
+
+/// Test-only seam: hand back the bytes the `AddAction` envelope
+/// builder would send. See `buildRegisterAgentEnvelopeForTesting`.
+[[nodiscard]] QByteArray buildAddActionEnvelopeForTesting(
+    const QString &watchdogDeviceIdGuid,
+    int oldState, int newState,
+    bool eventOnTransition,
+    int actionSac, int actionEac,
+    const QString &to = QStringLiteral("http://10.0.0.5:16992/wsman"),
+    const QString &messageId = QStringLiteral("uuid:add-action-test"));
+
+/// WS-Transfer Delete on `AMT_AgentPresenceWatchdogAction`. The
+/// firmware uses `(Watchdog, OldState, NewState)` as the CIM key
+/// set for the class — Watchdog is the base-64-encoded DeviceID of
+/// the parent watchdog. See #350.
+void deleteAgentPresenceWatchdogAction(WsmanClient *client,
+                                        const QString &watchdogDeviceIdGuid,
+                                        int oldState, int newState,
+                                        std::function<void(InvokeResult)> callback);
 
 /// One row from `CIM_FilterCollection` — a named event-filter the
 /// firmware exposes; subscriptions reference it by `instanceId`.

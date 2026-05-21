@@ -36,6 +36,8 @@ private slots:
     void addAlarmEnvelopeOmitsIntervalForOneShot();
     void registerAgentEnvelopeShape();
     void registerAgentEnvelopeRoundTripsGuid();
+    void addActionEnvelopeShape();
+    void addActionEnvelopeOmitsEacWhenUnset();
     void subscribeEnvelopeShape();
     void subscribeEnvelopeIncludesWsTrustCredentialsWhenUserSet();
     void unsubscribeEnvelopeEmbedsBothEprs();
@@ -622,6 +624,61 @@ void TestSoapEnvelope::registerAgentEnvelopeRoundTripsGuid()
     // The bare GUID string must NOT appear on the wire — that would
     // mean we sent the hex form instead of the base-64-raw form.
     QVERIFY(!env.contains("01234567-89ab-cdef-0123-456789abcdef"));
+}
+
+void TestSoapEnvelope::addActionEnvelopeShape()
+{
+    // Running (4) → Expired (8) on a real agent, fires a Reset (17),
+    // also logs an event. Same GUID as the RegisterAgent test so the
+    // base-64 form is the known-good "ASNFZ4mrze8BI0VniavN7w==".
+    const QByteArray env = buildAddActionEnvelopeForTesting(
+        QStringLiteral("01234567-89ab-cdef-0123-456789abcdef"),
+        /*oldState*/ 4, /*newState*/ 8,
+        /*eventOnTransition*/ true,
+        /*actionSac*/ 17, /*actionEac*/ -1);
+
+    // Well-formed XML.
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    // Targets AMT_AgentPresenceService.AddAction — selectors + Action.
+    QVERIFY(env.contains("AMT_AgentPresenceService/AddAction"));
+    QVERIFY(env.contains("Intel(r) AMT Agent Presence Service"));
+
+    // Method input + the EPR-shaped Watchdog parameter (ReferenceParameters
+    // wrapping the AMT_AgentPresenceWatchdog resource URI with a
+    // DeviceID selector carrying the base-64 GUID).
+    QVERIFY(env.contains("AddAction_INPUT"));
+    QVERIFY(env.contains("ReferenceParameters"));
+    QVERIFY(env.contains("AMT_AgentPresenceWatchdog"));
+    QVERIFY(env.contains("ASNFZ4mrze8BI0VniavN7w=="));
+
+    // The flat-scalar parameters — OldState/NewState/EventOnTransition/SAC.
+    QVERIFY(env.contains(">4<"));     // OldState (Running)
+    QVERIFY(env.contains(">8<"));     // NewState (Expired)
+    QVERIFY(env.contains(">true<")); // EventOnTransition
+    QVERIFY(env.contains(">17<"));   // ActionSAC (Reset)
+
+    // EAC was -1 → must not have been emitted.
+    QVERIFY(!env.contains("ActionEAC"));
+}
+
+void TestSoapEnvelope::addActionEnvelopeOmitsEacWhenUnset()
+{
+    // Explicit assertion that a non-negative EAC *does* show up, and
+    // a -1 EAC does not. The dialog defaults to -1; this guards
+    // against a future change that accidentally always emits ActionEAC.
+    const QByteArray withEac = buildAddActionEnvelopeForTesting(
+        QStringLiteral("01234567-89ab-cdef-0123-456789abcdef"),
+        4, 8, false, 17, /*actionEac*/ 5);
+    QVERIFY(withEac.contains("ActionEAC"));
+    QVERIFY(withEac.contains(">5<"));
+
+    const QByteArray withoutEac = buildAddActionEnvelopeForTesting(
+        QStringLiteral("01234567-89ab-cdef-0123-456789abcdef"),
+        4, 8, false, 17, /*actionEac*/ -1);
+    QVERIFY(!withoutEac.contains("ActionEAC"));
 }
 
 void TestSoapEnvelope::subscribeEnvelopeShape()

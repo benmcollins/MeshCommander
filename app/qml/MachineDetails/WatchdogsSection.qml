@@ -16,6 +16,7 @@ ColumnLayout {
 
     required property MachineDetailsController controller
     required property var watchdogDialog
+    required property var watchdogActionsDialog
 
     /// True when the configured watchdog count has hit the firmware
     /// ceiling — used to grey out Add and explain why in the header.
@@ -24,6 +25,20 @@ ColumnLayout {
         const cap = ap.maxTotalAgents || 0;
         const cur = (ap.watchdogs || []).length;
         return cap > 0 && cur >= cap;
+    }
+
+    /// Count the actions attached to a given watchdog so the row can
+    /// show "Actions: N" without each delegate iterating the flat list
+    /// itself. The flat list lives on `controller.agentPresence.actions`
+    /// and is refreshed by `refreshAgentPresence`.
+    function _actionsCountFor(deviceIdGuid) {
+        const ap = root.controller.agentPresence || {};
+        const all = ap.actions || [];
+        let n = 0;
+        for (let i = 0; i < all.length; i++) {
+            if (all[i].watchdogDeviceIdGuid === deviceIdGuid) n++;
+        }
+        return n;
     }
 
     spacing: 8
@@ -173,6 +188,12 @@ ColumnLayout {
                     }
 
                     FlatButton {
+                        text: qsTr("Actions")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        onClicked: root.watchdogActionsDialog.openFor(watchdogCol.parent.modelData)
+                    }
+                    FlatButton {
                         text: qsTr("Edit")
                         font.family: Type.sans
                         font.pixelSize: Type.sizeXs
@@ -236,6 +257,20 @@ ColumnLayout {
                         font.family: Type.mono
                         font.pixelSize: Type.sizeXs
                         Layout.fillWidth: true
+                    }
+
+                    Text { text: qsTr("Actions"); color: Colors.textMuted; font.family: Type.sans; font.pixelSize: Type.sizeXs }
+                    Text {
+                        readonly property int count:
+                            root._actionsCountFor(watchdogCol.parent.modelData.deviceIdGuid)
+                        text: count === 0
+                            ? qsTr("None configured")
+                            : qsTr("%1 configured").arg(count)
+                        color: count === 0 ? Colors.textFaint : Colors.text
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeXs
+                        Layout.fillWidth: true
+                        Layout.columnSpan: 3
                     }
                 }
 
