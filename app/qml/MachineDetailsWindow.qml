@@ -378,8 +378,19 @@ AppWindow {
             open();
         }
 
+        function submitIfReady() {
+            controller.bindSystemDefensePolicy(
+                portBindingPrompt.draftPortIndex,
+                portBindingPrompt.pendingPolicyInstanceId);
+            portBindingPrompt.accept();
+        }
+
         contentItem: ColumnLayout {
             spacing: 12
+
+            Keys.onReturnPressed: function(event) { portBindingPrompt.submitIfReady(); event.accepted = true; }
+            Keys.onEnterPressed: function(event) { portBindingPrompt.submitIfReady(); event.accepted = true; }
+
             Text {
                 text: qsTr("Bind %1 to which Ethernet port?")
                     .arg(portBindingPrompt.pendingPolicyLabel)
@@ -425,12 +436,7 @@ AppWindow {
                     text: qsTr("Bind")
                     font.family: Type.sans
                     font.pixelSize: Type.sizeS
-                    onClicked: {
-                        controller.bindSystemDefensePolicy(
-                            portBindingPrompt.draftPortIndex,
-                            portBindingPrompt.pendingPolicyInstanceId);
-                        portBindingPrompt.accept();
-                    }
+                    onClicked: portBindingPrompt.submitIfReady()
                 }
             }
         }
@@ -506,8 +512,19 @@ AppWindow {
             open();
         }
 
+        function submitIfReady() {
+            controller.setWifiSyncSettings(
+                wifiSyncDialog.draftLocal ? 1 : 0,
+                wifiSyncDialog.draftUefi  ? 1 : 0);
+            wifiSyncDialog.accept();
+        }
+
         contentItem: ColumnLayout {
             spacing: 14
+
+            Keys.onReturnPressed: function(event) { wifiSyncDialog.submitIfReady(); event.accepted = true; }
+            Keys.onEnterPressed: function(event) { wifiSyncDialog.submitIfReady(); event.accepted = true; }
+
             CheckBox {
                 text: qsTr("Local profile synchronization — push OS-side WiFi profiles to AMT")
                 checked: wifiSyncDialog.draftLocal
@@ -531,12 +548,7 @@ AppWindow {
                     text: qsTr("Apply")
                     font.family: Type.sans
                     font.pixelSize: Type.sizeS
-                    onClicked: {
-                        controller.setWifiSyncSettings(
-                            wifiSyncDialog.draftLocal ? 1 : 0,
-                            wifiSyncDialog.draftUefi  ? 1 : 0);
-                        wifiSyncDialog.accept();
-                    }
+                    onClicked: wifiSyncDialog.submitIfReady()
                 }
             }
         }

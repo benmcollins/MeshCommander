@@ -32,9 +32,18 @@ Dialog {
 
     ScannerController { id: scanner }
 
+    function submitIfReady() {
+        if (scanner.selectedCount <= 0 || scanner.scanning) return;
+        scanner.addSelected();
+        root.accept();
+    }
+
     contentItem: ColumnLayout {
         id: formColumn
         spacing: 14
+
+        Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+        Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
         Section {
             title: qsTr("TARGET")
@@ -247,10 +256,7 @@ Dialog {
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
                 enabled: scanner.selectedCount > 0 && !scanner.scanning
-                onClicked: {
-                    scanner.addSelected();
-                    root.accept();
-                }
+                onClicked: root.submitIfReady()
             }
         }
     }

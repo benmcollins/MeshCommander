@@ -123,8 +123,45 @@ Dialog {
     standardButtons: Dialog.NoButton
     implicitWidth: 600
 
+    function submitReady() {
+        const haveServer = _keys(ciraSelected).length > 0
+                        || _keys(cilaSelected).length > 0;
+        if (!haveServer) return false;
+        if (draftTrigger !== 2) return true;
+        if (draftPeriodicMode === "interval")
+            return draftPeriodicSeconds > 0;
+        if (draftPeriodicMode === "timeOfDay")
+            return draftPeriodicHour >= 0 && draftPeriodicHour <= 23
+                && draftPeriodicMinute >= 0 && draftPeriodicMinute <= 59;
+        return false;
+    }
+
+    function submitIfReady() {
+        if (!submitReady()) return;
+        const fields = {
+            "trigger":        draftTrigger,
+            "tunnelLifeTime": draftTunnelLifeTime,
+            "ciraMpsNames":   _keys(ciraSelected),
+            "cilaMpsNames":   _keys(cilaSelected),
+        };
+        if (draftTrigger === 2) {
+            fields["periodicMode"] = draftPeriodicMode;
+            if (draftPeriodicMode === "interval") {
+                fields["periodicSeconds"] = draftPeriodicSeconds;
+            } else {
+                fields["periodicHour"]   = draftPeriodicHour;
+                fields["periodicMinute"] = draftPeriodicMinute;
+            }
+        }
+        controller.addCiraPolicyRule(fields);
+        accept();
+    }
+
     contentItem: ColumnLayout {
         spacing: 14
+
+        Keys.onReturnPressed: function(event) { root.submitIfReady(); event.accepted = true; }
+        Keys.onEnterPressed: function(event) { root.submitIfReady(); event.accepted = true; }
 
         Section {
             title: qsTr("TRIGGER")
@@ -398,37 +435,8 @@ Dialog {
                 text: root.isEdit ? qsTr("Save changes") : qsTr("Add policy")
                 font.family: Type.sans
                 font.pixelSize: Type.sizeS
-                enabled: {
-                    const haveServer = root._keys(root.ciraSelected).length > 0
-                                    || root._keys(root.cilaSelected).length > 0;
-                    if (!haveServer) return false;
-                    if (root.draftTrigger !== 2) return true;
-                    if (root.draftPeriodicMode === "interval")
-                        return root.draftPeriodicSeconds > 0;
-                    if (root.draftPeriodicMode === "timeOfDay")
-                        return root.draftPeriodicHour >= 0 && root.draftPeriodicHour <= 23
-                            && root.draftPeriodicMinute >= 0 && root.draftPeriodicMinute <= 59;
-                    return false;
-                }
-                onClicked: {
-                    const fields = {
-                        "trigger":        root.draftTrigger,
-                        "tunnelLifeTime": root.draftTunnelLifeTime,
-                        "ciraMpsNames":   root._keys(root.ciraSelected),
-                        "cilaMpsNames":   root._keys(root.cilaSelected),
-                    };
-                    if (root.draftTrigger === 2) {
-                        fields["periodicMode"] = root.draftPeriodicMode;
-                        if (root.draftPeriodicMode === "interval") {
-                            fields["periodicSeconds"] = root.draftPeriodicSeconds;
-                        } else {
-                            fields["periodicHour"]   = root.draftPeriodicHour;
-                            fields["periodicMinute"] = root.draftPeriodicMinute;
-                        }
-                    }
-                    root.controller.addCiraPolicyRule(fields);
-                    root.accept();
-                }
+                enabled: root.submitReady()
+                onClicked: root.submitIfReady()
             }
         }
     }
