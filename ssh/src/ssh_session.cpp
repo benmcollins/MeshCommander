@@ -13,6 +13,8 @@
 #include <QPointer>
 #include <QThread>
 #include <atomic>
+#include <cstdint>
+#include <memory>
 #include <QtCore/qcoreapplication.h>
 
 namespace qumesh::ssh {
@@ -61,9 +63,14 @@ QString keyTypeName(ssh_keytypes_e t)
 /// uninterruptible at the OS level. A DNS-blackhole host name could
 /// hold up `requestStop()` for the full resolver timeout (often
 /// 30 s+). Here we run `QHostInfo::fromName()` on a temporary worker
-/// thread and poll the cancel flag every 50 ms. If cancellation
-/// wins we abandon the lookup thread (it self-deletes when the
-/// resolver eventually returns).
+/// thread and poll the cancel flag every 50 ms. If cancellation or
+/// timeout wins we abandon the lookup thread (it self-deletes when
+/// the resolver eventually returns).
+///
+/// The result is exchanged via a `std::shared_ptr<std::atomic<...>>`
+/// co-owned by the caller and the lookup thread, so whichever side
+/// finishes last reclaims the heap holder — no leak on cancel. See
+/// #393.
 QString resolveHostCancellable(const QString &hostOrIp,
                                 int timeoutMs,
                                 std::atomic<bool> &stopFlag,
@@ -73,40 +80,75 @@ QString resolveHostCancellable(const QString &hostOrIp,
     const QHostAddress probe(hostOrIp);
     if (!probe.isNull()) return hostOrIp;
 
-    // QThread::create + finished→deleteLater means the thread cleans
-    // itself up whenever getaddrinfo returns, even if we've already
-    // abandoned waiting on it.
-    auto *resultHolder = new std::atomic<QHostInfo *>{nullptr};
-    QThread *t = QThread::create([host = hostOrIp, resultHolder]() {
+    // Sentinel value distinct from any valid heap pointer: tagged
+    // address `1` is never returned by `operator new` (alignment
+    // requires at least 2 on every platform we ship to). Using a
+    // non-null sentinel lets us keep `nullptr` meaning "worker has
+    // not yet stored a result"; the sentinel means "caller bailed
+    // before consuming, worker should clean up the result".
+    static QHostInfo *const kAbandoned =
+        reinterpret_cast<QHostInfo *>(static_cast<std::uintptr_t>(1));
+
+    // Co-owned by caller (this stack frame) and the lookup lambda.
+    // Last to drop the shared_ptr frees the atomic holder; the
+    // exchange dance below decides which side owns the QHostInfo*
+    // (if any was produced).
+    auto holder = std::make_shared<std::atomic<QHostInfo *>>(nullptr);
+
+    QThread *t = QThread::create([host = hostOrIp, holder]() {
         // fromName blocks here. There's no cross-platform way to
         // interrupt it from outside.
         QHostInfo *info = new QHostInfo(QHostInfo::fromName(host));
-        resultHolder->store(info, std::memory_order_release);
+        // Atomically publish the result. If the caller already
+        // moved the holder to the `kAbandoned` sentinel, they have
+        // walked away and we own the heap-allocated QHostInfo —
+        // delete it. Otherwise the caller's load will pick up our
+        // result and free it.
+        QHostInfo *prev = holder->exchange(info, std::memory_order_acq_rel);
+        if (prev == kAbandoned) delete info;
     });
     QObject::connect(t, &QThread::finished, t, &QObject::deleteLater);
     t->start();
+
+    // Helper: caller's bail-out path. Move the holder to `kAbandoned`
+    // and, if the worker had already published a result before we
+    // got here, take ownership of that result and free it (the
+    // worker is done with it — its exchange returned the previous
+    // `nullptr`, so it has no reference left). After this returns
+    // the caller drops its shared_ptr; the worker drops its own
+    // shared_ptr when its lambda exits; the holder is freed by
+    // whichever drop is last.
+    auto abandon = [&holder]() {
+        QHostInfo *prev =
+            holder->exchange(kAbandoned, std::memory_order_acq_rel);
+        if (prev != nullptr && prev != kAbandoned) delete prev;
+    };
 
     QElapsedTimer deadline;
     deadline.start();
     constexpr int kTickMs = 50;
     while (true) {
-        if (QHostInfo *info = resultHolder->load(std::memory_order_acquire)) {
-            const QHostInfo r = *info;
-            delete info;
-            delete resultHolder;
+        QHostInfo *cur = holder->load(std::memory_order_acquire);
+        if (cur != nullptr && cur != kAbandoned) {
+            // Worker delivered. Take ownership and consume. No need
+            // to mutate the holder — the worker is done with it
+            // (its exchange returned the previous `nullptr`, so it
+            // has no reference left). The atomic stays alive as
+            // long as either party still holds a shared_ptr; it's
+            // freed when both have dropped it.
+            const QHostInfo r = *cur;
+            delete cur;
             if (r.error() != QHostInfo::NoError || r.addresses().isEmpty())
                 return {};
             return r.addresses().first().toString();
         }
         if (stopFlag.load(std::memory_order_acquire)) {
-            // Leak resultHolder + the lookup thread's eventual result —
-            // the thread will deleteLater itself when getaddrinfo
-            // finally returns. resultHolder leaks a few bytes; we
-            // can't reclaim it without racing the worker thread.
+            abandon();
             *aborted = true;
             return {};
         }
         if (deadline.elapsed() >= timeoutMs) {
+            abandon();
             *aborted = false; // timeout, not cancel
             return {};
         }
