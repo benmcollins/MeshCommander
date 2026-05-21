@@ -211,6 +211,8 @@ Dialog {
                         font.pixelSize: Type.sizeM
                         Layout.fillWidth: true
                         onTextEdited: root.draftUsername = text
+                        // #379 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Username")
                     }
 
                     Text {
@@ -233,6 +235,8 @@ Dialog {
                             font.pixelSize: Type.sizeM
                             Layout.fillWidth: true
                             onTextEdited: root.draftPassword = text
+                            // #379 — pair the field with its label for AX.
+                            Accessible.name: qsTr("Password")
                         }
                         FlatButton {
                             text: root.revealPassword ? qsTr("Hide") : qsTr("Show")
@@ -259,6 +263,8 @@ Dialog {
                         color: root.passwordsAgree() ? Colors.text : Colors.standby
                         Layout.fillWidth: true
                         onTextEdited: root.draftPasswordConfirm = text
+                        // #379 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Confirm password")
                     }
                 }
             }

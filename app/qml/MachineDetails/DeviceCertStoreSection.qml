@@ -69,9 +69,18 @@ Flickable {
                 Repeater {
                     model: (controller.deviceCertStore && controller.deviceCertStore.tlsSettings) || []
                     delegate: RowLayout {
+                        id: tlsRow
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 12
+
+                        // Make each TLS-mode row addressable to screen readers (#379).
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("TLS %1, %2")
+                            .arg(tlsRow.modelData.isLocal
+                                ? qsTr("local LMS")
+                                : qsTr("remote 16993"))
+                            .arg(tlsRow.modelData.label || "")
 
                         Text {
                             text: modelData.isLocal
@@ -144,6 +153,7 @@ Flickable {
                 Repeater {
                     model: (controller.deviceCertStore && controller.deviceCertStore.certificates) || []
                     delegate: Rectangle {
+                        id: certRow
                         required property var modelData
                         required property int index
                         Layout.fillWidth: true
@@ -151,6 +161,22 @@ Flickable {
                         color: index % 2 === 0
                             ? "transparent" : Colors.elevated
                         radius: 4
+
+                        // Make each cert row addressable to screen readers (#379).
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("Certificate %1, issued by %2%3%4%5")
+                            .arg(certRow.modelData.subjectCn
+                                 || certRow.modelData.subjectRaw
+                                 || qsTr("unnamed"))
+                            .arg(certRow.modelData.issuerCn
+                                 || certRow.modelData.issuerRaw
+                                 || qsTr("unknown"))
+                            .arg(certRow.modelData.trustedRoot === true
+                                ? qsTr(", trusted root") : "")
+                            .arg(certRow.modelData.hasPrivateKey === true
+                                ? qsTr(", has private key") : "")
+                            .arg(certRow.modelData.active === true
+                                ? qsTr(", active") : "")
 
                         ColumnLayout {
                             id: certCol
@@ -275,9 +301,17 @@ Flickable {
                 Repeater {
                     model: (controller.deviceCertStore && controller.deviceCertStore.orphanKeys) || []
                     delegate: RowLayout {
+                        id: orphanRow
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 8
+
+                        // Make each orphan-key row addressable to screen readers (#379).
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("Orphan key %1, %2 bytes")
+                            .arg(orphanRow.modelData.instanceId)
+                            .arg(orphanRow.modelData.derSizeBytes)
+
                         Text {
                             text: qsTr("%1 — %2 bytes")
                                 .arg(modelData.instanceId)

@@ -127,6 +127,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftAccessInfo = text
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Address")
                 }
 
                 Text {
@@ -143,6 +145,8 @@ Dialog {
                     Layout.preferredWidth: 100
                     validator: IntValidator { bottom: 1; top: 65535 }
                     onTextEdited: root.draftPort = parseInt(text) || 0
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Port")
                 }
 
                 Text {
@@ -159,6 +163,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftCommonName = text
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Trusted common name")
                 }
 
                 Text {

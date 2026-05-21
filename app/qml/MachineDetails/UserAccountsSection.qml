@@ -87,11 +87,27 @@ ColumnLayout {
         ScrollBar.vertical: ScrollBar {}
 
         delegate: Rectangle {
+            id: accountRow
             required property var modelData
             required property int index
             width: ListView.view.width
             implicitHeight: 56
             color: index % 2 === 0 ? "transparent" : Colors.elevated
+
+            // Make each user-account row addressable to screen readers (#379).
+            // Mirror the ComputerListView pattern.
+            Accessible.role: Accessible.ListItem
+            Accessible.name: qsTr("Account %1, %2, %3")
+                .arg(accountRow.modelData.name || qsTr("unnamed"))
+                .arg(accountRow.modelData.handle === -1
+                    ? qsTr("administrator")
+                    : (accountRow.modelData.isAdmin
+                        ? qsTr("administrator")
+                        : (accountRow.modelData.accessPermissionLabel || "")))
+                .arg(accountRow.modelData.enabled
+                    ? qsTr("enabled")
+                    : qsTr("disabled"))
+
             ColumnLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 12

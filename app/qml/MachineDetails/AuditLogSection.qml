@@ -71,11 +71,25 @@ ColumnLayout {
         ScrollBar.vertical: ScrollBar {}
 
         delegate: Rectangle {
+            id: auditRow
             required property var modelData
             required property int index
             width: ListView.view.width
             implicitHeight: 36
             color: index % 2 === 0 ? "transparent" : Colors.elevated
+
+            // Make each audit-log row addressable to screen readers (#379).
+            // Mirror the ComputerListView pattern.
+            Accessible.role: Accessible.ListItem
+            Accessible.name: qsTr("%1, %2, %3, %4")
+                .arg(auditRow.modelData.unixSeconds > 0
+                    ? Qt.formatDateTime(
+                        new Date(auditRow.modelData.unixSeconds * 1000),
+                        "yyyy-MM-dd HH:mm:ss")
+                    : "—")
+                .arg(auditRow.modelData.initiator || "—")
+                .arg(auditRow.modelData.eventLabel || "—")
+                .arg(auditRow.modelData.netAddress || "")
 
             RowLayout {
                 anchors.fill: parent

@@ -62,6 +62,7 @@ ColumnLayout {
         spacing: 6
 
         delegate: Rectangle {
+            id: alarmRow
             required property var modelData
             required property int index
             width: ListView.view.width
@@ -70,6 +71,18 @@ ColumnLayout {
             border.color: Colors.borderMuted
             border.width: 1
             radius: 8
+
+            // Make each wake-alarm card addressable to screen readers (#379).
+            // Mirror the ComputerListView pattern.
+            Accessible.role: Accessible.ListItem
+            Accessible.name: qsTr("Wake alarm %1, fires at %2%3")
+                .arg(alarmRow.modelData.elementName
+                     || alarmRow.modelData.instanceId
+                     || qsTr("unnamed"))
+                .arg(alarmRow.modelData.startTimeLocal || "")
+                .arg((alarmRow.modelData.intervalLabel || "").length > 0
+                    ? qsTr(", recurs every %1").arg(alarmRow.modelData.intervalLabel)
+                    : "")
 
             ColumnLayout {
                 id: alarmCol

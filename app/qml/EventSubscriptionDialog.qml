@@ -93,6 +93,8 @@ Dialog {
                     Layout.fillWidth: true
                 }
                 ComboBox {
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Filter")
                     model: (root.controller.eventSubscriptions
                              && root.controller.eventSubscriptions.filters) || []
                     textRole: "collectionName"
@@ -149,6 +151,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftNotifyUrl = text
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Listener URL")
                 }
 
                 Text {
@@ -171,6 +175,8 @@ Dialog {
                     Layout.fillWidth: true
                     onActivated: root.draftDeliveryMode =
                         currentIndex === 1 ? "Push" : "PushWithAck"
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Delivery mode")
                 }
             }
         }

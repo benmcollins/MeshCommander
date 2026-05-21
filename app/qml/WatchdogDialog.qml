@@ -162,6 +162,8 @@ Dialog {
                         font.pixelSize: Type.sizeM
                         Layout.fillWidth: true
                         onTextEdited: root.draftDeviceIdGuid = text
+                        // #379 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Device ID")
                     }
                     FlatButton {
                         text: qsTr("Generate")
@@ -186,6 +188,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftDescription = text
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Description")
                 }
 
                 Text {
@@ -203,6 +207,8 @@ Dialog {
                     Layout.fillWidth: true
                     onActivated: root.draftMonitoredEntityCode =
                         root.monitoredEntities[currentIndex].code
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Monitored entity")
                 }
             }
         }

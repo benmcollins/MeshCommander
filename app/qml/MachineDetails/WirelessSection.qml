@@ -171,9 +171,18 @@ Flickable {
                 Repeater {
                     model: (controller.wireless && controller.wireless.profiles) || []
                     delegate: ColumnLayout {
+                        id: wifiProfileRow
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 2
+
+                        // Make each WiFi-profile row addressable to screen readers (#379).
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("WiFi profile %1, SSID %2, %3")
+                            .arg(wifiProfileRow.modelData.elementName || qsTr("unnamed"))
+                            .arg(wifiProfileRow.modelData.ssid || qsTr("none"))
+                            .arg(wifiProfileRow.modelData.authMethodLabel || "")
+
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8

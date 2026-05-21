@@ -151,6 +151,18 @@ Flickable {
                             return (m && m.portDeviceId) || "";
                         }
 
+                        // Make each policy card addressable to screen
+                        // readers (#379). Mirror the ComputerListView pattern.
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("Policy %1, priority %2, %3")
+                            .arg(policyCard.modelData.policyName
+                                 || policyCard.modelData.instanceId
+                                 || qsTr("unnamed"))
+                            .arg(policyCard.modelData.priority)
+                            .arg(policyCard.boundPort.length > 0
+                                ? qsTr("bound to %1").arg(policyCard.boundPort)
+                                : qsTr("unbound"))
+
                         RowLayout {
                             spacing: 10
                             Layout.fillWidth: true
@@ -291,6 +303,20 @@ Flickable {
                             return all[modelData.instanceId];
                         }
 
+                        // Make each L2 filter card addressable to screen
+                        // readers (#379). Mirror the ComputerListView pattern.
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("L2 filter %1, ether type %2, VLAN %3")
+                            .arg(hdrCard.modelData.name
+                                 || hdrCard.modelData.instanceId
+                                 || qsTr("unnamed"))
+                            .arg(hdrCard.modelData.etherType > 0
+                                ? "0x" + hdrCard.modelData.etherType.toString(16)
+                                : qsTr("any"))
+                            .arg(hdrCard.modelData.vlanTag >= 0
+                                ? hdrCard.modelData.vlanTag
+                                : qsTr("any"))
+
                         RowLayout {
                             spacing: 10
                             Layout.fillWidth: true
@@ -405,6 +431,20 @@ Flickable {
                         }
                         readonly property bool hasAddress:
                             (modelData.srcAddress || modelData.dstAddress || "").length > 0
+
+                        // Make each L3/L4 filter card addressable to screen
+                        // readers (#379). Mirror the ComputerListView pattern.
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("L3/L4 filter %1, protocol %2, destination port %3")
+                            .arg(ipCard.modelData.name
+                                 || ipCard.modelData.instanceId
+                                 || qsTr("unnamed"))
+                            .arg(ipCard.modelData.protocol > 0
+                                ? ipCard.modelData.protocol
+                                : qsTr("any"))
+                            .arg(ipCard.modelData.dstPort > 0
+                                ? ipCard.modelData.dstPort
+                                : qsTr("any"))
 
                         RowLayout {
                             spacing: 10

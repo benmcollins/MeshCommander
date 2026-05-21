@@ -181,6 +181,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftElementName = text
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Profile name")
                 }
 
                 Text {
@@ -197,6 +199,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftSsid = text
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("SSID")
                 }
 
                 Text {
@@ -213,6 +217,8 @@ Dialog {
                     Layout.preferredWidth: 80
                     validator: IntValidator { bottom: 1; top: 255 }
                     onTextEdited: root.draftPriority = parseInt(text) || 1
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Priority")
                 }
             }
         }

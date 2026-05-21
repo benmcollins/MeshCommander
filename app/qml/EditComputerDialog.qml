@@ -164,6 +164,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftName = text
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Name")
                 }
             }
         }
@@ -193,6 +195,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftHost = text
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("Host")
                 }
 
                 Text {
@@ -205,6 +209,8 @@ Dialog {
                 Switch {
                     checked: root.draftTls
                     onCheckedChanged: root.draftTls = checked
+                    // #379 — pair the switch with its label for AX.
+                    Accessible.name: qsTr("TLS")
                 }
             }
         }
@@ -234,6 +240,8 @@ Dialog {
                     font.pixelSize: Type.sizeM
                     Layout.fillWidth: true
                     onTextEdited: root.draftUser = text
+                    // #379 — pair the field with its label for AX.
+                    Accessible.name: qsTr("User")
                 }
 
                 Text {
@@ -255,6 +263,8 @@ Dialog {
                         font.pixelSize: Type.sizeM
                         Layout.fillWidth: true
                         onTextEdited: root.draftPass = text
+                        // #379 — pair the field with its label for AX.
+                        Accessible.name: qsTr("Password")
                     }
                     FlatButton {
                         text: root.revealPass ? qsTr("Hide") : qsTr("Show")

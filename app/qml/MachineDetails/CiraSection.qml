@@ -134,9 +134,19 @@ Flickable {
                 Repeater {
                     model: (controller.remoteAccess && controller.remoteAccess.policies) || []
                     delegate: ColumnLayout {
+                        id: policyRow
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 2
+
+                        // Make each policy row addressable to screen readers (#379).
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("CIRA policy %1, %2")
+                            .arg(policyRow.modelData.name || qsTr("unnamed"))
+                            .arg((policyRow.modelData.mpsNamesLabel || "").length > 0
+                                ? policyRow.modelData.mpsNamesLabel
+                                : qsTr("no servers"))
+
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
@@ -239,9 +249,17 @@ Flickable {
                 Repeater {
                     model: (controller.remoteAccess && controller.remoteAccess.servers) || []
                     delegate: RowLayout {
+                        id: mpsRow
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 8
+
+                        // Make each MPS-server row addressable to screen readers (#379).
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("MPS server %1 port %2%3")
+                            .arg(mpsRow.modelData.accessInfo || "")
+                            .arg(mpsRow.modelData.port)
+                            .arg(mpsRow.modelData.cila === true ? qsTr(", CILA") : "")
 
                         Text {
                             text: qsTr("%1:%2")
@@ -331,9 +349,20 @@ Flickable {
                 Repeater {
                     model: controller.remoteAccess.httpProxies || []
                     delegate: RowLayout {
+                        id: proxyRow
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 8
+
+                        // Make each HTTP-proxy row addressable to screen readers (#379).
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: qsTr("HTTP proxy %1 port %2%3")
+                            .arg(proxyRow.modelData.accessInfo || "")
+                            .arg(proxyRow.modelData.port)
+                            .arg((proxyRow.modelData.networkDnsSuffix || "").length > 0
+                                ? qsTr(", suffix %1").arg(proxyRow.modelData.networkDnsSuffix)
+                                : "")
+
                         Text {
                             text: qsTr("%1:%2")
                                 .arg(modelData.accessInfo || "")
