@@ -35,14 +35,22 @@ Flickable {
             title: {
                 const r = controller.remoteAccess;
                 if (!r || !r.ok)
-                    return qsTr("Not yet fetched");
+                    return controller.busy
+                        ? qsTr("Loading…")
+                        : qsTr("No CIRA configuration");
                 const n = (r.servers || []).length;
                 return n === 0
                     ? qsTr("No MPS servers configured")
                     : qsTr("%1 management server(s)").arg(n);
             }
+            // Show "Loading…" while the fetch is in flight
+            // (MachineDetailsWindow auto-fires it on section switch).
+            // Once it returns empty, surface the empty-state noun
+            // instead of telling the user to click a button (#378).
             hint: (!controller.remoteAccess || !controller.remoteAccess.ok)
-                ? qsTr("Click Refresh to fetch the CIRA configuration.")
+                ? (controller.busy
+                    ? qsTr("Loading…")
+                    : qsTr("No CIRA configuration"))
                 : ""
         }
 

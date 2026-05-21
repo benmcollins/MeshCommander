@@ -35,12 +35,20 @@ Flickable {
             title: {
                 const s = controller.deviceCertStore;
                 if (!s || !s.certificates)
-                    return qsTr("Not yet fetched");
+                    return controller.busy
+                        ? qsTr("Loading…")
+                        : qsTr("No certificates");
                 return qsTr("%1 certificate(s)")
                     .arg(s.certificates.length);
             }
+            // Show "Loading…" while the fetch is in flight
+            // (MachineDetailsWindow auto-fires it on section switch).
+            // Once it returns empty, surface the empty-state noun
+            // instead of telling the user to click a button (#378).
             hint: (!controller.deviceCertStore || !controller.deviceCertStore.certificates)
-                ? qsTr("Click Refresh to fetch the AMT device's certificate store.")
+                ? (controller.busy
+                    ? qsTr("Loading…")
+                    : qsTr("No certificates"))
                 : ""
         }
 

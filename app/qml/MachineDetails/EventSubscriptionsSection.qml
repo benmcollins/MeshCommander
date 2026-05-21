@@ -48,7 +48,9 @@ Flickable {
                     title: {
                         const es = root.controller.eventSubscriptions || {};
                         if (Object.keys(es).length === 0)
-                            return qsTr("Not yet fetched");
+                            return root.controller.busy
+                                ? qsTr("Loading…")
+                                : qsTr("No subscriptions");
                         const s = es.subscriptions || [];
                         return s.length === 0
                             ? qsTr("No subscriptions configured")
@@ -56,8 +58,15 @@ Flickable {
                                   .arg(s.length)
                                   .arg(s.length === 1 ? "" : "s");
                     }
+                    // Show "Loading…" while the fetch is in flight
+                    // (MachineDetailsWindow auto-fires it on section
+                    // switch). Once the catalog comes back empty,
+                    // surface the empty-state noun instead of telling
+                    // the user to click a button (#378).
                     hint: !root.catalogLoaded
-                        ? qsTr("Refresh to load the filter catalog before subscribing.")
+                        ? (root.controller.busy
+                            ? qsTr("Loading…")
+                            : qsTr("No subscriptions"))
                         : ""
                 }
 
