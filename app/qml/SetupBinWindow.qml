@@ -13,12 +13,6 @@ import QuMesh
 AppWindow {
     id: root
 
-    width: 1100
-    height: 720
-    minimumWidth: 880
-    minimumHeight: 520
-    title: qsTr("QuMesh — Setup.bin editor")
-
     property int selectedRecord: 0
     // `snapshot` / `catalog` come back from SetupBinController as
     // QVariantMap and QVariantList respectively. QML's typed-property
@@ -26,6 +20,12 @@ AppWindow {
     // `Q_GADGET` is out of scope for #387. Leave as `var`.
     property var snapshot: ({ version: 2, doNotConsumeRecords: false, records: [] })
     property var catalog: []
+
+    width: 1100
+    height: 720
+    minimumWidth: 880
+    minimumHeight: 520
+    title: qsTr("QuMesh — Setup.bin editor")
 
     SetupBinController {
         id: controller
@@ -70,9 +70,11 @@ AppWindow {
 
     FileDialog {
         id: certFileDialog
-        title: qsTr("Choose certificate / blob")
+
         property int recordIndex: -1
         property int variableIndex: -1
+
+        title: qsTr("Choose certificate / blob")
         nameFilters: [qsTr("All files (*)")]
         onAccepted: {
             const path = Paths.urlToLocalFile(certFileDialog.selectedFile);
@@ -86,11 +88,13 @@ AppWindow {
 
     Dialog {
         id: addVarDialog
+
+        property int recordIndex: -1
+
         title: qsTr("Add variable")
         modal: true
         anchors.centerIn: parent
         standardButtons: Dialog.NoButton
-        property int recordIndex: -1
 
         function submit() {
             if (recordIndex < 0 || catalogPicker.currentIndex < 0) return;
@@ -116,7 +120,6 @@ AppWindow {
             }
             ComboBox {
                 id: catalogPicker
-                Layout.fillWidth: true
                 model: root.catalog
                 textRole: "name"
                 font.family: Type.sans
@@ -127,6 +130,7 @@ AppWindow {
                         .arg(root.catalog[currentIndex].varId)
                         .arg(root.catalog[currentIndex].name)
                     : qsTr("(pick one)")
+                Layout.fillWidth: true
                 delegate: ItemDelegate {
                     required property int index
                     required property var modelData
@@ -169,8 +173,8 @@ AppWindow {
 
         // Toolbar
         RowLayout {
-            Layout.fillWidth: true
             spacing: 8
+            Layout.fillWidth: true
 
             FlatButton {
                 text: qsTr("New")
@@ -229,12 +233,14 @@ AppWindow {
         // Status / error bar
         Rectangle {
             id: errorBar
+
             property string text: ""
+
             color: text.startsWith("Saved") ? Colors.accentSoft : Colors.surface
             radius: 6
             visible: text.length > 0
-            Layout.fillWidth: true
             implicitHeight: visible ? errorText.implicitHeight + 12 : 0
+            Layout.fillWidth: true
 
             Text {
                 id: errorText
@@ -284,10 +290,10 @@ AppWindow {
                     ListView {
                         id: recordList
                         clip: true
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
                         currentIndex: root.selectedRecord
                         model: root.snapshot.records.length
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
 
                         delegate: Rectangle {
                             id: recordRow
@@ -373,8 +379,8 @@ AppWindow {
                     spacing: 8
 
                     RowLayout {
-                        Layout.fillWidth: true
                         spacing: 8
+                        Layout.fillWidth: true
 
                         Text {
                             text: root.snapshot.records.length > 0
@@ -415,13 +421,13 @@ AppWindow {
                     ListView {
                         id: variableList
                         clip: true
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
                         spacing: 4
                         model: (root.snapshot.records.length > 0
                                 && root.selectedRecord < root.snapshot.records.length)
                             ? root.snapshot.records[root.selectedRecord].variables
                             : []
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
 
                         delegate: Rectangle {
                             id: varRow
@@ -440,8 +446,8 @@ AppWindow {
                                 spacing: 2
 
                                 RowLayout {
-                                    Layout.fillWidth: true
                                     spacing: 10
+                                    Layout.fillWidth: true
 
                                     Text {
                                         text: qsTr("%1/%2  %3")
@@ -451,8 +457,8 @@ AppWindow {
                                         color: Colors.text
                                         font.family: Type.sans
                                         font.pixelSize: Type.sizeS
-                                        Layout.fillWidth: true
                                         elide: Text.ElideRight
+                                        Layout.fillWidth: true
                                     }
 
                                     // Type-aware inline editor.

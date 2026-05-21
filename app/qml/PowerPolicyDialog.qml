@@ -17,6 +17,11 @@ Dialog {
 
     required property MachineDetailsController controller
 
+    // Tracks which radio is dotted right now. Initialised on open from
+    // the controller so the dialog reflects firmware state — picking a
+    // scheme and cancelling out doesn't push anything.
+    property string selectedInstanceId: ""
+
     signal confirmed(string instanceId)
 
     title: qsTr("Intel AMT power policy")
@@ -25,11 +30,6 @@ Dialog {
     anchors.centerIn: parent
     standardButtons: Dialog.Cancel | Dialog.Ok
     implicitWidth: 520
-
-    // Tracks which radio is dotted right now. Initialised on open from
-    // the controller so the dialog reflects firmware state — picking a
-    // scheme and cancelling out doesn't push anything.
-    property string selectedInstanceId: ""
 
     onAboutToShow: {
         root.selectedInstanceId = root.controller.currentPowerSchemeId;

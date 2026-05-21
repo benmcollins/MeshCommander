@@ -297,6 +297,8 @@ bool MjpegMovRecorder::pushFrame(const QImage &image, int quality)
     QByteArray jpeg;
     {
         QBuffer buf(&jpeg);
+        // QBuffer::open() over an in-memory QByteArray is infallible;
+        // the return is intentionally not checked.
         buf.open(QIODevice::WriteOnly);
         if (!frame.save(&buf, "JPEG", quality)) return false;
     }

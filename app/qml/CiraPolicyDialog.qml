@@ -358,8 +358,8 @@ Dialog {
                             color: Colors.text
                             font.family: Type.mono
                             font.pixelSize: Type.sizeS
-                            Layout.fillWidth: true
                             elide: Text.ElideRight
+                            Layout.fillWidth: true
                         }
                     }
                 }
@@ -404,8 +404,8 @@ Dialog {
                             color: Colors.text
                             font.family: Type.mono
                             font.pixelSize: Type.sizeS
-                            Layout.fillWidth: true
                             elide: Text.ElideRight
+                            Layout.fillWidth: true
                         }
                     }
                 }

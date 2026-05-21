@@ -25,6 +25,31 @@ AppWindow {
     property var    machineTrustedFingerprints: []
     property var    machineSshConfig: ({})
 
+    // Sidebar items. The `id` keys must match the value used by each
+    // Loader/StackLayout currentIndex below.
+    readonly property var sections: [
+        { key: "overview",  label: qsTr("Overview"),       icon: "layout-dashboard" },
+        { key: "hardware",  label: qsTr("Hardware"),       icon: "cpu" },
+        { key: "power",     label: qsTr("Power"),          icon: "power" },
+        { key: "network",   label: qsTr("Network"),        icon: "network" },
+        { key: "wireless",  label: qsTr("Wireless"),       icon: "wifi" },
+        { key: "time",      label: qsTr("Time"),           icon: "clock" },
+        { key: "remote",    label: qsTr("Remote access"),  icon: "monitor" },
+        { key: "cira",      label: qsTr("CIRA"),           icon: "cloud-cog" },
+        { key: "certs",     label: qsTr("Pinned trust"),   icon: "lock" },
+        { key: "devcerts",  label: qsTr("Device certs"),   icon: "badge-check" },
+        { key: "events",    label: qsTr("Event log"),      icon: "scroll-text" },
+        { key: "audit",     label: qsTr("Audit log"),      icon: "clipboard-list" },
+        { key: "users",     label: qsTr("User accounts"),  icon: "users" },
+        { key: "watchdogs", label: qsTr("Watchdogs"),      icon: "dog" },
+        { key: "subs",      label: qsTr("Subscriptions"),  icon: "bell" },
+        { key: "alarms",    label: qsTr("Wake alarms"),    icon: "alarm-clock" },
+        { key: "wsman",     label: qsTr("WSMAN"),          icon: "terminal" },
+        { key: "sysdef",    label: qsTr("System Defense"), icon: "shield" },
+        { key: "sessions",  label: qsTr("Sessions"),       icon: "arrow-left-right" },
+    ]
+    property int currentSection: 0
+
     signal trustedFingerprintPersistRequested(string fingerprint)
     signal trustedSshHostKeyPersistRequested(string fingerprint)
 
@@ -44,6 +69,18 @@ AppWindow {
     // installs an empty (disabled) config and the WSMAN requests then
     // bypass the tunnel entirely.
     onMachineSshConfigChanged: controller.setSshConfig(root.machineSshConfig || ({}))
+
+    // Auto-refresh whenever the user moves between sections, or the
+    // host becomes non-empty for the first time (i.e. once the parent
+    // Loader has finished populating us). On the very first host
+    // assignment the `host: root.machineHost` binding on the
+    // MachineDetailsController has not necessarily propagated into
+    // C++ yet — fire `refreshCurrent` via `Qt.callLater` so we run
+    // after the binding engine catches up, otherwise the controller
+    // reads `m_host == ""` and surfaces "Host is empty — cannot
+    // refresh" until the user clicks a sidebar entry.
+    onCurrentSectionChanged: refreshCurrent()
+    onMachineHostChanged: if (machineHost.length > 0) Qt.callLater(refreshCurrent)
 
     MachineDetailsController {
         id: controller
@@ -361,15 +398,16 @@ AppWindow {
     // rather than a separate file — it's a single SpinBox + Confirm.
     Dialog {
         id: portBindingPrompt
+
+        property string pendingPolicyInstanceId
+        property string pendingPolicyLabel
+        property int draftPortIndex: 0
+
         title: qsTr("Bind policy to port")
         modal: true
         anchors.centerIn: parent
         standardButtons: Dialog.NoButton
         implicitWidth: 460
-
-        property string pendingPolicyInstanceId
-        property string pendingPolicyLabel
-        property int draftPortIndex: 0
 
         function openForBind(instanceId, label) {
             pendingPolicyInstanceId = instanceId;
@@ -493,16 +531,17 @@ AppWindow {
     // two CheckBoxes + Apply — a full Dialog component would be overkill.
     Dialog {
         id: wifiSyncDialog
-        title: qsTr("WiFi sync settings")
-        modal: true
-        anchors.centerIn: parent
-        standardButtons: Dialog.NoButton
-        implicitWidth: 460
 
         property int initialLocal: 0
         property int initialUefi: 0
         property bool draftLocal: false
         property bool draftUefi: false
+
+        title: qsTr("WiFi sync settings")
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.NoButton
+        implicitWidth: 460
 
         function openForPort(port) {
             initialLocal = port.localProfileSyncEnabled || 0;
@@ -611,31 +650,6 @@ AppWindow {
         }
     }
 
-    // Sidebar items. The `id` keys must match the value used by each
-    // Loader/StackLayout currentIndex below.
-    readonly property var sections: [
-        { key: "overview",  label: qsTr("Overview"),       icon: "layout-dashboard" },
-        { key: "hardware",  label: qsTr("Hardware"),       icon: "cpu" },
-        { key: "power",     label: qsTr("Power"),          icon: "power" },
-        { key: "network",   label: qsTr("Network"),        icon: "network" },
-        { key: "wireless",  label: qsTr("Wireless"),       icon: "wifi" },
-        { key: "time",      label: qsTr("Time"),           icon: "clock" },
-        { key: "remote",    label: qsTr("Remote access"),  icon: "monitor" },
-        { key: "cira",      label: qsTr("CIRA"),           icon: "cloud-cog" },
-        { key: "certs",     label: qsTr("Pinned trust"),   icon: "lock" },
-        { key: "devcerts",  label: qsTr("Device certs"),   icon: "badge-check" },
-        { key: "events",    label: qsTr("Event log"),      icon: "scroll-text" },
-        { key: "audit",     label: qsTr("Audit log"),      icon: "clipboard-list" },
-        { key: "users",     label: qsTr("User accounts"),  icon: "users" },
-        { key: "watchdogs", label: qsTr("Watchdogs"),      icon: "dog" },
-        { key: "subs",      label: qsTr("Subscriptions"),  icon: "bell" },
-        { key: "alarms",    label: qsTr("Wake alarms"),    icon: "alarm-clock" },
-        { key: "wsman",     label: qsTr("WSMAN"),          icon: "terminal" },
-        { key: "sysdef",    label: qsTr("System Defense"), icon: "shield" },
-        { key: "sessions",  label: qsTr("Sessions"),       icon: "arrow-left-right" },
-    ]
-    property int currentSection: 0
-
     /// Pull whatever data the active section needs. Skipped silently
     /// while `machineHost` is still empty (the Loader populates the
     /// props *after* the window is constructed, so initial bindings
@@ -665,28 +679,16 @@ AppWindow {
         }
     }
 
-    // Auto-refresh whenever the user moves between sections, or the
-    // host becomes non-empty for the first time (i.e. once the parent
-    // Loader has finished populating us). On the very first host
-    // assignment the `host: root.machineHost` binding on the
-    // MachineDetailsController has not necessarily propagated into
-    // C++ yet — fire `refreshCurrent` via `Qt.callLater` so we run
-    // after the binding engine catches up, otherwise the controller
-    // reads `m_host == ""` and surfaces "Host is empty — cannot
-    // refresh" until the user clicks a sidebar entry.
-    onCurrentSectionChanged: refreshCurrent()
-    onMachineHostChanged: if (machineHost.length > 0) Qt.callLater(refreshCurrent)
-
     RowLayout {
         anchors.fill: parent
         spacing: 0
 
         // -- Sidebar ---------------------------------------------------
         Rectangle {
-            Layout.preferredWidth: 220
-            Layout.fillHeight: true
             color: Colors.surface
             border.width: 0
+            Layout.preferredWidth: 220
+            Layout.fillHeight: true
 
             Rectangle {
                 color: Colors.border
@@ -702,9 +704,9 @@ AppWindow {
                 spacing: 0
 
                 ColumnLayout {
+                    spacing: 4
                     Layout.fillWidth: true
                     Layout.margins: 18
-                    spacing: 4
 
                     Text {
                         text: root.machineName.length > 0 ? root.machineName : qsTr("Unnamed")
@@ -773,14 +775,10 @@ AppWindow {
 
                 ListView {
                     id: nav
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
                     model: root.sections
                     clip: true
                     currentIndex: root.currentSection
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar {}
-
                     // Keyboard accessibility (#384). Pre-#384 the sidebar
                     // was driven by `TapHandler` only — there was no
                     // arrow-key nav, no Return / Space activation, and
@@ -796,6 +794,9 @@ AppWindow {
                     activeFocusOnTab: true
                     focus: true
                     highlightMoveDuration: Motion.fast
+                    ScrollBar.vertical: ScrollBar {}
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
 
                     Keys.onReturnPressed: function(event) {
                         if (currentIndex >= 0) {
@@ -895,9 +896,9 @@ AppWindow {
                 }
 
                 RowLayout {
+                    spacing: 6
                     Layout.fillWidth: true
                     Layout.margins: 10
-                    spacing: 6
 
                     FlatButton {
                         text: qsTr("Refresh")
@@ -1182,9 +1183,12 @@ AppWindow {
     /// keeping all three sessions in one OS window per machine.
     Loader {
         id: sessionLoader
+
+        property int pendingTab: 0
+
         active: false
         asynchronous: true
-        property int pendingTab: 0
+
         function launchAt(tab) {
             if (active && item !== null && item.visible) {
                 item.openTab(tab);

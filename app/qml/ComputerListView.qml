@@ -74,7 +74,6 @@ Rectangle {
             id: localPcRow
             visible: LocalAmtProbe.available
             color: localHover.hovered ? Colors.elevated : "transparent"
-            Layout.fillWidth: true
             implicitHeight: 44
 
             activeFocusOnTab: visible
@@ -83,6 +82,8 @@ Rectangle {
             // with the rest of the sidebar's focusable controls.
             border.width: localPcRow.activeFocus ? 2 : 0
             border.color: Colors.accent
+
+            Layout.fillWidth: true
 
             Behavior on color { ColorAnimation { duration: Motion.fast } }
             Behavior on border.width { NumberAnimation { duration: Motion.fast } }

@@ -178,8 +178,8 @@ Item {
                     color: controller.state === IderController.Failed ? Colors.error : Colors.textMuted
                     font.family: Type.sans
                     font.pixelSize: Type.sizeS
-                    Layout.fillWidth: true
                     wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
                 }
             }
 

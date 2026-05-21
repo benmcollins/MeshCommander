@@ -64,6 +64,9 @@ Item {
             controller.sendKey(keys[i], false);
     }
 
+    onVisibleChanged: if (visible) viewer.forceActiveFocus()
+    Component.onCompleted: if (visible) viewer.forceActiveFocus()
+
     KvmController {
         id: controller
         Component.onCompleted: controller.setSshConfig(root.sshConfig || ({}))
@@ -324,7 +327,4 @@ Item {
             Layout.fillHeight: true
         }
     }
-
-    onVisibleChanged: if (visible) viewer.forceActiveFocus()
-    Component.onCompleted: if (visible) viewer.forceActiveFocus()
 }

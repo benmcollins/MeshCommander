@@ -53,8 +53,10 @@ ApplicationWindow {
 
     Settings {
         id: themeSettings
-        category: "theme"
+
         property bool dark: true
+
+        category: "theme"
     }
 
     ColumnLayout {

@@ -143,9 +143,9 @@ Dialog {
                     spacing: 6
                     Layout.fillWidth: true
                     ScrollView {
+                        clip: true
                         Layout.fillWidth: true
                         Layout.preferredHeight: 220
-                        clip: true
                         TextArea {
                             readOnly: true
                             selectByMouse: true

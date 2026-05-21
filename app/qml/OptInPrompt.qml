@@ -27,15 +27,14 @@ Dialog {
     signal submitted(int code)
     signal cancelled
 
-    function openFor(timeout) {
-        root.errorText = "";
-        codeField.text = "";
-        root.timeoutSec = timeout || 0;
-        root.secondsRemaining = root.timeoutSec;
-        countdownTimer.start();
-        root.open();
-        codeField.forceActiveFocus();
-    }
+    title: qsTr("Enter consent code")
+    modal: true
+    closePolicy: Popup.CloseOnEscape
+    anchors.centerIn: parent
+    standardButtons: Dialog.NoButton
+    implicitWidth: 480
+
+    onClosed: countdownTimer.stop()
 
     Timer {
         id: countdownTimer
@@ -52,14 +51,15 @@ Dialog {
         }
     }
 
-    onClosed: countdownTimer.stop()
-
-    title: qsTr("Enter consent code")
-    modal: true
-    closePolicy: Popup.CloseOnEscape
-    anchors.centerIn: parent
-    standardButtons: Dialog.NoButton
-    implicitWidth: 480
+    function openFor(timeout) {
+        root.errorText = "";
+        codeField.text = "";
+        root.timeoutSec = timeout || 0;
+        root.secondsRemaining = root.timeoutSec;
+        countdownTimer.start();
+        root.open();
+        codeField.forceActiveFocus();
+    }
 
     contentItem: ColumnLayout {
         spacing: 12
@@ -93,8 +93,8 @@ Dialog {
             color: root.secondsRemaining <= 10 ? Colors.error : Colors.textMuted
             font.family: Type.mono
             font.pixelSize: Type.sizeXs
-            Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true
         }
 
         Text {

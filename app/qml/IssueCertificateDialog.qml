@@ -128,8 +128,8 @@ Dialog {
 
         // Step indicator strip.
         RowLayout {
-            Layout.fillWidth: true
             spacing: 12
+            Layout.fillWidth: true
             Repeater {
                 model: [qsTr("1. Generate"),
                         qsTr("2. CSR"),
@@ -152,12 +152,14 @@ Dialog {
         // Status / error bar.
         Rectangle {
             id: statusBar
+
             property string text: ""
+
             visible: text.length > 0
             color: Colors.surface
             radius: 6
-            Layout.fillWidth: true
             implicitHeight: visible ? statusText.implicitHeight + 12 : 0
+            Layout.fillWidth: true
             Text {
                 id: statusText
                 anchors.fill: parent
@@ -182,8 +184,8 @@ Dialog {
             Layout.fillHeight: true
 
             RowLayout {
-                Layout.fillWidth: true
                 spacing: 16
+                Layout.fillWidth: true
                 Text {
                     text: qsTr("Key length")
                     color: Colors.text
@@ -224,10 +226,10 @@ Dialog {
             }
             TextField {
                 id: subjectField
-                Layout.fillWidth: true
                 placeholderText: "CN=Intel AMT, O=QuMesh"
                 font.family: Type.mono
                 font.pixelSize: Type.sizeS
+                Layout.fillWidth: true
             }
 
             Text {
@@ -356,8 +358,8 @@ Dialog {
             }
 
             RowLayout {
-                Layout.fillWidth: true
                 spacing: 8
+                Layout.fillWidth: true
                 Text {
                     text: qsTr("Bind to:")
                     color: Colors.text
@@ -366,13 +368,13 @@ Dialog {
                 }
                 ComboBox {
                     id: tlsEndpointBox
-                    Layout.fillWidth: true
                     font.family: Type.sans
                     font.pixelSize: Type.sizeS
                     model: (root.controller.deviceCertStore
                              && root.controller.deviceCertStore.tlsSettings) || []
                     textRole: "instanceId"
                     valueRole: "instanceId"
+                    Layout.fillWidth: true
                     delegate: ItemDelegate {
                         required property var modelData
                         width: tlsEndpointBox.width

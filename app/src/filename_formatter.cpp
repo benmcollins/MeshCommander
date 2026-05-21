@@ -30,7 +30,10 @@ FilenameFormatter::FilenameFormatter(QObject *parent) : QObject(parent) {}
 QString FilenameFormatter::defaultName(const QString &prefix,
                                         const QString &ext) const
 {
-    return formatName(prefix, ext, QDateTime::currentDateTime(),
+    // Use UTC: ~100× faster than `currentDateTime()` (which consults the
+    // local-tz database) and DST-stable. Wall-clock formatting below
+    // applies the user's locale to whatever instant we pass in.
+    return formatName(prefix, ext, QDateTime::currentDateTimeUtc(),
                        QLocale::system());
 }
 

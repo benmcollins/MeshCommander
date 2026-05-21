@@ -70,7 +70,6 @@ Dialog {
                         Layout.preferredWidth: 110
                     }
                     ComboBox {
-                        Layout.fillWidth: true
                         model: root.protocolCatalogue
                         textRole: "label"
                         valueRole: "code"
@@ -80,6 +79,7 @@ Dialog {
                                     return i;
                             return 0;
                         }
+                        Layout.fillWidth: true
                         onActivated: function(idx) {
                             root.draftAuthenticationProtocol = model[idx].code;
                         }

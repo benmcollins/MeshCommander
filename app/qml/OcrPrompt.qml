@@ -165,8 +165,8 @@ Dialog {
             }
 
             RowLayout {
-                Layout.fillWidth: true
                 spacing: 8
+                Layout.fillWidth: true
                 Text {
                     text: qsTr("Image hash")
                     color: Colors.text
@@ -194,8 +194,8 @@ Dialog {
             }
 
             RowLayout {
-                Layout.fillWidth: true
                 spacing: 8
+                Layout.fillWidth: true
                 Text {
                     text: qsTr("Server cert hash")
                     color: Colors.text
@@ -226,8 +226,8 @@ Dialog {
             }
 
             RowLayout {
-                Layout.fillWidth: true
                 spacing: 8
+                Layout.fillWidth: true
                 Text {
                     text: qsTr("Username")
                     color: Colors.text
@@ -246,8 +246,8 @@ Dialog {
             }
 
             RowLayout {
-                Layout.fillWidth: true
                 spacing: 8
+                Layout.fillWidth: true
                 Text {
                     text: qsTr("Password")
                     color: Colors.text

@@ -14,29 +14,12 @@ Rectangle {
 
     required property TerminalScreen screen
 
-    signal keyInput(string text)
-    signal controlSequence(string sequence)
-
     readonly property int cellWidth: metrics.advanceWidth
     readonly property int cellHeight: metrics.height
     readonly property int padding: 10
 
-    /// Recompute the screen grid from the current viewport so text
-    /// runs edge-to-edge. Clamped to a sensible minimum so transient
-    /// zero-sized layout passes don't truncate the grid to nothing.
-    /// `screen.resize` is a no-op when dimensions don't change.
-    function _retileGrid() {
-        if (cellWidth <= 0 || cellHeight <= 0) return;
-        const cols = Math.max(20, Math.floor(flick.width / cellWidth));
-        const rows = Math.max(4,  Math.floor(flick.height / cellHeight));
-        if (rows !== screen.rows || cols !== screen.columns) {
-            screen.resize(rows, cols);
-        }
-    }
-
-    onCellWidthChanged: _retileGrid()
-    onCellHeightChanged: _retileGrid()
-    Component.onCompleted: _retileGrid()
+    signal keyInput(string text)
+    signal controlSequence(string sequence)
 
     // Terminal surface tracks the theme — in dark mode it sits a notch
     // darker than the surrounding pane (a near-black serial-console
@@ -51,6 +34,23 @@ Rectangle {
 
     Accessible.role: Accessible.Terminal
     Accessible.name: qsTr("Serial console")
+
+    onCellWidthChanged: _retileGrid()
+    onCellHeightChanged: _retileGrid()
+    Component.onCompleted: _retileGrid()
+
+    /// Recompute the screen grid from the current viewport so text
+    /// runs edge-to-edge. Clamped to a sensible minimum so transient
+    /// zero-sized layout passes don't truncate the grid to nothing.
+    /// `screen.resize` is a no-op when dimensions don't change.
+    function _retileGrid() {
+        if (cellWidth <= 0 || cellHeight <= 0) return;
+        const cols = Math.max(20, Math.floor(flick.width / cellWidth));
+        const rows = Math.max(4,  Math.floor(flick.height / cellHeight));
+        if (rows !== screen.rows || cols !== screen.columns) {
+            screen.resize(rows, cols);
+        }
+    }
 
     TextMetrics {
         id: metrics
@@ -127,15 +127,17 @@ Rectangle {
     /// declaration order.
     Item {
         id: sizeOverlay
-        anchors.centerIn: flick
-        width: sizeText.implicitWidth + 28
-        height: sizeText.implicitHeight + 14
-        opacity: 0
+
         // First emission from screen.geometryChanged comes from
         // Component.onCompleted's initial retile — we don't want the
         // chip flashing on every SOL pane open, only on user-driven
         // resizes.
         property bool seenInitialResize: false
+
+        anchors.centerIn: flick
+        width: sizeText.implicitWidth + 28
+        height: sizeText.implicitHeight + 14
+        opacity: 0
 
         Accessible.ignored: true
 
@@ -185,8 +187,8 @@ Rectangle {
 
     MouseArea {
         anchors.fill: parent
-        onClicked: root.forceActiveFocus()
         acceptedButtons: Qt.LeftButton
+        onClicked: root.forceActiveFocus()
     }
 
     Keys.onPressed: function(event) {

@@ -62,12 +62,12 @@ Dialog {
         }
 
         Rectangle {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
             color: Colors.surface
             border.color: Colors.border
             border.width: 1
             radius: 6
+            Layout.fillWidth: true
+            Layout.fillHeight: true
 
             ScrollView {
                 anchors.fill: parent
@@ -95,12 +95,12 @@ Dialog {
         // interactive prompt) — copy the command, paste in a
         // terminal. Same UX pattern Cloudflare and others use.
         Rectangle {
-            Layout.fillWidth: true
             color: Colors.bg
             border.color: Colors.border
             border.width: 1
             radius: 6
             implicitHeight: aptRow.implicitHeight + 16
+            Layout.fillWidth: true
 
             RowLayout {
                 id: aptRow
@@ -113,8 +113,8 @@ Dialog {
                     color: Colors.text
                     font.family: Type.mono
                     font.pixelSize: Type.sizeXs
-                    Layout.fillWidth: true
                     elide: Text.ElideRight
+                    Layout.fillWidth: true
                 }
 
                 FlatButton {
@@ -136,8 +136,8 @@ Dialog {
         }
 
         RowLayout {
-            Layout.fillWidth: true
             spacing: 8
+            Layout.fillWidth: true
 
             Item { Layout.fillWidth: true }
 

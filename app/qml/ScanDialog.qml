@@ -69,8 +69,8 @@ Dialog {
                         font.family: Type.mono
                         font.pixelSize: Type.sizeM
                         color: Colors.text
-                        Layout.fillWidth: true
                         enabled: !scanner.scanning
+                        Layout.fillWidth: true
                         onAccepted: if (text.length > 0 && !scanner.scanning) scanner.start(text)
                     }
 
@@ -163,8 +163,8 @@ Dialog {
 
                             CheckBox {
                                 checked: rowItem.selected
-                                onClicked: scanner.setSelected(rowItem.index, checked)
                                 Layout.preferredWidth: 24
+                                onClicked: scanner.setSelected(rowItem.index, checked)
                             }
 
                             Text {
@@ -172,8 +172,8 @@ Dialog {
                                 color: Colors.text
                                 font.family: Type.mono
                                 font.pixelSize: Type.sizeS
-                                Layout.preferredWidth: 140
                                 elide: Text.ElideRight
+                                Layout.preferredWidth: 140
                             }
 
                             Text {
@@ -185,8 +185,8 @@ Dialog {
                                        : Colors.textFaint
                                 font.family: Type.sans
                                 font.pixelSize: Type.sizeS
-                                Layout.fillWidth: true
                                 elide: Text.ElideRight
+                                Layout.fillWidth: true
                             }
 
                             Text {
