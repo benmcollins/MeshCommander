@@ -72,6 +72,8 @@ ApplicationWindow {
                 themeSettings.dark = Colors.dark;
             }
             onOpenAbout: aboutDialog.open()
+            onExportBackup: backupExportDialog.start()
+            onImportBackup: backupImportDialog.start()
         }
 
         AboutDialog {
@@ -204,6 +206,14 @@ ApplicationWindow {
 
     BatchProgressDialog {
         id: batchProgressDialog
+    }
+
+    BackupExportDialog {
+        id: backupExportDialog
+    }
+
+    BackupImportDialog {
+        id: backupImportDialog
     }
 
     LocalAmtPromptDialog {

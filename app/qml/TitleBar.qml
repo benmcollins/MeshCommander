@@ -15,6 +15,8 @@ Rectangle {
     signal openSetupBin()
     signal toggleTheme()
     signal openAbout()
+    signal exportBackup()
+    signal importBackup()
 
     color: Colors.surface
     implicitHeight: 36
@@ -101,6 +103,27 @@ Rectangle {
             ToolTip.visible: hovered
             ToolTip.text: qsTr("USB-key provisioning file editor")
             onClicked: root.openSetupBin()
+        }
+
+        FlatButton {
+            text: qsTr("Export")
+            font.family: Type.sans
+            font.pixelSize: Type.sizeXs
+            font.letterSpacing: 1
+            enabled: ComputerModel.count > 0
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Export the machine list to an encrypted backup file")
+            onClicked: root.exportBackup()
+        }
+
+        FlatButton {
+            text: qsTr("Import")
+            font.family: Type.sans
+            font.pixelSize: Type.sizeXs
+            font.letterSpacing: 1
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Import an encrypted backup of the machine list")
+            onClicked: root.importBackup()
         }
 
         // Hidden when no auto-update backend is wired in (non-Apple

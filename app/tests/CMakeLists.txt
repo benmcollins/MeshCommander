@@ -60,6 +60,20 @@ qumesh_app_test(test_configstore)
 qumesh_app_test(test_computermodel)
 qumesh_app_test(test_migrationcontroller)
 qumesh_app_test(test_secret_codec)
+qumesh_app_test(test_backup_codec)
+qumesh_app_test(test_backupcontroller)
+# test_backup_codec / test_backupcontroller need the new BackupCodec
+# (+ BackupController) sources. Compile them straight into the test
+# binary because the qumesh_app_test helper builds a per-target exe
+# rather than linking against the qumesh_appcore static library.
+target_sources(test_backup_codec PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/backup_codec.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/backup_codec.h)
+target_sources(test_backupcontroller PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/backup_codec.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/backup_codec.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/backupcontroller.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/backupcontroller.h)
 # test_migrationcontroller also seeds a real leveldb fixture.
 target_link_libraries(test_migrationcontroller PRIVATE leveldb)
 

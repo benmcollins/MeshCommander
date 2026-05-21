@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
 #include "appinfo.h"
+#include "backupcontroller.h"
 #include "batchcontroller.h"
 #include "certmodel.h"
 #include "computermodel.h"
@@ -139,6 +140,12 @@ int main(int argc, char *argv[])
     qumesh::app::BatchController batchController;
     batchController.setComputerModel(&computerModel);
 
+    // BackupController drives the password-protected `.qumesh-backup`
+    // export/import flow (#429). Pure UI controller — file IO + crypto
+    // live in BackupCodec; the model handles the upsert.
+    qumesh::app::BackupController backupController;
+    backupController.setModel(&computerModel);
+
     qumesh::app::registerQumeshQmlTypes({
         .updater              = &updater,
         .computerModel        = &computerModel,
@@ -148,6 +155,7 @@ int main(int argc, char *argv[])
         .filenameFormatter    = &filenameFormatter,
         .appInfo              = &appInfo,
         .batchController      = &batchController,
+        .backupController     = &backupController,
     });
 
     QQmlApplicationEngine engine;

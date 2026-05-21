@@ -54,6 +54,10 @@ qt_add_library(qumesh_appcore STATIC
     src/batchrunner.h
     src/batchcontroller.cpp
     src/batchcontroller.h
+    src/backup_codec.cpp
+    src/backup_codec.h
+    src/backupcontroller.cpp
+    src/backupcontroller.h
     src/qml_registration.cpp
     src/qml_registration.h
 )
@@ -159,6 +163,8 @@ qt_add_qml_module(qumesh_appcore
         qml/ResultBanner.qml
         qml/SetupBinWindow.qml
         qml/BatchProgressDialog.qml
+        qml/BackupExportDialog.qml
+        qml/BackupImportDialog.qml
         qml/AccentButton.qml
         qml/BootMenu.qml
         qml/AppMark.qml

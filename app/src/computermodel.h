@@ -51,6 +51,15 @@ struct Computer
 
     [[nodiscard]] QJsonObject toJson() const;
     [[nodiscard]] static Computer fromJson(const QJsonObject &obj);
+
+    /// Same shape as `toJson()` but secrets travel in plaintext rather
+    /// than through `SecretCodec`. Used by `BackupCodec` to ship the
+    /// list across installs: the v3 envelope's AES key is local to
+    /// each install, so anything `SecretCodec::encode`d here would be
+    /// undecryptable on import. The outer backup envelope encrypts
+    /// the file as a whole.
+    [[nodiscard]] QJsonObject toPortableJson() const;
+    [[nodiscard]] static Computer fromPortableJson(const QJsonObject &obj);
 };
 
 /// QAbstractListModel that exposes the computer list to QML and persists
@@ -125,6 +134,31 @@ public:
 
     /// Read-only accessor for tests / dialog state.
     [[nodiscard]] Computer at(int row) const;
+
+    /// Outcome of a single imported row resolved against the existing
+    /// list. Used by `BackupController` to summarize the diff before
+    /// applying it; surfaced verbatim in the import-confirm dialog.
+    enum ImportMatch : int { ImportNew, ImportUpdate, };
+    struct ImportPlanEntry {
+        Computer incoming;
+        QString existingId; ///< Stable id of the target row; re-resolved at apply time
+                            ///  so a model edit between prepare and apply can't
+                            ///  silently overwrite an unrelated row. Empty when
+                            ///  match == ImportNew.
+        ImportMatch match = ImportNew;
+    };
+
+    /// Resolve `incoming` against the current rows: id first, then
+    /// `(host, name)` (host exact, name case-insensitive). Result is a
+    /// stable plan that the controller can show the user before
+    /// `applyImport` mutates anything.
+    [[nodiscard]] QList<ImportPlanEntry> planImport(const QList<Computer> &incoming) const;
+
+    /// Atomic upsert. Re-uses existing rows' `id`s on matches (so the
+    /// stable identity QML relies on doesn't churn) and appends the
+    /// rest. Returns false (and leaves the model unchanged) on
+    /// persistence failure.
+    bool applyImport(const QList<ImportPlanEntry> &plan);
 
 signals:
     void countChanged();
