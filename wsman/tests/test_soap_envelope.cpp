@@ -26,6 +26,7 @@ private slots:
     void buildInvokeEnvelopeOrderedRepeatsKeys();
     void clearLogEnvelopeShapeForAuditLog();
     void clearLogEnvelopeShapeForMessageLog();
+    void getRecordsEnvelopeOrdersIterationIdentifierBeforeMaxReadRecords();
     void generateKeyPairEnvelopeShape();
     void parseGenerateKeyPairInstanceIdFromBody();
     void getPublicPrivateKeyPairEnvelopeShape();
@@ -317,6 +318,36 @@ void TestSoapEnvelope::clearLogEnvelopeShapeForMessageLog()
     QVERIFY(env.contains("AMT_MessageLog/ClearLog"));
     QVERIFY(env.contains("ClearLog_INPUT"));
     QVERIFY(env.contains("uuid:event-clear-1"));
+}
+
+void TestSoapEnvelope::getRecordsEnvelopeOrdersIterationIdentifierBeforeMaxReadRecords()
+{
+    // AMT validates GetRecords_INPUT against an xs:sequence schema —
+    // IterationIdentifier must come before MaxReadRecords or the firmware
+    // responds with a:Sender / e:SchemaValidationError.
+    const QList<std::pair<QString, QString>> params{
+        { QStringLiteral("IterationIdentifier"), QStringLiteral("42") },
+        { QStringLiteral("MaxReadRecords"),      QStringLiteral("390") },
+    };
+    const QByteArray env = buildInvokeEnvelopeOrdered(
+        QStringLiteral("http://intel.com/wbem/wscim/1/amt-schema/1/AMT_MessageLog"),
+        QStringLiteral("GetRecords"), /*selectors*/ {}, params,
+        QStringLiteral("http://10.0.0.5:16992/wsman"),
+        QStringLiteral("uuid:event-get-1"));
+
+    QXmlStreamReader r(env);
+    while (!r.atEnd()) r.readNext();
+    QVERIFY2(!r.hasError(), qPrintable(r.errorString()));
+
+    QVERIFY(env.contains("AMT_MessageLog/GetRecords"));
+    QVERIFY(env.contains("GetRecords_INPUT"));
+
+    const int iterPos = env.indexOf("<r:IterationIdentifier>");
+    const int maxPos  = env.indexOf("<r:MaxReadRecords>");
+    QVERIFY2(iterPos >= 0, "IterationIdentifier missing from envelope");
+    QVERIFY2(maxPos  >= 0, "MaxReadRecords missing from envelope");
+    QVERIFY2(iterPos < maxPos,
+             "IterationIdentifier must precede MaxReadRecords in GetRecords_INPUT");
 }
 
 void TestSoapEnvelope::generateKeyPairEnvelopeShape()
