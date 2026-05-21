@@ -68,6 +68,7 @@ private slots:
     void endToEnd();
     void refusesToReRunWithoutOverwrite();
     void missingLegacyDirReportsError();
+    void permissionsAreLockedDown();
 };
 
 void TestMigrate::endToEnd()
@@ -170,6 +171,63 @@ void TestMigrate::missingLegacyDirReportsError()
     const MigrationResult r = m.run(opts);
     QVERIFY(!r.ok);
     QVERIFY(r.error.contains(QStringLiteral("does not exist")));
+}
+
+void TestMigrate::permissionsAreLockedDown()
+{
+#ifdef Q_OS_WIN
+    // POSIX mode bits don't map cleanly on Windows; the AppDataLocation
+    // dir is already user-isolated by ACL there.
+    QSKIP("POSIX permission bits are not meaningful on Windows");
+#else
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+
+    const QString legacyDir = QDir(tmp.path()).filePath(QStringLiteral("legacy"));
+    const QString outputDir = QDir(tmp.path()).filePath(QStringLiteral("output"));
+    const QByteArray origin = "chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef";
+
+    seedLeveldb(legacyDir, origin,
+                LegacyCrypto::encryptV2(QByteArrayLiteral(R"([{"name":"AmtMachine"}])")),
+                LegacyCrypto::encryptV2(QByteArrayLiteral("[]")),
+                {{"meshserverurl", "https://server.example/"}});
+
+    MigrationOptions opts;
+    opts.legacyDataDir = legacyDir;
+    opts.outputDir = outputDir;
+    opts.origin = QString::fromUtf8(origin);
+
+    Migrator m;
+    const MigrationResult r = m.run(opts);
+    QVERIFY2(r.ok, qPrintable(r.error));
+
+    constexpr QFileDevice::Permissions kAllPosixBits =
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner
+        | QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup
+        | QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther;
+
+    // The output dir must be exactly u=rwx, with no group/other bits.
+    const QFileDevice::Permissions dirPerms = QFile::permissions(outputDir);
+    const QFileDevice::Permissions wantDir =
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner;
+    QCOMPARE(dirPerms & kAllPosixBits, wantDir);
+
+    // Every file the migrator wrote must be exactly u=rw, no group/other bits.
+    const QStringList written = {
+        QStringLiteral("computers.json"),
+        QStringLiteral("certificates.json"),
+        QStringLiteral("settings.json"),
+        QStringLiteral("migration.json"),
+    };
+    const QFileDevice::Permissions wantFile =
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner;
+    for (const QString &name : written) {
+        const QString path = QDir(outputDir).filePath(name);
+        QVERIFY2(QFile::exists(path), qPrintable(path));
+        const QFileDevice::Permissions filePerms = QFile::permissions(path);
+        QCOMPARE(filePerms & kAllPosixBits, wantFile);
+    }
+#endif
 }
 
 QTEST_GUILESS_MAIN(TestMigrate)

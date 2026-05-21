@@ -39,6 +39,13 @@ bool writeFile(const QString &path, const QByteArray &contents, QString *error)
             *error = QStringLiteral("short write to %1: %2").arg(path, f.errorString());
         return false;
     }
+    f.close();
+    // computers.json carries v2-"encrypted" passwords whose key+IV ship
+    // with the ciphertext (see #274), so the file is effectively plaintext
+    // credentials; certificates.json and settings.json are less sensitive
+    // but we restrict everything we write here for consistency with
+    // ConfigStore::writeFile. See #367.
+    QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     return true;
 }
 
@@ -120,6 +127,12 @@ MigrationResult Migrator::run(const MigrationOptions &opts)
                            .arg(result.outputDirUsed);
         return result;
     }
+    // Restrict the parent dir to 0700 (POSIX) so the directory listing
+    // doesn't leak filenames before ConfigStore re-runs on these paths.
+    // On Windows %APPDATA% is already user-isolated; setPermissions maps
+    // to an ACL adjustment there and is at worst a no-op. See #367.
+    QFile::setPermissions(result.outputDirUsed,
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
 
     ChromiumStorageReader reader(result.legacyDataDirUsed);
     if (!reader.open()) {
