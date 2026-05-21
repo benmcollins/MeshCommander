@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Ben Collins <ben@ironrocketsmc.org>
 
 #include "appinfo.h"
+#include "backupcontroller.h"
 #include "batchcontroller.h"
 #include "certmodel.h"
 #include "computermodel.h"
@@ -153,6 +154,9 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
     qumesh::app::BatchController batchController;
     batchController.setComputerModel(&computerModel);
 
+    qumesh::app::BackupController backupController;
+    backupController.setModel(&computerModel);
+
     qumesh::app::registerQumeshQmlTypes({
         .updater              = &updater,
         .computerModel        = &computerModel,
@@ -162,6 +166,7 @@ void TestQmlEngineLoads::mainQmlLoadsWithoutWarnings()
         .filenameFormatter    = &filenameFormatter,
         .appInfo              = &appInfo,
         .batchController      = &batchController,
+        .backupController     = &backupController,
     });
 
     std::atomic<bool> creationFailed{false};

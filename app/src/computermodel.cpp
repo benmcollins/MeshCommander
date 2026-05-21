@@ -6,39 +6,29 @@
 #include "configstore.h"
 #include "secret_codec.h"
 
+#include <QSet>
 #include <QUuid>
 
 namespace qumesh::model {
 
-QJsonObject Computer::toJson() const
+namespace {
+
+constexpr quint16 kDefaultSshPort = 22;
+constexpr int kMaxTcpPort = 65535;
+
+quint16 clampSshPort(int port)
 {
-    QJsonArray fps;
-    for (const QString &fp : trustedFingerprints) fps.push_back(fp);
-    QJsonArray sshFps;
-    for (const QString &fp : sshTrustedHostKeyFingerprints) sshFps.push_back(fp);
-    return QJsonObject{
-        {QStringLiteral("id"), id},
-        {QStringLiteral("name"), name},
-        {QStringLiteral("host"), host},
-        {QStringLiteral("user"), user},
-        {QStringLiteral("pass"), app::SecretCodec::encode(pass)},
-        {QStringLiteral("tls"), tls},
-        {QStringLiteral("digestrealm"), digestRealm},
-        {QStringLiteral("trustedFingerprints"), fps},
-        {QStringLiteral("sshTunnelEnabled"), sshTunnelEnabled},
-        {QStringLiteral("sshHost"), sshHost},
-        {QStringLiteral("sshPort"), int(sshPort)},
-        {QStringLiteral("sshUser"), sshUser},
-        {QStringLiteral("sshAuthMode"), int(sshAuthMode)},
-        {QStringLiteral("sshPassword"), app::SecretCodec::encode(sshPassword)},
-        {QStringLiteral("sshKeyPath"), sshKeyPath},
-        {QStringLiteral("sshKeyPassphrase"), app::SecretCodec::encode(sshKeyPassphrase)},
-        {QStringLiteral("sshTrustedHostKeyFingerprints"), sshFps},
-        {QStringLiteral("sshCompression"), sshCompression},
-    };
+    return static_cast<quint16>(
+        port > 0 && port <= kMaxTcpPort ? port : int(kDefaultSshPort));
 }
 
-Computer Computer::fromJson(const QJsonObject &obj)
+/// Field-by-field deserializer shared by `Computer::fromJson` and
+/// `Computer::fromPortableJson`. The only difference between the two
+/// is whether secrets are run through `SecretCodec::decode` or trusted
+/// as already-plaintext, so push that down to a callback and keep the
+/// rest of the parsing in one place.
+template <typename Unwrap>
+Computer parseComputer(const QJsonObject &obj, Unwrap unwrap)
 {
     Computer c;
     c.id = obj.value(QStringLiteral("id")).toString();
@@ -46,7 +36,7 @@ Computer Computer::fromJson(const QJsonObject &obj)
     c.name = obj.value(QStringLiteral("name")).toString();
     c.host = obj.value(QStringLiteral("host")).toString();
     c.user = obj.value(QStringLiteral("user")).toString();
-    c.pass = app::SecretCodec::decode(obj.value(QStringLiteral("pass")).toString());
+    c.pass = unwrap(obj.value(QStringLiteral("pass")).toString());
     c.tls = obj.value(QStringLiteral("tls")).toBool();
     c.digestRealm = obj.value(QStringLiteral("digestrealm")).toString();
     const QJsonArray fps = obj.value(QStringLiteral("trustedFingerprints")).toArray();
@@ -55,22 +45,72 @@ Computer Computer::fromJson(const QJsonObject &obj)
     }
     c.sshTunnelEnabled = obj.value(QStringLiteral("sshTunnelEnabled")).toBool();
     c.sshHost = obj.value(QStringLiteral("sshHost")).toString();
-    const int port = obj.value(QStringLiteral("sshPort")).toInt(22);
-    c.sshPort = static_cast<quint16>(port > 0 && port <= 65535 ? port : 22);
+    c.sshPort = clampSshPort(obj.value(QStringLiteral("sshPort")).toInt(kDefaultSshPort));
     c.sshUser = obj.value(QStringLiteral("sshUser")).toString();
     const int mode = obj.value(QStringLiteral("sshAuthMode")).toInt(0);
-    c.sshAuthMode = (mode == int(SshAuthKey)) ? SshAuthKey : SshAuthPassword;
-    c.sshPassword = app::SecretCodec::decode(
-        obj.value(QStringLiteral("sshPassword")).toString());
+    c.sshAuthMode = (mode == int(Computer::SshAuthKey))
+                       ? Computer::SshAuthKey
+                       : Computer::SshAuthPassword;
+    c.sshPassword = unwrap(obj.value(QStringLiteral("sshPassword")).toString());
     c.sshKeyPath = obj.value(QStringLiteral("sshKeyPath")).toString();
-    c.sshKeyPassphrase = app::SecretCodec::decode(
-        obj.value(QStringLiteral("sshKeyPassphrase")).toString());
+    c.sshKeyPassphrase = unwrap(obj.value(QStringLiteral("sshKeyPassphrase")).toString());
     const QJsonArray sshFps = obj.value(QStringLiteral("sshTrustedHostKeyFingerprints")).toArray();
     for (const QJsonValue &v : sshFps) {
         if (v.isString()) c.sshTrustedHostKeyFingerprints.push_back(v.toString());
     }
     c.sshCompression = obj.value(QStringLiteral("sshCompression")).toBool();
     return c;
+}
+
+template <typename Wrap>
+QJsonObject buildComputerJson(const Computer &c, Wrap wrap)
+{
+    QJsonArray fps;
+    for (const QString &fp : c.trustedFingerprints) fps.push_back(fp);
+    QJsonArray sshFps;
+    for (const QString &fp : c.sshTrustedHostKeyFingerprints) sshFps.push_back(fp);
+    return QJsonObject{
+        {QStringLiteral("id"), c.id},
+        {QStringLiteral("name"), c.name},
+        {QStringLiteral("host"), c.host},
+        {QStringLiteral("user"), c.user},
+        {QStringLiteral("pass"), wrap(c.pass)},
+        {QStringLiteral("tls"), c.tls},
+        {QStringLiteral("digestrealm"), c.digestRealm},
+        {QStringLiteral("trustedFingerprints"), fps},
+        {QStringLiteral("sshTunnelEnabled"), c.sshTunnelEnabled},
+        {QStringLiteral("sshHost"), c.sshHost},
+        {QStringLiteral("sshPort"), int(c.sshPort)},
+        {QStringLiteral("sshUser"), c.sshUser},
+        {QStringLiteral("sshAuthMode"), int(c.sshAuthMode)},
+        {QStringLiteral("sshPassword"), wrap(c.sshPassword)},
+        {QStringLiteral("sshKeyPath"), c.sshKeyPath},
+        {QStringLiteral("sshKeyPassphrase"), wrap(c.sshKeyPassphrase)},
+        {QStringLiteral("sshTrustedHostKeyFingerprints"), sshFps},
+        {QStringLiteral("sshCompression"), c.sshCompression},
+    };
+}
+
+} // namespace
+
+QJsonObject Computer::toJson() const
+{
+    return buildComputerJson(*this, [](const QString &s) { return app::SecretCodec::encode(s); });
+}
+
+Computer Computer::fromJson(const QJsonObject &obj)
+{
+    return parseComputer(obj, [](const QString &s) { return app::SecretCodec::decode(s); });
+}
+
+QJsonObject Computer::toPortableJson() const
+{
+    return buildComputerJson(*this, [](const QString &s) { return s; });
+}
+
+Computer Computer::fromPortableJson(const QJsonObject &obj)
+{
+    return parseComputer(obj, [](const QString &s) { return s; });
 }
 
 ComputerModel::ComputerModel(QObject *parent)
@@ -249,8 +289,8 @@ bool ComputerModel::setSshConfig(int row, const QVariantMap &cfg)
     Computer snapshot = c;
     c.sshTunnelEnabled = cfg.value(QStringLiteral("enabled")).toBool();
     c.sshHost = cfg.value(QStringLiteral("host")).toString();
-    const int port = cfg.value(QStringLiteral("port"), 22).toInt();
-    c.sshPort = static_cast<quint16>(port > 0 && port <= 65535 ? port : 22);
+    c.sshPort = clampSshPort(
+        cfg.value(QStringLiteral("port"), kDefaultSshPort).toInt());
     c.sshUser = cfg.value(QStringLiteral("user")).toString();
     const int mode = cfg.value(QStringLiteral("authMode")).toInt();
     c.sshAuthMode = (mode == int(Computer::SshAuthKey))
@@ -340,6 +380,104 @@ Computer ComputerModel::at(int row) const
 {
     if (row < 0 || row >= m_computers.size()) return {};
     return m_computers.at(row);
+}
+
+QList<ComputerModel::ImportPlanEntry> ComputerModel::planImport(
+    const QList<Computer> &incoming) const
+{
+    QList<ImportPlanEntry> plan;
+    plan.reserve(incoming.size());
+
+    // Used to enforce one-target-per-incoming so a backup with two
+    // entries that both match the same existing row doesn't update
+    // it twice (the second match would become an append in that
+    // case, but the existing row would be silently overwritten).
+    QSet<int> claimed;
+
+    for (const Computer &c : incoming) {
+        ImportPlanEntry e;
+        e.incoming = c;
+
+        // id match first.
+        int hit = -1;
+        if (!c.id.isEmpty()) {
+            for (int i = 0; i < m_computers.size(); ++i) {
+                if (claimed.contains(i)) continue;
+                if (m_computers.at(i).id == c.id) { hit = i; break; }
+            }
+        }
+
+        // (host, name) fallback. Host exact (case matters for IPs);
+        // name case-insensitive because users rename machines casually.
+        if (hit < 0) {
+            for (int i = 0; i < m_computers.size(); ++i) {
+                if (claimed.contains(i)) continue;
+                const Computer &x = m_computers.at(i);
+                if (x.host == c.host
+                    && x.name.compare(c.name, Qt::CaseInsensitive) == 0) {
+                    hit = i;
+                    break;
+                }
+            }
+        }
+
+        if (hit >= 0) {
+            claimed.insert(hit);
+            e.existingId = m_computers.at(hit).id;
+            e.match = ImportUpdate;
+        } else {
+            e.match = ImportNew;
+        }
+        plan.push_back(e);
+    }
+    return plan;
+}
+
+bool ComputerModel::applyImport(const QList<ImportPlanEntry> &plan)
+{
+    QList<Computer> snapshot = m_computers;
+
+    beginResetModel();
+
+    for (const ImportPlanEntry &e : plan) {
+        Computer c = e.incoming;
+        int target = -1;
+        if (e.match == ImportUpdate && !e.existingId.isEmpty()) {
+            // Re-resolve by id at apply time, not by the row index
+            // captured during planImport. The two operations are
+            // separated by an arbitrary UI delay (the confirm dialog)
+            // during which the model may have been edited from
+            // elsewhere — a stale absolute index could silently
+            // overwrite an unrelated row.
+            for (int i = 0; i < m_computers.size(); ++i) {
+                if (m_computers.at(i).id == e.existingId) { target = i; break; }
+            }
+        }
+
+        if (target >= 0) {
+            // Reuse the existing row's id so QML's stable identity
+            // (Loader keys, selection state) survives the import.
+            c.id = m_computers.at(target).id;
+            m_computers[target] = c;
+        } else {
+            // Either an ImportNew, or the matched row was deleted
+            // while the confirm dialog sat open. Either way, treat
+            // as an append — losing a never-actually-overwrote-
+            // anything entry beats overwriting the wrong row.
+            if (c.id.isEmpty())
+                c.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            m_computers.push_back(c);
+        }
+    }
+
+    if (!persist()) {
+        m_computers = snapshot;
+        endResetModel();
+        return false;
+    }
+
+    endResetModel();
+    return true;
 }
 
 bool ComputerModel::persist()

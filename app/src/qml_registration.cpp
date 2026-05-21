@@ -4,6 +4,7 @@
 #include "qml_registration.h"
 
 #include "appinfo.h"
+#include "backupcontroller.h"
 #include "batchcontroller.h"
 #include "certmodel.h"
 #include "computermodel.h"
@@ -39,6 +40,8 @@ void registerQumeshQmlTypes(const QmlSingletonContext &ctx)
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "AppInfo", ctx.appInfo);
     qmlRegisterSingletonInstance("QuMesh", 1, 0, "BatchController",
                                  ctx.batchController);
+    qmlRegisterSingletonInstance("QuMesh", 1, 0, "BackupController",
+                                 ctx.backupController);
 
     // SolController / IderController / KvmController / KvmViewer /
     // MachineDetailsController / ScannerController /
