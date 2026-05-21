@@ -62,16 +62,67 @@ Rectangle {
         // without LMS (most macOS boxes, vPro-less hardware) so the
         // sidebar stays clean. Clicking the row opens
         // LocalAmtPromptDialog for credentials.
+        //
+        // Parity with the ListView delegate (#382): the row was the
+        // first thing a fresh-install user with LMS saw, but it sat
+        // outside the model so it inherited none of #280's keyboard /
+        // a11y wiring. We give it explicit Tab focus, a 2 px accent
+        // ring on activeFocus mirroring FlatButton.qml, Return/Space
+        // activation, and Accessible.Button role + name so screen
+        // readers announce it like any other actionable row.
         Rectangle {
+            id: localPcRow
             visible: LocalAmtProbe.available
             color: localHover.hovered ? Colors.elevated : "transparent"
             Layout.fillWidth: true
             implicitHeight: 44
 
+            activeFocusOnTab: visible
+            // Focus ring uses the same 2 px accent border as
+            // FlatButton.qml:51 so the visual language is consistent
+            // with the rest of the sidebar's focusable controls.
+            border.width: localPcRow.activeFocus ? 2 : 0
+            border.color: Colors.accent
+
             Behavior on color { ColorAnimation { duration: Motion.fast } }
+            Behavior on border.width { NumberAnimation { duration: Motion.fast } }
+
+            // Screen-reader contract. The sublabel ("Intel AMT —
+            // local" / "local TLS") is mirrored into the description
+            // so VoiceOver / NVDA announce TLS state too. onPressAction
+            // routes to the same signal as a TapHandler tap so AX
+            // activation and mouse activation share a code path.
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("This PC")
+            Accessible.description: LocalAmtProbe.tlsAvailable
+                ? qsTr("Intel AMT — local TLS")
+                : qsTr("Intel AMT — local")
+            Accessible.onPressAction: root.localAmtRequested()
+
+            // Return / Space / Enter all activate the row, matching
+            // the ListView delegate's keyboard contract (#280). All
+            // three accept the event so the parent ListView doesn't
+            // also see it.
+            Keys.onReturnPressed: function(event) {
+                root.localAmtRequested();
+                event.accepted = true;
+            }
+            Keys.onEnterPressed: function(event) {
+                root.localAmtRequested();
+                event.accepted = true;
+            }
+            Keys.onSpacePressed: function(event) {
+                root.localAmtRequested();
+                event.accepted = true;
+            }
 
             HoverHandler { id: localHover }
-            TapHandler { onTapped: root.localAmtRequested() }
+            TapHandler {
+                onTapped: {
+                    localPcRow.forceActiveFocus();
+                    root.localAmtRequested();
+                }
+            }
 
             Rectangle {
                 color: Colors.accent
