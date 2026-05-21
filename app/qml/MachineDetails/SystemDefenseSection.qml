@@ -35,43 +35,25 @@ Flickable {
                 ? controller.systemDefense.supported !== false
                 : true
 
-        ColumnLayout {
-            spacing: 4
-            Layout.fillWidth: true
-            Layout.topMargin: 24
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
+        SectionHeader {
+            wrapTitle: true
+            eyebrow: qsTr("SYSTEM DEFENSE")
+            title: {
+                if (!sysDefCol.isAcm)
+                    return qsTr("ACM only — this device is provisioned in Client Control Mode.");
+                if (!sysDefCol.supported)
+                    return qsTr("Not supported by this firmware.");
+                const sd = controller.systemDefense || {};
+                const n = ((sd.policies || []).length)
+                        + ((sd.hdrFilters || []).length)
+                        + ((sd.ipFilters || []).length);
+                return n === 0
+                    ? qsTr("No policies or filters configured.")
+                    : qsTr("%1 entr%2 across policies / filters")
+                          .arg(n)
+                          .arg(n === 1 ? "y" : "ies");
+            }
 
-            Text {
-                text: qsTr("SYSTEM DEFENSE")
-                color: Colors.textMuted
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-                font.letterSpacing: 2
-                font.weight: Font.Medium
-            }
-            Text {
-                text: {
-                    if (!sysDefCol.isAcm)
-                        return qsTr("ACM only — this device is provisioned in Client Control Mode.");
-                    if (!sysDefCol.supported)
-                        return qsTr("Not supported by this firmware.");
-                    const sd = controller.systemDefense || {};
-                    const n = ((sd.policies || []).length)
-                            + ((sd.hdrFilters || []).length)
-                            + ((sd.ipFilters || []).length);
-                    return n === 0
-                        ? qsTr("No policies or filters configured.")
-                        : qsTr("%1 entr%2 across policies / filters")
-                              .arg(n)
-                              .arg(n === 1 ? "y" : "ies");
-                }
-                color: Colors.text
-                font.family: Type.sans
-                font.pixelSize: 20
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-            }
             RowLayout {
                 spacing: 8
                 Layout.fillWidth: true

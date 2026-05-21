@@ -93,6 +93,7 @@ set_source_files_properties(
     qml/Theme/Colors.qml
     qml/Theme/Type.qml
     qml/Theme/Motion.qml
+    qml/Theme/Spacing.qml
     qml/Theme/ThemePalette.qml
     qml/Theme/ActivityHeartbeat.qml
     qml/Paths.qml
@@ -145,6 +146,7 @@ qt_add_qml_module(qumesh_appcore
         qml/StatusBar.qml
         qml/StatusLed.qml
         qml/Section.qml
+        qml/SectionHeader.qml
         qml/Terminal.qml
         qml/IderPanel.qml
         qml/KvmPanel.qml
@@ -194,6 +196,7 @@ qt_add_qml_module(qumesh_appcore
         qml/Theme/Colors.qml
         qml/Theme/Type.qml
         qml/Theme/Motion.qml
+        qml/Theme/Spacing.qml
         qml/Theme/ThemePalette.qml
         qml/Theme/ActivityHeartbeat.qml
         qml/HeartbeatBar.qml

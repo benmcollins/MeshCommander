@@ -19,40 +19,23 @@ ColumnLayout {
     spacing: 8
 
 
-    ColumnLayout {
-        spacing: 4
-        Layout.fillWidth: true
-        Layout.topMargin: 24
-        Layout.leftMargin: 24
-        Layout.rightMargin: 24
+    SectionHeader {
+        eyebrow: qsTr("AUDIT LOG")
+        title: {
+            const s = controller.auditLogState;
+            if (!s || !s.ok)
+                return controller.auditLogEntries.length === 0
+                    ? qsTr("Not yet fetched")
+                    : qsTr("%1 entries").arg(controller.auditLogEntries.length);
+            let parts = [];
+            parts.push(s.enabled ? qsTr("Enabled") : qsTr("Disabled"));
+            if (s.locked)     parts.push(qsTr("Locked"));
+            if (s.full)       parts.push(qsTr("Full"));
+            else if (s.almostFull) parts.push(qsTr("Almost full"));
+            if (s.noSigningKey) parts.push(qsTr("No signing key"));
+            return parts.join(" · ");
+        }
 
-        Text {
-            text: qsTr("AUDIT LOG")
-            color: Colors.textMuted
-            font.family: Type.sans
-            font.pixelSize: Type.sizeXs
-            font.letterSpacing: 2
-            font.weight: Font.Medium
-        }
-        Text {
-            text: {
-                const s = controller.auditLogState;
-                if (!s || !s.ok)
-                    return controller.auditLogEntries.length === 0
-                        ? qsTr("Not yet fetched")
-                        : qsTr("%1 entries").arg(controller.auditLogEntries.length);
-                let parts = [];
-                parts.push(s.enabled ? qsTr("Enabled") : qsTr("Disabled"));
-                if (s.locked)     parts.push(qsTr("Locked"));
-                if (s.full)       parts.push(qsTr("Full"));
-                else if (s.almostFull) parts.push(qsTr("Almost full"));
-                if (s.noSigningKey) parts.push(qsTr("No signing key"));
-                return parts.join(" · ");
-            }
-            color: Colors.text
-            font.family: Type.sans
-            font.pixelSize: 20
-        }
         Text {
             visible: controller.auditLogState
                   && controller.auditLogState.ok === true

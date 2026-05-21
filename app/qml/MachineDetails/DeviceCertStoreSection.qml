@@ -30,40 +30,18 @@ Flickable {
         spacing: 18
         width: parent.width
 
-        ColumnLayout {
-            spacing: 4
-            Layout.fillWidth: true
-            Layout.topMargin: 24
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Text {
-                text: qsTr("DEVICE CERTIFICATES")
-                color: Colors.textMuted
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-                font.letterSpacing: 2
-                font.weight: Font.Medium
+        SectionHeader {
+            eyebrow: qsTr("DEVICE CERTIFICATES")
+            title: {
+                const s = controller.deviceCertStore;
+                if (!s || !s.certificates)
+                    return qsTr("Not yet fetched");
+                return qsTr("%1 certificate(s)")
+                    .arg(s.certificates.length);
             }
-            Text {
-                text: {
-                    const s = controller.deviceCertStore;
-                    if (!s || !s.certificates)
-                        return qsTr("Not yet fetched");
-                    return qsTr("%1 certificate(s)")
-                        .arg(s.certificates.length);
-                }
-                color: Colors.text
-                font.family: Type.sans
-                font.pixelSize: 20
-            }
-            Text {
-                visible: !controller.deviceCertStore
-                      || !controller.deviceCertStore.certificates
-                text: qsTr("Click Refresh to fetch the AMT device's certificate store.")
-                color: Colors.textFaint
-                font.family: Type.sans
-                font.pixelSize: Type.sizeXs
-            }
+            hint: (!controller.deviceCertStore || !controller.deviceCertStore.certificates)
+                ? qsTr("Click Refresh to fetch the AMT device's certificate store.")
+                : ""
         }
 
         // --- TLS modes ----------------------------------

@@ -19,29 +19,11 @@ ColumnLayout {
     spacing: 8
 
 
-    ColumnLayout {
-        spacing: 4
-        Layout.fillWidth: true
-        Layout.topMargin: 24
-        Layout.leftMargin: 24
-        Layout.rightMargin: 24
-
-        Text {
-            text: qsTr("EVENT LOG")
-            color: Colors.textMuted
-            font.family: Type.sans
-            font.pixelSize: Type.sizeXs
-            font.letterSpacing: 2
-            font.weight: Font.Medium
-        }
-        Text {
-            text: controller.eventLog.length === 0
-                ? qsTr("No entries.")
-                : qsTr("%1 entries").arg(controller.eventLog.length)
-            color: Colors.text
-            font.family: Type.sans
-            font.pixelSize: 20
-        }
+    SectionHeader {
+        eyebrow: qsTr("EVENT LOG")
+        title: controller.eventLog.length === 0
+            ? qsTr("No entries.")
+            : qsTr("%1 entries").arg(controller.eventLog.length)
     }
 
     ListView {

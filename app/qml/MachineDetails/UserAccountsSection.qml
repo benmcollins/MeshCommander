@@ -33,43 +33,20 @@ ColumnLayout {
         return (controller.userAccounts || []).filter(a => !a.hidden);
     }
 
-    ColumnLayout {
-        spacing: 4
-        Layout.fillWidth: true
-        Layout.topMargin: 24
-        Layout.leftMargin: 24
-        Layout.rightMargin: 24
+    SectionHeader {
+        eyebrow: qsTr("USER ACCOUNTS")
+        title: controller.userAccounts.length === 0
+            ? qsTr("No accounts.")
+            : qsTr("%1 accounts").arg(root.filteredAccounts().length)
 
-        Text {
-            text: qsTr("USER ACCOUNTS")
-            color: Colors.textMuted
-            font.family: Type.sans
-            font.pixelSize: Type.sizeXs
-            font.letterSpacing: 2
-            font.weight: Font.Medium
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 12
-            Text {
-                text: controller.userAccounts.length === 0
-                    ? qsTr("No accounts.")
-                    : qsTr("%1 accounts")
-                        .arg(parent.parent.parent.filteredAccounts().length)
-                color: Colors.text
-                font.family: Type.sans
-                font.pixelSize: 20
-                Layout.fillWidth: true
-            }
-            CheckBox {
-                text: qsTr("Show hidden ($$)")
-                checked: parent.parent.parent.showHidden
-                onToggled: parent.parent.parent.showHidden = checked
-            }
-        }
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
+            CheckBox {
+                text: qsTr("Show hidden ($$)")
+                checked: root.showHidden
+                onToggled: root.showHidden = checked
+            }
             Item { Layout.fillWidth: true }
             FlatButton {
                 text: qsTr("Rotate admin…")
