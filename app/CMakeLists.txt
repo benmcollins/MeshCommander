@@ -133,6 +133,7 @@ qt_add_qml_module(qumesh_appcore
         qml/SystemDefensePolicyDialog.qml
         qml/WakeAlarmDialog.qml
         qml/WatchdogDialog.qml
+        qml/WatchdogActionsDialog.qml
         qml/Wired8021xDialog.qml
         qml/EnvDetectionDialog.qml
         qml/UserInitiatedDialog.qml

@@ -10,8 +10,8 @@ import QuMesh
 
 /// Add or edit an Agent Presence watchdog (AMT_AgentPresenceWatchdog).
 /// Edit = delete + RegisterAgent since AMT has no Modify; the controller
-/// chains the two-step. The per-watchdog actions list (AddAction chain)
-/// is out of scope here — see #350 for the action editor. See #348.
+/// chains the two-step. Per-watchdog actions (AddAction chain) are
+/// edited in WatchdogActionsDialog. See #348 / #350.
 Dialog {
     id: root
 
@@ -271,8 +271,8 @@ Dialog {
 
         Text {
             text: root.isEdit
-                ? qsTr("AMT has no in-place edit for watchdogs; saving deletes the old row and creates a fresh one. Per-watchdog actions are configured separately (see issue #350).")
-                : qsTr("This registers the watchdog. Per-watchdog actions (reset / power off / event log on expiry) are configured separately — see issue #350.")
+                ? qsTr("AMT has no in-place edit for watchdogs; saving deletes the old row and creates a fresh one. Edit actions (reset / power off / event log on expiry) from the watchdog row's Actions button.")
+                : qsTr("This registers the watchdog. Configure what it does on expiry (reset / power off / event log) from the watchdog row's Actions button after it's created.")
             color: Colors.textMuted
             font.family: Type.sans
             font.pixelSize: Type.sizeXs

@@ -606,6 +606,19 @@ public:
     /// in-place modify for the watchdog class. See #348.
     Q_INVOKABLE void replaceAgentPresenceWatchdog(const QString &oldDeviceIdGuid,
                                                     const QVariantMap &fields);
+    /// Invoke `AMT_AgentPresenceService.AddAction` to attach a new
+    /// per-watchdog action. `fields`: `watchdogDeviceIdGuid` (string),
+    /// `oldState` / `newState` (int — watchdog state codes 1/2/4/8/16),
+    /// `eventOnTransition` (bool), `actionSac` (int — 1/2/16/17/18 per
+    /// Intel SDC) and an optional `actionEac` (int — pass -1 to omit).
+    /// Blocks at `AMT_AgentPresenceCapabilities.MaxTotalActions`. On
+    /// success refreshes the section. See #350.
+    Q_INVOKABLE void addWatchdogAction(const QVariantMap &fields);
+    /// WS-Transfer Delete on `AMT_AgentPresenceWatchdogAction` keyed
+    /// by `(Watchdog, OldState, NewState)`. On success refreshes the
+    /// section. See #350.
+    Q_INVOKABLE void deleteWatchdogAction(const QString &watchdogDeviceIdGuid,
+                                           int oldState, int newState);
     /// Enumerate CIM_FilterCollection + CIM_ListenerDestination +
     /// CIM_FilterCollectionSubscription. See #163.
     Q_INVOKABLE void refreshEventSubscriptions();

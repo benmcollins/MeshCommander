@@ -62,6 +62,9 @@ constexpr char kAgentPresenceWatchdogResource[] =
 constexpr char kAgentPresenceServiceResource[] =
     "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AgentPresenceService";
 
+constexpr char kAgentPresenceWatchdogActionResource[] =
+    "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_AgentPresenceWatchdogAction";
+
 constexpr char kFilterCollectionResource[] =
     "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_FilterCollection";
 
@@ -1308,6 +1311,23 @@ QString encodeWatchdogDeviceId(const QString &guid)
 
 } // namespace
 
+/// AMT `ActionSAC` (System Action Code) → label. Codes 1/2/16/17/18
+/// are the documented Intel set; anything else surfaces as Unknown so
+/// the operator can still see and delete a row whose code we don't yet
+/// have a name for. The same list is mirrored client-side in the
+/// actions dialog.
+const char *actionSacName(int code)
+{
+    switch (code) {
+    case 1:  return "Send Alert";
+    case 2:  return "Log to Event Log";
+    case 16: return "Power Off";
+    case 17: return "Reset";
+    case 18: return "Power Cycle";
+    default: return "Unknown";
+    }
+}
+
 void getAgentPresence(WsmanClient *client,
                       std::function<void(AgentPresenceResult)> callback)
 {
@@ -1315,13 +1335,15 @@ void getAgentPresence(WsmanClient *client,
         AgentPresenceResult r;
         bool gotCaps = false;
         bool gotWatchdogs = false;
+        bool gotActions = false;
         QString capsErr;
         QString watchdogsErr;
+        QString actionsErr;
         std::function<void(AgentPresenceResult)> cb;
         void maybeFire() {
-            if (!gotCaps || !gotWatchdogs) return;
-            // Treat caps as advisory — older firmware may not surface
-            // it. The watchdog enumerate is the real indicator.
+            if (!gotCaps || !gotWatchdogs || !gotActions) return;
+            // Treat caps + actions as advisory — older firmware may not
+            // surface them. The watchdog enumerate is the real indicator.
             r.ok = watchdogsErr.isEmpty();
             if (!r.ok && r.error.isEmpty())
                 r.error = watchdogsErr;
@@ -1401,6 +1423,48 @@ void getAgentPresence(WsmanClient *client,
                     QStringLiteral("TimeoutInterval")).toInt(&conv);
                 if (conv) w.timeoutIntervalSec = t;
                 acc->r.watchdogs.append(std::move(w));
+            }
+            acc->maybeFire();
+        });
+
+    // AMT_AgentPresenceWatchdogAction — enumerate. Soft-fails on
+    // firmware that doesn't expose the class (no watchdogs = no
+    // actions, so an empty list is the expected default anyway).
+    enumerateAll(client, kAgentPresenceWatchdogActionResource,
+        [acc](QList<QByteArray> items, QString err) {
+            acc->gotActions = true;
+            acc->actionsErr = err;
+            for (const QByteArray &it : items) {
+                AgentPresenceWatchdogAction a;
+                a.watchdogDeviceIdGuid = decodeWatchdogDeviceId(
+                    findScalar(it, QStringLiteral("Watchdog")));
+                bool conv = false;
+                a.oldState = findScalar(it,
+                    QStringLiteral("OldState")).toInt(&conv);
+                if (!conv) a.oldState = -1;
+                a.oldStateLabel = QString::fromLatin1(
+                    watchdogStateName(a.oldState));
+                conv = false;
+                a.newState = findScalar(it,
+                    QStringLiteral("NewState")).toInt(&conv);
+                if (!conv) a.newState = -1;
+                a.newStateLabel = QString::fromLatin1(
+                    watchdogStateName(a.newState));
+                const QString eot = findScalar(it,
+                    QStringLiteral("EventOnTransition")).trimmed().toLower();
+                a.eventOnTransition = (eot == QStringLiteral("true")
+                                       || eot == QStringLiteral("1"));
+                conv = false;
+                a.actionSac = findScalar(it,
+                    QStringLiteral("ActionSAC")).toInt(&conv);
+                if (!conv) a.actionSac = -1;
+                a.actionSacLabel = QString::fromLatin1(
+                    actionSacName(a.actionSac));
+                conv = false;
+                const int eac = findScalar(it,
+                    QStringLiteral("ActionEAC")).toInt(&conv);
+                a.actionEac = conv ? eac : -1;
+                acc->r.actions.append(std::move(a));
             }
             acc->maybeFire();
         });
@@ -1561,6 +1625,205 @@ void deleteAgentPresenceWatchdog(WsmanClient *client,
     selectors.insert(QStringLiteral("DeviceID"), encoded);
     const QByteArray env = buildDeleteEnvelope(
         QString::fromLatin1(kAgentPresenceWatchdogResource), selectors,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray & /*body*/, InvokeResult &r) {
+            r.returnValue = 0;
+            r.ok = true;
+        },
+        std::move(callback));
+}
+
+namespace {
+
+/// Build an `AMT_AgentPresenceService.AddAction` envelope by hand. The
+/// `Watchdog` parameter is an endpoint reference (EPR) into
+/// `AMT_AgentPresenceWatchdog`, keyed by `DeviceID` (base-64 of raw
+/// 16-byte GUID) — the flat-scalar `buildInvokeEnvelope` helper can't
+/// emit EPR-shaped parameters. Patterned after `SetBootConfigRole`,
+/// which is the other place in this file that splices an EPR into a
+/// method input. See #350.
+QByteArray buildAddActionEnvelope(const QString &watchdogDeviceIdGuid,
+                                   int oldState, int newState,
+                                   bool eventOnTransition,
+                                   int actionSac, int actionEac,
+                                   const QString &to,
+                                   const QString &messageId)
+{
+    QByteArray out;
+    QXmlStreamWriter w(&out);
+    w.setAutoFormatting(false);
+
+    constexpr char kNsSoap[] = "http://www.w3.org/2003/05/soap-envelope";
+    constexpr char kNsAddr[] = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+    constexpr char kNsWsman[] = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
+    const QString service = QString::fromLatin1(kAgentPresenceServiceResource);
+    const QString watchdog = QString::fromLatin1(kAgentPresenceWatchdogResource);
+    const QString action = service + QStringLiteral("/AddAction");
+    const QString encodedDeviceId = encodeWatchdogDeviceId(watchdogDeviceIdGuid);
+
+    w.writeStartDocument();
+    w.writeNamespace(QString::fromLatin1(kNsSoap), QStringLiteral("s"));
+    w.writeNamespace(QString::fromLatin1(kNsAddr), QStringLiteral("a"));
+    w.writeNamespace(QString::fromLatin1(kNsWsman), QStringLiteral("w"));
+    w.writeNamespace(service, QStringLiteral("r"));
+
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Envelope"));
+
+    // Header — keyed at the singleton AgentPresenceService.
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Header"));
+    w.writeTextElement(QString::fromLatin1(kNsAddr), QStringLiteral("Action"), action);
+    w.writeTextElement(QString::fromLatin1(kNsAddr), QStringLiteral("To"), to);
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), service);
+    w.writeTextElement(QString::fromLatin1(kNsAddr),
+                        QStringLiteral("MessageID"), messageId);
+    w.writeStartElement(QString::fromLatin1(kNsAddr), QStringLiteral("ReplyTo"));
+    w.writeTextElement(QString::fromLatin1(kNsAddr),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"));
+    w.writeEndElement(); // ReplyTo
+
+    w.writeStartElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("SelectorSet"));
+    for (const auto &kv : std::initializer_list<std::pair<QString, QString>>{
+             { QStringLiteral("Name"),                    QStringLiteral("Intel(r) AMT Agent Presence Service") },
+             { QStringLiteral("SystemCreationClassName"), QStringLiteral("CIM_ComputerSystem") },
+             { QStringLiteral("SystemName"),              QStringLiteral("Intel(r) AMT") },
+             { QStringLiteral("CreationClassName"),       QStringLiteral("AMT_AgentPresenceService") },
+         }) {
+        w.writeStartElement(QString::fromLatin1(kNsWsman),
+                            QStringLiteral("Selector"));
+        w.writeAttribute(QStringLiteral("Name"), kv.first);
+        w.writeCharacters(kv.second);
+        w.writeEndElement(); // Selector
+    }
+    w.writeEndElement(); // SelectorSet
+    w.writeEndElement(); // Header
+
+    // Body
+    w.writeStartElement(QString::fromLatin1(kNsSoap), QStringLiteral("Body"));
+    w.writeStartElement(service, QStringLiteral("AddAction_INPUT"));
+
+    // Watchdog: EPR pointing at the parent AMT_AgentPresenceWatchdog.
+    w.writeStartElement(service, QStringLiteral("Watchdog"));
+    w.writeTextElement(QString::fromLatin1(kNsAddr),
+                        QStringLiteral("Address"),
+                        QStringLiteral("http://schemas.xmlsoap.org/ws/2004/08/addressing"));
+    w.writeStartElement(QString::fromLatin1(kNsAddr),
+                        QStringLiteral("ReferenceParameters"));
+    w.writeTextElement(QString::fromLatin1(kNsWsman),
+                        QStringLiteral("ResourceURI"), watchdog);
+    w.writeStartElement(QString::fromLatin1(kNsWsman), QStringLiteral("SelectorSet"));
+    w.writeStartElement(QString::fromLatin1(kNsWsman), QStringLiteral("Selector"));
+    w.writeAttribute(QStringLiteral("Name"), QStringLiteral("DeviceID"));
+    w.writeCharacters(encodedDeviceId);
+    w.writeEndElement(); // Selector
+    w.writeEndElement(); // SelectorSet
+    w.writeEndElement(); // ReferenceParameters
+    w.writeEndElement(); // Watchdog
+
+    w.writeTextElement(service, QStringLiteral("OldState"),
+                        QString::number(oldState));
+    w.writeTextElement(service, QStringLiteral("NewState"),
+                        QString::number(newState));
+    w.writeTextElement(service, QStringLiteral("EventOnTransition"),
+                        eventOnTransition ? QStringLiteral("true")
+                                          : QStringLiteral("false"));
+    w.writeTextElement(service, QStringLiteral("ActionSAC"),
+                        QString::number(actionSac));
+    if (actionEac >= 0) {
+        w.writeTextElement(service, QStringLiteral("ActionEAC"),
+                            QString::number(actionEac));
+    }
+
+    w.writeEndElement(); // AddAction_INPUT
+    w.writeEndElement(); // Body
+
+    w.writeEndElement(); // Envelope
+    w.writeEndDocument();
+    return out;
+}
+
+} // namespace
+
+void addAgentPresenceWatchdogAction(WsmanClient *client,
+                                     const QString &watchdogDeviceIdGuid,
+                                     int oldState, int newState,
+                                     bool eventOnTransition,
+                                     int actionSac, int actionEac,
+                                     std::function<void(InvokeResult)> callback)
+{
+    if (encodeWatchdogDeviceId(watchdogDeviceIdGuid).isEmpty()) {
+        callback({ false, QStringLiteral("AddAction: Watchdog DeviceID must be a 16-byte GUID"), -1 });
+        return;
+    }
+    if (oldState < 0 || newState < 0) {
+        callback({ false, QStringLiteral("AddAction: OldState and NewState are required"), -1 });
+        return;
+    }
+    if (actionSac < 0) {
+        callback({ false, QStringLiteral("AddAction: ActionSAC is required"), -1 });
+        return;
+    }
+    const QByteArray env = buildAddActionEnvelope(watchdogDeviceIdGuid,
+        oldState, newState, eventOnTransition, actionSac, actionEac,
+        client ? client->endpoint().toString() : QString(), newMessageId());
+    runRequest<InvokeResult>(client, env, {},
+        [](const QByteArray &body, InvokeResult &r) {
+            const QString rv = findScalar(body, QStringLiteral("ReturnValue"));
+            if (rv.isEmpty()) {
+                // Some AMT versions return only an EPR for the created
+                // action and omit ReturnValue. Treat that as success.
+                if (body.contains("CreatedAction")
+                    || body.contains("AddAction_OUTPUT")) {
+                    r.ok = true;
+                    r.returnValue = 0;
+                    return;
+                }
+                r.error = QStringLiteral("AddAction response had no ReturnValue");
+                return;
+            }
+            bool conv = false;
+            r.returnValue = rv.toInt(&conv);
+            r.ok = conv && r.returnValue == 0;
+            if (!r.ok && r.error.isEmpty())
+                r.error = QStringLiteral("AddAction returned %1").arg(rv);
+        },
+        std::move(callback));
+}
+
+QByteArray buildAddActionEnvelopeForTesting(const QString &watchdogDeviceIdGuid,
+                                              int oldState, int newState,
+                                              bool eventOnTransition,
+                                              int actionSac, int actionEac,
+                                              const QString &to,
+                                              const QString &messageId)
+{
+    return buildAddActionEnvelope(watchdogDeviceIdGuid, oldState, newState,
+        eventOnTransition, actionSac, actionEac, to, messageId);
+}
+
+void deleteAgentPresenceWatchdogAction(WsmanClient *client,
+                                        const QString &watchdogDeviceIdGuid,
+                                        int oldState, int newState,
+                                        std::function<void(InvokeResult)> callback)
+{
+    const QString encoded = encodeWatchdogDeviceId(watchdogDeviceIdGuid);
+    if (encoded.isEmpty()) {
+        callback({ false, QStringLiteral("DeleteWatchdogAction: Watchdog DeviceID must be a 16-byte GUID"), -1 });
+        return;
+    }
+    if (oldState < 0 || newState < 0) {
+        callback({ false, QStringLiteral("DeleteWatchdogAction: OldState and NewState are required"), -1 });
+        return;
+    }
+    QHash<QString, QString> selectors;
+    selectors.insert(QStringLiteral("Watchdog"), encoded);
+    selectors.insert(QStringLiteral("OldState"), QString::number(oldState));
+    selectors.insert(QStringLiteral("NewState"), QString::number(newState));
+    const QByteArray env = buildDeleteEnvelope(
+        QString::fromLatin1(kAgentPresenceWatchdogActionResource), selectors,
         client ? client->endpoint().toString() : QString(), newMessageId());
     runRequest<InvokeResult>(client, env, {},
         [](const QByteArray & /*body*/, InvokeResult &r) {
