@@ -33,6 +33,7 @@ Rectangle {
         ? (_read(ComputerModel.TrustedFingerprintsRole) || []) : []
 
     signal addRequested
+    signal scanRequested
     signal openDetailsRequested(int row)
 
     color: Colors.bg
@@ -272,10 +273,29 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
         onRejected: pendingRow = -1
     }
 
+    /// First-run onboarding (#380). Shown whenever the user has no row
+    /// selected — which on a fresh install also means no rows at all,
+    /// since the sidebar can't have a selection without rows. The
+    /// wordmark stays as the visual anchor above the card; the card
+    /// itself surfaces the three onboarding paths that were otherwise
+    /// buried in the sidebar toolbar (Add / Scan) and the
+    /// auto-dismissing migration banner (Import).
+    ///
+    /// "Import from MeshCommander" only renders when
+    /// `MigrationController.state !== NoLegacyData`. That covers the
+    /// `Imported` / `Failed` / `Migrating` / `Idle`-with-legacy-present
+    /// cases without dragging on-demand legacy probing into the
+    /// controller. On a clean machine with no legacy install, the CTA
+    /// would be a dead end — so we hide it.
     ColumnLayout {
+        id: emptyState
         visible: !root.hasSelection
-        spacing: 6
+        spacing: 18
         anchors.centerIn: parent
+        width: Math.min(parent.width - 2 * Spacing.pageMargin, 480)
+
+        readonly property bool hasLegacyData:
+            MigrationController.state !== MigrationController.NoLegacyData
 
         AppMark {
             Layout.preferredWidth: 72
@@ -293,22 +313,74 @@ enabled: root.machineHost.length > 0 && root.machineUser.length > 0
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
         }
-        Text {
-            text: qsTr("Select a machine, or click + to add one.")
-            color: Colors.textFaint
-            font.family: Type.sans
-            font.pixelSize: Type.sizeS
-            horizontalAlignment: Text.AlignHCenter
-            Layout.alignment: Qt.AlignHCenter
-            Layout.topMargin: 8
-        }
-        Button {
-            text: qsTr("Add machine")
-            font.family: Type.sans
-            font.pixelSize: Type.sizeS
-            Layout.alignment: Qt.AlignHCenter
-            Layout.topMargin: 12
-            onClicked: root.addRequested()
+
+        Section {
+            title: qsTr("GET STARTED")
+            Layout.fillWidth: true
+            Layout.topMargin: 6
+
+            ColumnLayout {
+                spacing: 10
+                Layout.fillWidth: true
+
+                Text {
+                    text: qsTr("Add your first machine")
+                    color: Colors.text
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeL
+                    font.weight: Font.Medium
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+                Text {
+                    text: emptyState.hasLegacyData
+                        ? qsTr("Enter an AMT host by hand, scan a subnet for "
+                             + "vPro devices, or import your saved machines "
+                             + "from MeshCommander.")
+                        : qsTr("Enter an AMT host by hand, or scan a subnet "
+                             + "for vPro devices.")
+                    color: Colors.textMuted
+                    font.family: Type.sans
+                    font.pixelSize: Type.sizeS
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                // Flow so the buttons wrap to a second line on narrow
+                // panes without clipping. Keeps "Add machine" first in
+                // tab order regardless of pane width.
+                Flow {
+                    spacing: 8
+                    Layout.fillWidth: true
+                    Layout.topMargin: 6
+
+                    AccentButton {
+                        text: qsTr("Add machine")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeS
+                        onClicked: root.addRequested()
+                    }
+                    FlatButton {
+                        text: qsTr("Scan subnet…")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeS
+                        onClicked: root.scanRequested()
+                    }
+                    // `MigrationController` is a Q_INVOKABLE singleton
+                    // so we route the Import CTA directly into it
+                    // instead of pushing another signal through Main.qml
+                    // — keeps onboarding wiring local to this file.
+                    FlatButton {
+                        text: qsTr("Import from MeshCommander")
+                        font.family: Type.sans
+                        font.pixelSize: Type.sizeS
+                        visible: emptyState.hasLegacyData
+                        enabled: MigrationController.state
+                            !== MigrationController.Migrating
+                        onClicked: MigrationController.checkAndMaybeMigrate()
+                    }
+                }
+            }
         }
     }
 }

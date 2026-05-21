@@ -173,6 +173,12 @@ ApplicationWindow {
                 SplitView.fillWidth: true
                 SplitView.minimumWidth: 420
                 onAddRequested: addDialog.openFor(-1)
+                // First-run onboarding CTAs (#380). The Scan path uses
+                // the same singleton `ScanDialog` instance the sidebar
+                // already drives so we don't double-instantiate the
+                // scanner; the Import path calls the singleton
+                // `MigrationController` directly from the pane.
+                onScanRequested: scanDialog.openDialog()
                 onOpenDetailsRequested: function(row) { detailsLoader.launchFor(row) }
             }
         }
