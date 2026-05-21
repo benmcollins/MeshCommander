@@ -11,6 +11,7 @@
 
 #include <QDir>
 #include <QStandardPaths>
+#include <QStringDecoder>
 #include <QTemporaryDir>
 #include <QUuid>
 
@@ -155,10 +156,14 @@ QByteArray ChromiumStorageReader::decodeValue(QByteArray rawValueWithTag)
     QByteArray body = rawValueWithTag.mid(1);
     switch (tag) {
     case 0x00: {
-        // UTF-16LE payload. Re-encode as UTF-8.
+        // UTF-16LE payload. Re-encode as UTF-8. Decode via QStringDecoder
+        // rather than reinterpret_cast<const char16_t*>(body.constData()) +
+        // QString::fromUtf16: QByteArray storage isn't guaranteed to be
+        // 2-byte aligned, which is UB on strict-alignment platforms. The
+        // decoder handles unaligned input internally. See #371.
         if (body.size() % 2 != 0) return {};
-        const auto *u16 = reinterpret_cast<const char16_t *>(body.constData());
-        const QString s = QString::fromUtf16(u16, body.size() / 2);
+        QStringDecoder dec(QStringConverter::Utf16LE);
+        const QString s = dec(body);
         return s.toUtf8();
     }
     case 0x01:
