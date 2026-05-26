@@ -216,18 +216,20 @@ Rectangle {
             // `ViewTransition.index` is the row's position so each
             // delegate kicks off ~40 ms after the previous one.
             populate: Transition {
+                id: populateTrans
                 SequentialAnimation {
-                    PauseAnimation { duration: ViewTransition.index * 40 }
+                    PauseAnimation { duration: populateTrans.ViewTransition.index * 40 }
                     ParallelAnimation {
                         NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Motion.normal }
-                        NumberAnimation { property: "y"; from: ViewTransition.item.y + 8; to: ViewTransition.item.y; duration: Motion.normal; easing.type: Easing.OutCubic }
+                        NumberAnimation { property: "y"; from: populateTrans.ViewTransition.item.y + 8; to: populateTrans.ViewTransition.item.y; duration: Motion.normal; easing.type: Easing.OutCubic }
                     }
                 }
             }
             add: Transition {
+                id: addTrans
                 ParallelAnimation {
                     NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Motion.normal }
-                    NumberAnimation { property: "y"; from: ViewTransition.item.y + 8; to: ViewTransition.item.y; duration: Motion.normal; easing.type: Easing.OutCubic }
+                    NumberAnimation { property: "y"; from: addTrans.ViewTransition.item.y + 8; to: addTrans.ViewTransition.item.y; duration: Motion.normal; easing.type: Easing.OutCubic }
                 }
             }
             displaced: Transition {
