@@ -217,6 +217,10 @@ private slots:
     void clientPinsRfb38EvenWhenServerOffers40();
     void kvmExtCmdEnabledByDefault();
     void kvmExtCmdDisabledViaKillSwitch();
+    // #433 — AMT's KVM display-buffer ceiling drives the pixel format.
+    void fourKDesktopNegotiatesEightBitColour();
+    void ordinaryDesktopKeepsSixteenBitColour();
+    void oversizedDesktopFailsWithActionableError();
 };
 
 void TestKvmSession::handshakeThroughFrameLoopWithRawTile()
@@ -277,11 +281,12 @@ void TestKvmSession::handshakeThroughFrameLoopWithRawTile()
     QCOMPARE(resizedSpy.first().at(1).toInt(), 240);
 
     // Wait for SetPixelFormat (20 bytes) + SetEncodings (14+ bytes) to
-    // arrive. SetPixelFormat goes first to pin RGB565 before any
-    // framebuffer traffic.
+    // arrive. SetPixelFormat goes first to pin the format before any
+    // framebuffer traffic. A 320x240 desktop is far inside AMT's
+    // display-buffer ceiling, so the automatic choice is RGB565.
     QVERIFY(waitFor(2000, [&]() { return server.received.size() >= 34; }));
     QCOMPARE(static_cast<unsigned char>(server.received.at(0)), quint8(MsgSetPixelFormat));
-    QCOMPARE(server.received.mid(0, 20), buildSetPixelFormat());
+    QCOMPARE(server.received.mid(0, 20), buildSetPixelFormat(PixelFormat::Rgb565));
     QCOMPARE(static_cast<unsigned char>(server.received.at(20)), quint8(MsgSetEncodings));
 
     // Send a single 4x4 red rect.
@@ -337,7 +342,9 @@ namespace {
 /// the KvmExtCmd payload without duplicating the handshake walk.
 QByteArray driveHandshakeAndCaptureSetup(MockServer &server,
                                           RedirectionClient &client,
-                                          KvmSession &session)
+                                          KvmSession &session,
+                                          quint16 w = 320, quint16 h = 240,
+                                          int expectBytes = 67)
 {
     QObject::connect(&client, &RedirectionClient::authenticated,
                      &session, &KvmSession::start);
@@ -364,10 +371,11 @@ QByteArray driveHandshakeAndCaptureSetup(MockServer &server,
     if (!waitFor(2000, [&]() { return server.received.size() >= 1; })) return {};
     server.received.clear();
 
-    server.m_socket->write(makeServerInit(320, 240, "AMT"));
+    server.m_socket->write(makeServerInit(w, h, "AMT"));
 
     // SetPixelFormat 20 + SetEncodings 16 + KvmExtCmd 21 + FBUR 10 = 67.
-    if (!waitFor(2000, [&]() { return server.received.size() >= 67; })) return {};
+    if (!waitFor(2000, [&]() { return server.received.size() >= expectBytes; }))
+        return server.received;
     return server.received;
 }
 
@@ -419,6 +427,89 @@ void TestKvmSession::kvmExtCmdDisabledViaKillSwitch()
               "KvmExtCmd(4, 0) not found on wire");
     QVERIFY2(!sent.contains(buildKvmExtCmd(4, 1)),
               "KvmExtCmd(4, 1) unexpectedly present");
+}
+
+
+// --- #433 ------------------------------------------------------------
+//
+// AMT allocates its KVM display buffer as bytes-per-pixel x w x h and
+// hangs up — with no protocol-level error — when that exceeds
+// 9,216,000. A 4K desktop is 1.8x over at 16-bit, which is why the
+// reporter's session died the moment consent let the RFB handshake
+// reach SetPixelFormat.
+
+void TestKvmSession::fourKDesktopNegotiatesEightBitColour()
+{
+    MockServer server;
+    QVERIFY(server.listen());
+
+    RedirectionClient client;
+    client.setProtocol(qumesh::redir::Protocol::Kvm);
+    client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
+
+    KvmSession session(&client);
+    QSignalSpy formatSpy(&session, &KvmSession::pixelFormatChanged);
+
+    const QByteArray sent =
+        driveHandshakeAndCaptureSetup(server, client, session, 3840, 2160);
+    QVERIFY(!sent.isEmpty());
+
+    QVERIFY2(sent.startsWith(buildSetPixelFormat(PixelFormat::Rgb332)),
+              "4K desktop must negotiate 8-bit RGB332");
+    QVERIFY2(!sent.contains(buildSetPixelFormat(PixelFormat::Rgb565)),
+              "16-bit SetPixelFormat must not be sent for a 4K desktop");
+    QCOMPARE(session.pixelFormat(), PixelFormat::Rgb332);
+    QCOMPARE(formatSpy.count(), 1);
+    QCOMPARE(session.state(), KvmSession::State::FrameLoop);
+}
+
+void TestKvmSession::ordinaryDesktopKeepsSixteenBitColour()
+{
+    MockServer server;
+    QVERIFY(server.listen());
+
+    RedirectionClient client;
+    client.setProtocol(qumesh::redir::Protocol::Kvm);
+    client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
+
+    KvmSession session(&client);
+    const QByteArray sent =
+        driveHandshakeAndCaptureSetup(server, client, session, 1920, 1080);
+    QVERIFY(!sent.isEmpty());
+
+    QVERIFY2(sent.startsWith(buildSetPixelFormat(PixelFormat::Rgb565)),
+              "1080p must keep 16-bit RGB565");
+    QCOMPARE(session.pixelFormat(), PixelFormat::Rgb565);
+}
+
+void TestKvmSession::oversizedDesktopFailsWithActionableError()
+{
+    // Forcing 16-bit on a 4K desktop is exactly the #433 configuration.
+    // We must refuse it up front with a message naming the limit rather
+    // than writing SetPixelFormat and letting AMT drop the socket — the
+    // firmware's silence is what made this look like a network fault.
+    MockServer server;
+    QVERIFY(server.listen());
+
+    RedirectionClient client;
+    client.setProtocol(qumesh::redir::Protocol::Kvm);
+    client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
+
+    KvmSession session(&client);
+    session.setPreferredPixelFormat(PixelFormat::Rgb565);
+    QSignalSpy closedSpy(&session, &KvmSession::closed);
+
+    const QByteArray sent =
+        driveHandshakeAndCaptureSetup(server, client, session, 3840, 2160,
+                                       /*expectBytes=*/1);
+    QVERIFY(waitFor(2000, [&]() { return closedSpy.count() == 1; }));
+    QCOMPARE(session.state(), KvmSession::State::Failed);
+
+    const QString reason = session.lastError();
+    QVERIFY2(reason.contains(QStringLiteral("3840")), qPrintable(reason));
+    QVERIFY2(reason.contains(QStringLiteral("display")), qPrintable(reason));
+    QVERIFY2(!sent.contains(buildSetPixelFormat(PixelFormat::Rgb565)),
+              "must not ask AMT for a buffer it cannot allocate");
 }
 
 QTEST_MAIN(TestKvmSession)

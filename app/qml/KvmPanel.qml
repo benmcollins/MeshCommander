@@ -33,6 +33,10 @@ Item {
     signal trustedFingerprintPersistRequested(string fingerprint)
     signal trustedSshHostKeyPersistRequested(string fingerprint)
     signal peerCertVerifiedByPin(string fingerprint)
+    /// The operator asked to connect. The host decides *when* that may
+    /// happen — on a consent-gated machine the redirection socket must
+    /// not be opened until AMT has accepted the code (#433).
+    signal connectRequested()
 
     onSshConfigChanged: controller.setSshConfig(root.sshConfig || ({}))
 
@@ -178,7 +182,11 @@ Item {
                     case KvmController.Connecting:     return qsTr("Connecting…");
                     case KvmController.Authenticating: return qsTr("Authenticating…");
                     case KvmController.Negotiating:    return qsTr("Negotiating display…");
-                    case KvmController.Connected:      return qsTr("%1×%2")
+                    case KvmController.Connected:      return controller.eightBitColor
+                                                            ? qsTr("%1×%2 · 8-bit")
+                                                                .arg(controller.desktopWidth)
+                                                                .arg(controller.desktopHeight)
+                                                            : qsTr("%1×%2")
                                                                 .arg(controller.desktopWidth)
                                                                 .arg(controller.desktopHeight);
                     case KvmController.Failed:         return qsTr("Failed: %1").arg(controller.lastError);
@@ -303,6 +311,36 @@ Item {
             }
 
             Button {
+                text: qsTr("Colour ▾")
+                font.family: Type.sans
+                font.pixelSize: Type.sizeS
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Intel AMT's KVM display buffer is limited. "
+                                   + "Desktops above roughly 2560×1600 must use "
+                                   + "8-bit colour; Auto picks for you.")
+                onClicked: depthMenu.popup()
+
+                Menu {
+                    id: depthMenu
+                    MenuItem {
+                        text: controller.colorDepthMode === 0
+                            ? qsTr("● Auto") : qsTr("Auto")
+                        onTriggered: controller.colorDepthMode = 0
+                    }
+                    MenuItem {
+                        text: controller.colorDepthMode === 1
+                            ? qsTr("● 16-bit colour") : qsTr("16-bit colour")
+                        onTriggered: controller.colorDepthMode = 1
+                    }
+                    MenuItem {
+                        text: controller.colorDepthMode === 2
+                            ? qsTr("● 8-bit colour") : qsTr("8-bit colour")
+                        onTriggered: controller.colorDepthMode = 2
+                    }
+                }
+            }
+
+            Button {
                 text: controller.state === KvmController.Disconnected
                       || controller.state === KvmController.Failed
                     ? qsTr("Connect") : qsTr("Disconnect")
@@ -311,7 +349,7 @@ Item {
                 onClicked: {
                     if (controller.state === KvmController.Disconnected
                         || controller.state === KvmController.Failed) {
-                        root.start();
+                        root.connectRequested();
                     } else {
                         controller.close();
                     }

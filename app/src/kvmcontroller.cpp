@@ -131,6 +131,22 @@ void KvmController::trustPendingSshHostKey(bool persist)
     m_sshHost->trustPendingHostKey(persist);
 }
 
+void KvmController::setColorDepthMode(int v)
+{
+    if (v < 0 || v > 2 || v == m_colorDepthMode) return;
+    m_colorDepthMode = v;
+    emit colorDepthChanged();
+}
+
+std::optional<qumesh::kvm::PixelFormat> KvmController::preferredPixelFormat() const
+{
+    switch (m_colorDepthMode) {
+    case 1:  return qumesh::kvm::PixelFormat::Rgb565;
+    case 2:  return qumesh::kvm::PixelFormat::Rgb332;
+    default: return std::nullopt;   // Auto — size it from the desktop.
+    }
+}
+
 void KvmController::open()
 {
     if (m_sshHost != nullptr && m_sshHost->isEnabled() && !m_sshHost->isConnected()) {
@@ -158,6 +174,9 @@ void KvmController::open()
     }
 
     m_session = new KvmSession(m_client, this);
+    m_session->setPreferredPixelFormat(preferredPixelFormat());
+    m_eightBitColor = false;
+    emit colorDepthChanged();
 
     connect(m_client.data(), &RedirectionClient::peerCertVerifiedByPin, this,
             &KvmController::peerCertVerifiedByPin);
@@ -202,6 +221,13 @@ void KvmController::open()
                 setState(State::Failed);
             });
 
+    connect(m_client.data(), &RedirectionClient::remoteClosed, this, [this]() {
+        // A clean peer close after authentication is the end of the
+        // session, not a fault. Only call it a failure if the KVM layer
+        // hasn't already recorded a more specific reason.
+        if (m_lastError.isEmpty()) setState(State::Disconnected);
+    });
+
     connect(m_session.data(), &KvmSession::stateChanged, this,
             [this](KvmSession::State s) {
                 if (s == KvmSession::State::FrameLoop) {
@@ -215,6 +241,11 @@ void KvmController::open()
                 m_framebuffer->resize(w, h);
                 emit desktopResized();
             });
+    connect(m_session.data(), &KvmSession::pixelFormatChanged, this,
+            [this](qumesh::kvm::PixelFormat f) {
+                m_eightBitColor = (f == qumesh::kvm::PixelFormat::Rgb332);
+                emit colorDepthChanged();
+            });
     connect(m_session.data(), &KvmSession::tileUpdated, this,
             [this](int x, int y, const QImage &tile) {
                 m_framebuffer->applyTile(x, y, tile);
@@ -223,6 +254,10 @@ void KvmController::open()
             [this](const QString &reason) {
                 setLastError(reason);
                 setState(State::Failed);
+                // Drop the transport so the firmware releases the KVM
+                // session immediately rather than holding it until the
+                // next connect attempt (#433).
+                if (m_client) m_client->disconnectFromHost();
             });
 
     setLastError({});
@@ -332,6 +367,13 @@ void KvmController::teardown()
     }
     if (m_client) {
         m_client->disconnect(this);
+        // Close the transport *now*, not whenever the deferred delete
+        // is processed. AMT holds the redirection session open for as
+        // long as the socket lives, and `open()` builds the replacement
+        // client synchronously — so without this, a reconnect briefly
+        // holds two sockets to 16994 and the firmware answers the
+        // second one with "busy" (#433).
+        m_client->disconnectFromHost();
         m_client->deleteLater();
         m_client = nullptr;
     }

@@ -141,6 +141,11 @@ signals:
     void authenticated();
     void failed(const QString &error);
 
+    /// The peer closed the stream cleanly after `Authenticated`. This
+    /// is a normal session end, not an error — Qt reports it through
+    /// `errorOccurred` either way, so the distinction is made here.
+    void remoteClosed();
+
     /// Emitted for every chunk of bytes received after `Authenticated`. The
     /// client stops parsing once auth completes; the application protocol
     /// is responsible from there on.
@@ -170,6 +175,10 @@ private:
 
     void setState(State s);
     void fail(QString error);
+
+    /// Turn a socket error into something that names the protocol phase
+    /// AMT hung up in. `err` is a `QAbstractSocket::SocketError`.
+    [[nodiscard]] QString describeSocketFailure(int err, const QString &fallback) const;
 
     /// Build a `PeerCertSummary` from a Qt cert object.
     static PeerCertSummary summarize(const QSslCertificate &cert);

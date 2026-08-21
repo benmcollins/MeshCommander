@@ -245,15 +245,27 @@ struct OptInServiceResult
 {
     bool ok = false;
     QString error;
-    /// Runtime: `true` when a session that requires consent is in
-    /// progress and the operator hasn't yet entered the code AMT
-    /// shows on the target's local screen. Combines `OptInRequired`
-    /// from the firmware (which itself derives from the various
-    /// per-redir policy flags) with the per-firmware-version semantics.
+    /// Policy: `true` when this machine requires user consent for
+    /// redirection at all. Parsed from the firmware's `OptInRequired`,
+    /// which derives from the per-redir policy flags.
+    ///
+    /// This is NOT a progress flag — it does not go false once the
+    /// operator enters the code, and it stays true for the whole life
+    /// of a consent-gated machine. Use `optInState` to decide whether
+    /// consent has been *granted*; testing this field alone will
+    /// re-request consent forever. See #433.
     bool optInRequired = false;
     /// `IPS_OptInService.OptInState`: 0=NotStarted, 1=Requested,
     /// 2=Displayed (code on screen, waiting), 3=Received,
     /// 4=InSession (consent already granted).
+    ///
+    /// Consent is satisfied at **3 or 4**. A successful `SendOptInCode`
+    /// lands on 3 (Received); the firmware only advances to 4
+    /// (InSession) once a redirection session is actually running, so
+    /// code that waits for 4 before proceeding waits forever — and
+    /// code that treats "not 4" as "ask again" revokes the consent the
+    /// operator just gave. The legacy client gates on
+    /// `state != 3 && state != 4` for exactly this reason.
     int optInState = 0;
     /// `true` when the current AMT login has the privilege to flip
     /// the policy. Determines whether the UI offers a Disable button.

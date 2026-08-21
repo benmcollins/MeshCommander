@@ -234,6 +234,24 @@ class MachineDetailsController : public QObject
     /// didn't expose the field. See #171.
     Q_PROPERTY(int optInPolicyTimeoutSec READ optInPolicyTimeoutSec
                    NOTIFY optInStatusChanged)
+    /// True when redirection may proceed: either consent isn't required
+    /// at all, or the firmware has already accepted a code.
+    ///
+    /// AMT reports RECEIVED(3) once `SendOptInCode` succeeds and only
+    /// moves to IN_SESSION(4) once a redirection session is actually
+    /// running, so both count as satisfied. Testing `state != 4` alone
+    /// re-requests consent the instant it is granted — see #433 and the
+    /// reference implementation's `OptInState != 3 && != 4` gate.
+    Q_PROPERTY(bool optInSatisfied READ optInSatisfied NOTIFY optInStatusChanged)
+    /// False until `getOptInStatus` has succeeded once. Callers must
+    /// not infer "consent isn't required" from the default-constructed
+    /// state — that would dial redirection before we know the policy.
+    Q_PROPERTY(bool optInStatusKnown READ optInStatusKnown NOTIFY optInStatusChanged)
+    /// True between `startOptIn()` and the resolution of that round
+    /// (code accepted, cancelled, expired, or the failure cap hit).
+    /// Guards against re-entering the consent dance.
+    Q_PROPERTY(bool optInRoundActive READ optInRoundActive
+                   NOTIFY optInRoundActiveChanged)
 
     // KVM settings (#175) — sit on the same IPS_KVMRedirectionSettingData
     // class as the OptIn fields above, so they ride the same refresh.
@@ -258,6 +276,9 @@ public:
     void setPassword(const QString &v);
     void setTls(bool v);
     void setTrustedFingerprints(QStringList v);
+    /// Point the WSMAN endpoint at an arbitrary port. Tests only —
+    /// production derives 16992/16993 from `tls`.
+    void setPortForTest(quint16 v) { m_portOverride = v; rebuildEndpoint(); }
 
     [[nodiscard]] bool sshTunnelActive() const;
     [[nodiscard]] QString sshTunnelStatus() const { return m_sshTunnelStatus; }
@@ -346,6 +367,12 @@ public:
     [[nodiscard]] bool canModifyOptInPolicy() const { return m_canModifyOptInPolicy; }
     [[nodiscard]] bool kvmOptInPolicy() const { return m_kvmOptInPolicy; }
     [[nodiscard]] int  optInPolicyTimeoutSec() const { return m_optInPolicyTimeoutSec; }
+    [[nodiscard]] bool optInSatisfied() const
+    {
+        return !m_optInRequired || m_optInState == 3 || m_optInState == 4;
+    }
+    [[nodiscard]] bool optInRoundActive() const { return m_optInRoundActive; }
+    [[nodiscard]] bool optInStatusKnown() const { return m_optInStatusKnown; }
     [[nodiscard]] bool kvmIs5900PortEnabled() const { return m_kvmIs5900PortEnabled; }
     [[nodiscard]] int  kvmSessionTimeoutMinutes() const { return m_kvmSessionTimeoutMinutes; }
     [[nodiscard]] bool kvmGreyscaleRequested() const { return m_kvmGreyscaleRequested; }
@@ -751,6 +778,12 @@ public:
     Q_INVOKABLE void sendOptInCode(int code);
     /// Abort a pending opt-in.
     Q_INVOKABLE void cancelOptIn();
+    /// Clear the consecutive-failure counter so a fresh user-initiated
+    /// attempt is allowed after `optInGaveUp`.
+    Q_INVOKABLE void resetOptInAttempts();
+    /// Stop the consent poll timer. Called when the session window
+    /// closes so an abandoned round doesn't keep polling the ME.
+    Q_INVOKABLE void stopOptInPollingNow() { stopOptInPolling(); }
 
     /// CIM power-state codes:
     ///   2  = Power On
@@ -898,6 +931,7 @@ signals:
     void wsmanBrowseResultChanged();
     void systemDefenseChanged();
     void optInStatusChanged();
+    void optInRoundActiveChanged();
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
     /// the realm to modify the policy).
@@ -915,6 +949,14 @@ signals:
     /// screen for firmwares that support that). The PIN-entry modal
     /// should close and the redirection session can proceed.
     void optInGranted();
+    /// A wrong code was rejected but the round is still live — the
+    /// modal should stay open, show `error`, and keep its countdown
+    /// running rather than restarting it.
+    void optInCodeRejected(const QString &error);
+    /// `StartOptIn` failed `kMaxOptInFailures` times in a row. The
+    /// consent dance is abandoned; the caller should surface `error`
+    /// and stop expecting a prompt.
+    void optInGaveUp(const QString &error);
     /// Polling saw `OptInState` drop back to NotStarted/Requested
     /// after we'd seen it Displayed — the target-side operator
     /// either cancelled or the firmware timed the request out. The
@@ -1097,6 +1139,23 @@ private:
     bool m_kvmGreyscaleRequested = false;
     bool m_optInPolling = false;       ///< See `startOptInPolling`.
     QTimer *m_optInPollTimer = nullptr;
+    /// Set while a consent round is outstanding. `startOptIn()` is a
+    /// no-op while true, which breaks the
+    /// startOptIn → refreshOptInStatus → optInStatusChanged → startOptIn
+    /// feedback loop that could otherwise run unbounded against the ME.
+    bool m_optInRoundActive = false;
+    /// Consecutive `StartOptIn` failures. At `kMaxOptInFailures` we stop
+    /// retrying and surface the error instead of hammering the firmware.
+    int m_optInFailures = 0;
+    static constexpr int kMaxOptInFailures = 3;
+    /// Guards `refreshOptInStatus()` against overlapping polls — each
+    /// tick is two chained WSMAN GETs and AMT accepts very few
+    /// concurrent sessions.
+    quint16 m_portOverride = 0;   ///< Tests only; 0 = derive from `tls`.
+    bool m_optInStatusInFlight = false;
+    /// Set once `getOptInStatus` has returned successfully.
+    bool m_optInStatusKnown = false;
+    void setOptInRoundActive(bool v);
 
     void startOptInPolling();
     void stopOptInPolling();

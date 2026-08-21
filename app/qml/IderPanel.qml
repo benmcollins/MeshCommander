@@ -26,9 +26,15 @@ Item {
     signal trustedSshHostKeyPersistRequested(string fingerprint)
     signal peerCertVerifiedByPin(string fingerprint)
 
+    /// The operator asked to mount. The host gates this on user consent
+    /// when the firmware requires it (#433).
+    signal connectRequested()
     onSshConfigChanged: controller.setSshConfig(root.sshConfig || ({}))
 
-    function start() { /* user-driven; mount via the Mount button */ }
+    // Only ever called once the host has cleared user consent — the
+    // Mount button routes through `connectRequested` rather than
+    // opening the redirection socket itself.
+    function start() { controller.open() }
     function stop() { controller.close() }
 
     IderController {
@@ -239,7 +245,7 @@ Item {
                 onClicked: {
                     if (controller.state === IderController.Disconnected
                         || controller.state === IderController.Failed) {
-                        controller.open();
+                        root.connectRequested();
                     } else {
                         controller.close();
                     }

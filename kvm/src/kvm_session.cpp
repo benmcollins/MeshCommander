@@ -52,6 +52,9 @@ void KvmSession::start()
     // The RLE inflate stream's sliding window must be empty at the
     // start of every session.
     m_inflate.reset();
+    // Re-derive the format from the next ServerInit; a previous session
+    // may have dropped to 8-bit for a desktop that has since changed.
+    m_format = PixelFormat::Rgb565;
     m_compressionEnabled = readCompressionEnabled();
     qCInfo(lcKvmSession) << "KVM compression"
                           << (m_compressionEnabled
@@ -134,12 +137,12 @@ bool KvmSession::stepHandshake()
         m_width = info.width;
         m_height = info.height;
         emit desktopResized(m_width, m_height);
-        // Pin the wire to little-endian RGB565 before anything else.
-        // The decoder assumes that format unconditionally; without this
-        // pin, firmwares whose ServerInit advertised a different default
-        // (e.g. 32-bit BGRA) keep sending pixels in that format and the
-        // framebuffer renders black or scrambled.
-        writeFrame(buildSetPixelFormat());
+        // Pin the wire format before anything else. The decoder follows
+        // whatever we pin here; without the pin, firmwares whose
+        // ServerInit advertised a different default (e.g. 32-bit BGRA)
+        // keep sending pixels in that format and the framebuffer renders
+        // black or scrambled (#115).
+        if (!negotiatePixelFormat(m_width, m_height)) return false;
         writeFrame(buildSetEncodings());
         // KvmExtCmd 4 toggles zlib on RLE blocks. We enable it by
         // default — the compressed path has been validated against
@@ -171,7 +174,8 @@ bool KvmSession::stepFrameLoop()
         DecodedRect dr;
         int payloadConsumed = 0;
         const DecodeStatus s = tryDecodeRect(payload, rect, &dr,
-                                              &payloadConsumed, &m_inflate);
+                                              &payloadConsumed, &m_inflate,
+                                              m_format);
         if (s == DecodeStatus::NeedMore) return false;
         if (s == DecodeStatus::UnsupportedEncoding) {
             fail(QStringLiteral("unsupported KVM encoding %1").arg(rect.encoding));
@@ -190,6 +194,17 @@ bool KvmSession::stepFrameLoop()
             m_width = rect.w;
             m_height = rect.h;
             emit desktopResized(m_width, m_height);
+            // A resize changes the display-buffer arithmetic, so the
+            // format that fitted the old desktop may not fit this one.
+            // Re-negotiate before asking for pixels, then force a full
+            // repaint — an incremental request against a
+            // freshly-resized framebuffer leaves the screen stale.
+            if (!negotiatePixelFormat(m_width, m_height)) return false;
+            m_inbox.remove(0, rectConsumed + payloadConsumed);
+            --m_pendingRects;
+            if (m_pendingRects == 0)
+                writeFrame(buildFramebufferUpdateRequest(false, 0, 0, m_width, m_height));
+            return true;
         } else if (!dr.image.isNull()) {
             emit tileUpdated(rect.x, rect.y, dr.image);
         }
@@ -241,6 +256,46 @@ bool KvmSession::stepFrameLoop()
     fail(QStringLiteral("unknown KVM server message 0x%1")
              .arg(tag, 2, 16, QLatin1Char('0')));
     return false;
+}
+
+bool KvmSession::negotiatePixelFormat(int w, int h)
+{
+    if (w <= 0 || h <= 0) return true; // nothing to size yet
+
+    const PixelFormat wanted = m_preferredFormat.value_or(chooseFormatFor(w, h));
+    const qint64 needed = displayBufferBytes(wanted, w, h);
+
+    if (needed > kMaxDisplayBufferBytes) {
+        // No supported format fits. Fail loudly here rather than
+        // writing SetPixelFormat and letting AMT hang up on us — the
+        // firmware gives no error, it just closes the socket, which is
+        // what made #433 look like a network fault.
+        const bool forced = m_preferredFormat.has_value();
+        fail(QStringLiteral(
+                 "The %1×%2 desktop needs %3 MB of Intel AMT KVM display "
+                 "buffer, over the firmware's %4 MB limit%5. Lower the "
+                 "target's resolution%6.")
+                 .arg(w).arg(h)
+                 .arg(needed / 1048576.0, 0, 'f', 1)
+                 .arg(kMaxDisplayBufferBytes / 1048576.0, 0, 'f', 1)
+                 .arg(forced ? QStringLiteral(" at the colour depth you selected")
+                             : QString())
+                 .arg(forced ? QStringLiteral(" or switch colour depth back to Auto")
+                             : QString()));
+        return false;
+    }
+
+    const bool changed = (wanted != m_format);
+    m_format = wanted;
+    qCInfo(lcKvmSession) << "KVM pixel format"
+                          << (wanted == PixelFormat::Rgb565 ? "RGB565 (16-bit)"
+                                                             : "RGB332 (8-bit)")
+                          << "for" << w << "x" << h
+                          << "— display buffer" << needed << "of"
+                          << kMaxDisplayBufferBytes << "bytes";
+    writeFrame(buildSetPixelFormat(m_format));
+    if (changed) emit pixelFormatChanged(m_format);
+    return true;
 }
 
 void KvmSession::requestIncremental()

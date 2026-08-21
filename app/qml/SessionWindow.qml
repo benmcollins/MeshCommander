@@ -39,6 +39,58 @@ AppWindow {
         if (root.visible) root.raise();
     }
 
+    /// Panel index waiting on user consent before it may connect, or -1.
+    /// Redirection is a *precondition* of consent, not a parallel
+    /// activity: dialling 16994 while the firmware is still showing a
+    /// code gets the session torn down when consent finally resolves.
+    property int pendingConnectTab: -1
+
+    /// Advance whichever connect is waiting on consent. Called both
+    /// from `requestConnect` and from every opt-in status change, so a
+    /// status read that lands later still releases the pending panel.
+    /// Safe to call repeatedly — the controller latches a live round.
+    function driveConsent() {
+        if (root.pendingConnectTab < 0) return;
+        if (!powerController.optInStatusKnown) return;
+        if (powerController.optInSatisfied) {
+            root.consentResolved();
+            return;
+        }
+        if (optInPrompt.opened || powerController.optInRoundActive) return;
+        if (powerController.optInState === 2 /* Displayed */) {
+            // A stale round from an earlier window is still on screen.
+            // Tear it down before asking for a fresh code, otherwise
+            // StartOptIn is refused and the operator is left staring at
+            // a code that will never be accepted.
+            powerController.cancelOptIn();
+        }
+        powerController.startOptIn();
+    }
+
+    /// Consent just landed — release whichever panel was waiting on it,
+    /// mirroring the reference client's connect-after-consent step.
+    function consentResolved() {
+        const idx = root.pendingConnectTab;
+        root.pendingConnectTab = -1;
+        if (idx === 0) solPanel.start();
+        else if (idx === 1) kvmPanel.start();
+        else if (idx === 2) iderPanel.start();
+    }
+
+    /// Connect entry point for every panel. Starts immediately when
+    /// consent isn't needed, otherwise defers until it is granted.
+    function requestConnect(idx) {
+        root.pendingConnectTab = idx;
+        powerController.resetOptInAttempts();
+        if (!powerController.optInStatusKnown) {
+            // Never dial before we know the policy — the default state
+            // reads as "no consent required" and would connect blind.
+            powerController.refreshOptInStatus();
+            return;
+        }
+        root.driveConsent();
+    }
+
     width: 1024
     height: 720
     minimumWidth: 640
@@ -75,13 +127,13 @@ AppWindow {
         }
         // Detect that KVM/SOL/IDE-R will be gated by consent and walk
         // the operator through the StartOptIn / SendOptInCode dance.
-        onOptInStatusChanged: {
-            if (powerController.optInRequired
-                && powerController.optInState !== 4 /* InSession */
-                && !optInPrompt.opened) {
-                powerController.startOptIn();
-            }
-        }
+        //
+        // `optInSatisfied` covers both RECEIVED(3) and IN_SESSION(4).
+        // Testing IN_SESSION alone re-requested consent the instant the
+        // operator's code was accepted — AMT only reaches 4 once a
+        // redirection session is live — which revoked the consent and
+        // dropped the session the user had just unlocked (#433).
+        onOptInStatusChanged: root.driveConsent()
         onOptInStarted: function(ok, error) {
             if (ok) optInPrompt.openFor(powerController.optInPolicyTimeoutSec);
             else ActivityHeartbeat.reportFailure(qsTr("User consent: %1").arg(error));
@@ -90,15 +142,23 @@ AppWindow {
             if (ok) {
                 optInPrompt.close();
                 ActivityHeartbeat.reportSuccess();
-            } else {
-                optInPrompt.errorText = qsTr("Code rejected: %1").arg(error);
-                optInPrompt.openFor(powerController.optInPolicyTimeoutSec);
+                root.consentResolved();
             }
+            // The rejected case is handled by onOptInCodeRejected, which
+            // keeps the modal (and its countdown) alive.
+        }
+        onOptInCodeRejected: function(error) {
+            optInPrompt.reprompt(qsTr("Code rejected: %1").arg(error));
+        }
+        onOptInGaveUp: function(error) {
+            optInPrompt.close();
+            ActivityHeartbeat.reportFailure(qsTr("User consent: %1").arg(error));
         }
         // Polling signals from #171.
         onOptInGranted: {
             optInPrompt.close();
             ActivityHeartbeat.reportSuccess();
+            root.consentResolved();
         }
         onOptInExpiredOrDenied: {
             optInPrompt.close();
@@ -140,7 +200,10 @@ AppWindow {
     OptInPrompt {
         id: optInPrompt
         onSubmitted: function(code) { powerController.sendOptInCode(code); }
-        onCancelled: powerController.cancelOptIn()
+        onCancelled: {
+            root.pendingConnectTab = -1;
+            powerController.cancelOptIn();
+        }
     }
 
     CertPinFlash {
@@ -156,6 +219,12 @@ AppWindow {
         solPanel.stop();
         kvmPanel.stop();
         iderPanel.stop();
+        root.pendingConnectTab = -1;
+        // Don't leave the firmware displaying a consent code nobody is
+        // going to type, and don't leave the 500 ms poll running
+        // against the ME after the window is gone.
+        powerController.stopOptInPollingNow();
+        if (powerController.optInRoundActive) powerController.cancelOptIn();
     }
 
     Component.onCompleted: {
@@ -310,6 +379,7 @@ AppWindow {
 
             SolPanel {
                 id: solPanel
+                onConnectRequested: root.requestConnect(0)
                 targetHost: root.targetHost
                 machineName: root.label
                 user: root.user
@@ -327,6 +397,7 @@ AppWindow {
             }
             KvmPanel {
                 id: kvmPanel
+                onConnectRequested: root.requestConnect(1)
                 targetHost: root.targetHost
                 machineName: root.label
                 user: root.user
@@ -344,6 +415,7 @@ AppWindow {
             }
             IderPanel {
                 id: iderPanel
+                onConnectRequested: root.requestConnect(2)
                 targetHost: root.targetHost
                 user: root.user
                 password: root.password

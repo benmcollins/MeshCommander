@@ -12,8 +12,11 @@
 #include <QVariantMap>
 #include <QtQmlIntegration>
 
+#include "kvm/kvm_codec.h"
 #include "kvmframebuffer.h"
 #include "redir/redir_client.h"
+
+#include <optional>
 
 namespace qumesh::kvm {
 class KvmSession;
@@ -51,6 +54,16 @@ class KvmController : public QObject
     Q_PROPERTY(QString pendingCertNotAfter READ pendingCertNotAfter NOTIFY pendingCertChanged)
     Q_PROPERTY(bool awaitingTrust READ awaitingTrust NOTIFY awaitingTrustChanged)
     Q_PROPERTY(bool recording READ isRecording NOTIFY recordingChanged)
+    /// Operator's colour-depth preference: 0 = Auto, 1 = force 16-bit
+    /// RGB565, 2 = force 8-bit RGB332. Auto keeps 16-bit whenever the
+    /// desktop fits inside AMT's KVM display buffer and drops to 8-bit
+    /// when it doesn't — a 4K target needs 8-bit (#433).
+    Q_PROPERTY(int colorDepthMode READ colorDepthMode WRITE setColorDepthMode
+                   NOTIFY colorDepthChanged)
+    /// True when the live session negotiated 8-bit colour. The panel
+    /// shows this so an automatic drop is visible rather than looking
+    /// like a rendering bug.
+    Q_PROPERTY(bool eightBitColor READ eightBitColor NOTIFY colorDepthChanged)
 
     // SSH host-key prompt — see `SshHostKeyTrustDialog.qml`. Bound
     // when the per-machine SSH tunnel encounters an unpinned key.
@@ -144,6 +157,10 @@ public:
     /// call when not recording.
     Q_INVOKABLE void stopRecording();
 
+    [[nodiscard]] int colorDepthMode() const { return m_colorDepthMode; }
+    void setColorDepthMode(int v);
+    [[nodiscard]] bool eightBitColor() const { return m_eightBitColor; }
+
 signals:
     void hostChanged();
     void userChanged();
@@ -170,6 +187,7 @@ signals:
     /// uses it to flash a small "verified" badge.
     void peerCertVerifiedByPin(const QString &fingerprint);
     void recordingChanged();
+    void colorDepthChanged();
 
 private:
     void setState(State s);
@@ -182,6 +200,11 @@ private:
     QString m_password;
     State m_state = State::Disconnected;
     QString m_lastError;
+    /// Translate `m_colorDepthMode` into what KvmSession expects.
+    [[nodiscard]] std::optional<qumesh::kvm::PixelFormat> preferredPixelFormat() const;
+
+    int m_colorDepthMode = 0;   ///< 0 Auto, 1 force 16-bit, 2 force 8-bit.
+    bool m_eightBitColor = false;
     int m_width = 0;
     int m_height = 0;
     bool m_tls = false;
