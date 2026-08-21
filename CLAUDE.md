@@ -31,7 +31,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Run the app: `./build/app/QuMesh.app/Contents/MacOS/QuMesh` (macOS), `build\app\QuMesh.exe` (Windows), or `./build/app/QuMesh-app` (Linux — the `-app` suffix is there so the bare executable doesn't collide with the `build/app/QuMesh/` QML module dir, including on case-insensitive filesystems). Requires Qt 6.6+ with the `Quick`, `QuickControls2`, `Network`, `Svg`, and `Test` modules — install via `brew install qt ninja` (macOS) or `apt install qt6-base-dev qt6-base-dev-tools qt6-declarative-dev qt6-tools-dev libqt6svg6-dev libssh-dev libssl-dev cmake ninja-build` (Debian/Ubuntu). CI uses Qt 6.8.0 across all three platforms.
+Run the app: `./build/app/QuMesh.app/Contents/MacOS/QuMesh` (macOS), `build\app\QuMesh.exe` (Windows), or `./build/app/QuMesh-app` (Linux — the `-app` suffix is there so the bare executable doesn't collide with the `build/app/QuMesh/` QML module dir, including on case-insensitive filesystems). Requires Qt 6.6+ with the `Quick`, `QuickControls2`, `Network`, `Svg`, and `Test` modules — install via `brew install qt ninja` (macOS) or `apt install qt6-base-dev qt6-base-dev-tools qt6-declarative-dev qt6-tools-dev libqt6svg6-dev libssh-dev libssl-dev cmake ninja-build` (Debian/Ubuntu). CI uses Qt 6.9.3 across macOS, Windows, Ubuntu and Debian (amd64 + arm64). Don't drop below 6.9.2 — earlier public builds reference the AGL framework Apple removed from the macOS 26 SDK, which breaks every macOS link (QTBUG-137687). The 6.8 LTS series can't be used: its fixed patch (6.8.4) is commercial-only and open-source mirrors stop at 6.8.3.
 
 ## Legacy MeshCommander persistence (load-bearing for `migrate/`)
 

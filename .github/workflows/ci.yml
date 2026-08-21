@@ -29,7 +29,17 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.8.0'
+          # 6.9.3, not 6.8.x: Apple removed the AGL framework from the
+          # macOS 26 SDK, and Qt's macOS CMake config referenced it
+          # until the fix shipped in 6.5.10 / 6.8.4 / 6.9.2
+          # (QTBUG-137687). On 6.8.0 every macOS job fails at link with
+          # "ld: framework 'AGL' not found".
+          #
+          # The 6.8 series can't be patched into: it's LTS, so 6.8.4 is
+          # commercial-only and open-source mirrors stop at 6.8.3.
+          # 6.9.2 is therefore the earliest public build with the fix;
+          # 6.9.3 is that series' latest patch.
+          version: '6.9.3'
           host: ${{ matrix.qt_host }}
           target: desktop
           arch: ${{ matrix.qt_arch }}
