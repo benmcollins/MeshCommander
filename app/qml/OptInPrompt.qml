@@ -61,6 +61,18 @@ Dialog {
         codeField.forceActiveFocus();
     }
 
+    /// The firmware rejected the code but the consent round is still
+    /// live. Keep the modal and its countdown exactly as they are —
+    /// calling `openFor()` again would wipe `errorText` on entry and
+    /// hand the operator a full fresh timeout the firmware isn't
+    /// honouring.
+    function reprompt(error) {
+        root.errorText = error;
+        codeField.text = "";
+        if (!root.opened) root.open();
+        codeField.forceActiveFocus();
+    }
+
     contentItem: ColumnLayout {
         spacing: 12
 

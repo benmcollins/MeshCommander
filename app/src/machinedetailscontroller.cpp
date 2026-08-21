@@ -265,7 +265,10 @@ void MachineDetailsController::rebuildEndpoint()
     QUrl url;
     url.setScheme(m_tls ? QStringLiteral("https") : QStringLiteral("http"));
     url.setHost(m_host);
-    url.setPort(m_tls ? 16993 : 16992);
+    // AMT WSMAN: 16992 plain / 16993 TLS — fixed by the protocol.
+    // Tests point this at a local fake endpoint; production always
+    // derives from `m_tls`.
+    url.setPort(m_portOverride != 0 ? m_portOverride : (m_tls ? 16993 : 16992));
     url.setPath(QStringLiteral("/wsman"));
     m_client->setEndpoint(url);
     m_client->setCredentials(m_user, m_password);
@@ -562,11 +565,19 @@ void MachineDetailsController::refreshOptInStatus()
     if (deferIfSshConnecting(PendingOverview)) return;
     rebuildEndpoint();
     if (m_host.isEmpty()) return;
+    // Each call is two chained WSMAN GETs on their own connections and
+    // AMT accepts very few concurrent sessions. Under the 500 ms poll a
+    // slow ME would otherwise stack up generations of in-flight
+    // requests until the device stopped answering anything (#433).
+    if (m_optInStatusInFlight) return;
+    m_optInStatusInFlight = true;
     m_pendingTrustResume = [this]{ refreshOptInStatus(); };
     incInflight();
     qumesh::wsman::getOptInStatus(m_client,
         [this](qumesh::wsman::OptInServiceResult r) {
+            m_optInStatusInFlight = false;
             if (r.ok) {
+                m_optInStatusKnown = true;
                 const int prevState = m_optInState;
                 m_optInRequired         = r.optInRequired;
                 m_optInState            = r.optInState;
@@ -583,21 +594,46 @@ void MachineDetailsController::refreshOptInStatus()
                 // operator (Granted → unblock, NotStarted → cancelled
                 // at target).
                 if (m_optInPolling) {
-                    if (m_optInState == 4) { // InSession — consent granted
+                    if (m_optInState == 3 || m_optInState == 4) {
+                        // RECEIVED or IN_SESSION — consent is satisfied.
+                        // Either the code we sent landed, or the operator
+                        // approved at the target on firmware that allows
+                        // it. Both end the round.
                         stopOptInPolling();
+                        setOptInRoundActive(false);
                         emit optInGranted();
                     } else if (prevState >= 2 /* Displayed */
                                && m_optInState <= 1 /* NotStarted/Requested */) {
                         // Target-side operator either cancelled or the
                         // firmware timed out and dropped state back.
                         stopOptInPolling();
+                        setOptInRoundActive(false);
                         emit optInExpiredOrDenied();
                     }
                 }
             }
-            // Soft failure: older AMT firmware doesn't expose these
-            // classes. Leave the previous values in place and let the
-            // UI default to "OptIn: not detected" or similar.
+            else if (!m_optInStatusKnown) {
+                // Soft failure on the FIRST read: older AMT firmware
+                // (<= 5) doesn't expose IPS_OptInService at all, and a
+                // transport hiccup looks identical from here.
+                //
+                // Resolve to "consent not required" and mark the status
+                // known, so callers gated on `optInStatusKnown` proceed
+                // instead of waiting for an answer that will never come.
+                // The reference does the same — a non-200 on the
+                // IPS_OptInService read calls `connectDesktop(true)`,
+                // i.e. connect anyway (Commander.htm:50753). If the
+                // firmware really does want consent it enforces that
+                // itself; the cost of guessing wrong is the pre-#433
+                // behaviour, whereas guessing the other way hangs the
+                // Connect button with no error at all.
+                m_optInStatusKnown = true;
+                m_optInRequired = false;
+                emit optInStatusChanged();
+                emit optInStatusUnavailable(r.error);
+            }
+            // A later failure leaves the previously-read values alone —
+            // a blip must not downgrade a machine we know needs consent.
             decInflight();
         });
 }
@@ -674,13 +710,35 @@ void MachineDetailsController::setKvmServiceEnabled(bool enabled)
 
 void MachineDetailsController::startOptIn()
 {
+    // One consent round at a time. Without this latch,
+    // startOptIn -> refreshOptInStatus -> optInStatusChanged ->
+    // startOptIn is a closed cycle: every round puts a fresh code on
+    // the target's screen and opens more WSMAN connections, and the ME
+    // stops answering long before the operator can type anything (#433).
+    if (m_optInRoundActive) return;
+    if (m_optInFailures >= kMaxOptInFailures) return;
+    setOptInRoundActive(true);
     incInflight();
     qumesh::wsman::startOptIn(m_client,
         [this](qumesh::wsman::InvokeResult r) {
             decInflight();
-            emit optInStarted(r.ok, r.error);
-            if (r.ok) startOptInPolling();
-            refreshOptInStatus();
+            if (r.ok) {
+                m_optInFailures = 0;
+                emit optInStarted(true, QString());
+                startOptInPolling();
+                // Deliberately no refreshOptInStatus() here: the poll
+                // timer already re-reads state, and an extra read on
+                // this path is what closed the retry loop.
+                return;
+            }
+            setOptInRoundActive(false);
+            ++m_optInFailures;
+            emit optInStarted(false, r.error);
+            if (m_optInFailures >= kMaxOptInFailures) {
+                emit optInGaveUp(r.error.isEmpty()
+                                     ? tr("Intel AMT refused to start user consent.")
+                                     : r.error);
+            }
         });
 }
 
@@ -690,21 +748,52 @@ void MachineDetailsController::sendOptInCode(int code)
     qumesh::wsman::sendOptInCode(m_client, static_cast<quint32>(code),
         [this](qumesh::wsman::InvokeResult r) {
             decInflight();
-            emit optInCodeResult(r.ok, r.error);
-            if (r.ok) stopOptInPolling();
-            refreshOptInStatus();
+            if (!r.ok) {
+                // Wrong code: the firmware keeps the round open, so
+                // stay latched and let the operator retype. Re-opening
+                // the modal here would wipe the error and restart the
+                // countdown from the full timeout.
+                emit optInCodeResult(false, r.error);
+                emit optInCodeRejected(r.error);
+                return;
+            }
+            // Accepted. AMT is now at RECEIVED(3) and stays there until
+            // a redirection session actually starts — it does NOT reach
+            // IN_SESSION(4) on its own, so nothing further is pending.
+            stopOptInPolling();
+            m_optInFailures = 0;
+            setOptInRoundActive(false);
+            m_optInState = 3;
+            emit optInStatusChanged();
+            emit optInCodeResult(true, QString());
         });
 }
 
 void MachineDetailsController::cancelOptIn()
 {
     stopOptInPolling();
+    setOptInRoundActive(false);
     incInflight();
     qumesh::wsman::cancelOptIn(m_client,
         [this](qumesh::wsman::InvokeResult) {
             decInflight();
-            refreshOptInStatus();
+            // Reflect the firmware's post-cancel state locally without
+            // re-entering the status read on this path.
+            m_optInState = 0;
+            emit optInStatusChanged();
         });
+}
+
+void MachineDetailsController::setOptInRoundActive(bool v)
+{
+    if (m_optInRoundActive == v) return;
+    m_optInRoundActive = v;
+    emit optInRoundActiveChanged();
+}
+
+void MachineDetailsController::resetOptInAttempts()
+{
+    m_optInFailures = 0;
 }
 
 void MachineDetailsController::startOptInPolling()

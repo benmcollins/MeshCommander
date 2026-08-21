@@ -4,6 +4,7 @@
 #include "redir/redir_client.h"
 
 #include <QCryptographicHash>
+#include <QLoggingCategory>
 #include <QPointer>
 #include <QSslCertificate>
 #include <QSslConfiguration>
@@ -15,6 +16,8 @@
 #else
 #  include <unistd.h>
 #endif
+
+Q_LOGGING_CATEGORY(lcRedirClient, "qumesh.redir.client")
 
 namespace qumesh::redir {
 
@@ -33,6 +36,23 @@ QString describe(StartSessionStatus s)
         return QStringLiteral("device reported an unknown error");
     }
     return QStringLiteral("unknown status %1").arg(static_cast<int>(s));
+}
+
+const char *stateName(RedirectionClient::State s)
+{
+    switch (s) {
+    case RedirectionClient::State::Disconnected:   return "Disconnected";
+    case RedirectionClient::State::Connecting:     return "Connecting";
+    case RedirectionClient::State::SelectorSent:   return "SelectorSent";
+    case RedirectionClient::State::SessionOpened:  return "SessionOpened";
+    case RedirectionClient::State::AuthQuerying:   return "AuthQuerying";
+    case RedirectionClient::State::AuthChallenging:return "AuthChallenging";
+    case RedirectionClient::State::AuthResponding: return "AuthResponding";
+    case RedirectionClient::State::KvmStarting:    return "KvmStarting";
+    case RedirectionClient::State::Authenticated:  return "Authenticated";
+    case RedirectionClient::State::Failed:         return "Failed";
+    }
+    return "?";
 }
 
 } // namespace
@@ -356,7 +376,50 @@ void RedirectionClient::drainInbox()
 
 void RedirectionClient::handleSocketError()
 {
-    fail(m_socket->errorString());
+    const QAbstractSocket::SocketError err = m_socket->error();
+    // A peer-initiated close is RemoteHostClosedError, which Qt reports
+    // through errorOccurred even when it is the normal end of a
+    // session. Distinguish the two: after `Authenticated` the
+    // application protocol owns the stream and its own failure reason
+    // (already recorded) is far more useful than the socket string.
+    if (err == QAbstractSocket::RemoteHostClosedError
+        && m_state == State::Authenticated) {
+        qCInfo(lcRedirClient) << "peer closed the redirection stream after"
+                               << "authentication";
+        setState(State::Disconnected);
+        emit remoteClosed();
+        return;
+    }
+    qCWarning(lcRedirClient) << "socket error in state" << stateName(m_state)
+                              << ":" << m_socket->errorString();
+    fail(describeSocketFailure(err, m_socket->errorString()));
+}
+
+QString RedirectionClient::describeSocketFailure(int err, const QString &fallback) const
+{
+    // The generic Qt strings ("The remote host closed the connection")
+    // tell the operator nothing about *which* step AMT rejected, and
+    // the redirection phase is the single most useful clue when
+    // diagnosing a firmware-side refusal. See #433.
+    if (err != QAbstractSocket::RemoteHostClosedError) return fallback;
+    switch (m_state) {
+    case State::Connecting:
+    case State::SelectorSent:
+        return tr("Intel AMT closed the connection during redirection setup. "
+                  "The redirection service may be disabled on the target.");
+    case State::SessionOpened:
+    case State::AuthQuerying:
+    case State::AuthChallenging:
+    case State::AuthResponding:
+        return tr("Intel AMT closed the connection during authentication. "
+                  "Check the AMT username and password.");
+    case State::KvmStarting:
+        return tr("Intel AMT closed the connection when starting the KVM "
+                  "stream. This usually means user consent has not been "
+                  "granted, or KVM redirection is disabled on the target.");
+    default:
+        return fallback;
+    }
 }
 
 void RedirectionClient::handleEncrypted()
@@ -414,6 +477,11 @@ void RedirectionClient::setState(State s)
 void RedirectionClient::fail(QString error)
 {
     m_lastError = std::move(error);
+    // Close the transport before announcing the failure. AMT keeps the
+    // redirection session allocated for as long as the TCP connection
+    // is alive, and a half-open socket makes every subsequent connect
+    // fail with "device is busy" (#433).
+    if (m_socket != nullptr) m_socket->abort();
     setState(State::Failed);
     emit failed(m_lastError);
 }

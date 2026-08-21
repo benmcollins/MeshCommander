@@ -89,6 +89,15 @@ private slots:
     void inflateStreamPreservesWindowAcrossBlocks();
     void decodeRlePackedPalette1Bit();
     void decodeRlePaletteRleWithRuns();
+    // #433 — 8-bit RGB332 and the AMT display-buffer ceiling.
+    void rgb332ToArgbBoundaries();
+    void buildSetPixelFormat8BitMatchesReference();
+    void chooseFormatHonoursDisplayBufferCeiling();
+    void decodeRaw8Bit();
+    void decodeRleSolid8Bit();
+    void decodeRleSingleColorRun8Bit();
+    void decodeRlePackedPalette8Bit();
+    void decodeRlePaletteRle8Bit();
 };
 
 void TestKvmCodec::rgb565ToArgbBoundaries()
@@ -144,10 +153,10 @@ void TestKvmCodec::parseServerInitWithName()
 void TestKvmCodec::buildSetPixelFormatPinsRgb565()
 {
     // Locking the exact 20-byte wire matters: a single bad byte would
-    // break KVM on every machine. The decoder unconditionally treats
-    // pixels as little-endian RGB565, so the format we send must match
-    // that assumption exactly.
-    const QByteArray got = buildSetPixelFormat();
+    // break KVM on every machine. The decoder treats pixels as
+    // little-endian RGB565 whenever this format is negotiated, so the
+    // bytes we send must match that assumption exactly.
+    const QByteArray got = buildSetPixelFormat(PixelFormat::Rgb565);
     QCOMPARE(got.size(), 20);
 
     QByteArray want;
@@ -562,6 +571,219 @@ void TestKvmCodec::decodeRlePaletteRleWithRuns()
     for (int x = 0; x < 4; ++x) QCOMPARE(dr.image.pixel(x, 1), red);
     for (int x = 0; x < 4; ++x) QCOMPARE(dr.image.pixel(x, 2), blue);
     for (int x = 0; x < 4; ++x) QCOMPARE(dr.image.pixel(x, 3), blue);
+}
+
+// --- #433: 8-bit RGB332 support -------------------------------------
+//
+// AMT's KVM display buffer is capped at 9,216,000 bytes. A 4K desktop
+// needs 16.6 MB at 16-bit but only 8.3 MB at 8-bit, so 8-bit is the
+// only way to drive one — the firmware silently drops the redirection
+// connection rather than reporting the overflow.
+
+namespace {
+
+/// Wrap `inner` (subencoding byte + body) in the uncompressed-ZLib
+/// marker framing an RLE rect uses, and prepend the u32 dataLen.
+QByteArray wrapUncompressedRle(const QByteArray &inner)
+{
+    const quint32 dataLen = static_cast<quint32>(5 + inner.size());
+    QByteArray payload;
+    payload.append(be32(dataLen));
+    payload.append(char(0x00));
+    payload.append(le16(static_cast<quint16>(inner.size())));
+    payload.append(char(0x00));
+    payload.append(char(0x00));
+    payload.append(inner);
+    return payload;
+}
+
+} // namespace
+
+void TestKvmCodec::rgb332ToArgbBoundaries()
+{
+    QCOMPARE(rgb332ToArgb(0x00), quint32(0xFF000000));
+    QCOMPARE(rgb332ToArgb(0xFF), quint32(0xFFFFFFFF));  // must reach true white
+    QCOMPARE(rgb332ToArgb(0xE0), quint32(0xFFFF0000));  // pure red
+    QCOMPARE(rgb332ToArgb(0x1C), quint32(0xFF00FF00));  // pure green
+    QCOMPARE(rgb332ToArgb(0x03), quint32(0xFF0000FF));  // pure blue
+}
+
+void TestKvmCodec::buildSetPixelFormat8BitMatchesReference()
+{
+    // Byte-for-byte the legacy client's RLE8 SetPixelFormat
+    // (Commander.htm:35714): 8bpp / depth 8, little-endian, true-colour,
+    // max 7/7/3, shift 5/2/0.
+    const QByteArray got = buildSetPixelFormat(PixelFormat::Rgb332);
+    QCOMPARE(got.size(), 20);
+
+    QByteArray want;
+    want.append(char(0x00));      // msg type SetPixelFormat
+    want.append(char(0x00));      // padding
+    want.append(char(0x00));
+    want.append(char(0x00));
+    want.append(char(8));         // bpp
+    want.append(char(8));         // depth
+    want.append(char(0));         // big-endian = false
+    want.append(char(1));         // true-colour = true
+    want.append(be16(7));         // red-max
+    want.append(be16(7));         // green-max
+    want.append(be16(3));         // blue-max
+    want.append(char(5));         // red-shift
+    want.append(char(2));         // green-shift
+    want.append(char(0));         // blue-shift
+    want.append(char(0x00));      // padding
+    want.append(char(0x00));
+    want.append(char(0x00));
+    QCOMPARE(got, want);
+}
+
+void TestKvmCodec::chooseFormatHonoursDisplayBufferCeiling()
+{
+    QCOMPARE(kMaxDisplayBufferBytes, Q_INT64_C(9216000));
+
+    // Ordinary desktops keep 16-bit colour.
+    QCOMPARE(chooseFormatFor(1024, 768),  PixelFormat::Rgb565);
+    QCOMPARE(chooseFormatFor(1920, 1080), PixelFormat::Rgb565);
+    QCOMPARE(chooseFormatFor(2560, 1440), PixelFormat::Rgb565);
+
+    // Exactly at the ceiling still fits: 2560x1800x2 == 9,216,000.
+    QCOMPARE(displayBufferBytes(PixelFormat::Rgb565, 2560, 1800),
+             kMaxDisplayBufferBytes);
+    QCOMPARE(chooseFormatFor(2560, 1800), PixelFormat::Rgb565);
+
+    // One pixel row over drops to 8-bit.
+    QCOMPARE(chooseFormatFor(2560, 1801), PixelFormat::Rgb332);
+
+    // The reporter's 4K target: 16-bit is 1.8x over, 8-bit fits.
+    QCOMPARE(chooseFormatFor(3840, 2160), PixelFormat::Rgb332);
+    QCOMPARE(displayBufferBytes(PixelFormat::Rgb565, 3840, 2160),
+             Q_INT64_C(16588800));
+    QVERIFY(displayBufferBytes(PixelFormat::Rgb332, 3840, 2160)
+            <= kMaxDisplayBufferBytes);
+
+    // Beyond 9,216,000 pixels no format can fit, and the caller is
+    // expected to notice rather than let AMT hang up.
+    QVERIFY(displayBufferBytes(chooseFormatFor(7680, 4320), 7680, 4320)
+            > kMaxDisplayBufferBytes);
+}
+
+void TestKvmCodec::decodeRaw8Bit()
+{
+    RectHeader rect;
+    rect.x = 0; rect.y = 0; rect.w = 2; rect.h = 2;
+    rect.encoding = EncRaw;
+
+    // One byte per pixel: red, green, blue, white.
+    QByteArray payload;
+    payload.append(char(0xE0));
+    payload.append(char(0x1C));
+    payload.append(char(0x03));
+    payload.append(char(0xFF));
+
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(payload, rect, &dr, &consumed, nullptr,
+                            PixelFormat::Rgb332),
+             DecodeStatus::Ok);
+    QCOMPARE(consumed, 4);            // half of what RGB565 would consume
+    QCOMPARE(dr.image.pixel(0, 0), QRgb(0xFFFF0000));
+    QCOMPARE(dr.image.pixel(1, 0), QRgb(0xFF00FF00));
+    QCOMPARE(dr.image.pixel(0, 1), QRgb(0xFF0000FF));
+    QCOMPARE(dr.image.pixel(1, 1), QRgb(0xFFFFFFFF));
+}
+
+void TestKvmCodec::decodeRleSolid8Bit()
+{
+    RectHeader rect;
+    rect.w = 4; rect.h = 4;
+    rect.encoding = EncRle;
+
+    QByteArray inner;
+    inner.append(char(0x01));   // subencoding: solid
+    inner.append(char(0xE0));   // red, one byte in 8-bit mode
+
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(wrapUncompressedRle(inner), rect, &dr, &consumed,
+                            nullptr, PixelFormat::Rgb332),
+             DecodeStatus::Ok);
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x)
+            QCOMPARE(dr.image.pixel(x, y), QRgb(0xFFFF0000));
+}
+
+void TestKvmCodec::decodeRleSingleColorRun8Bit()
+{
+    RectHeader rect;
+    rect.w = 4; rect.h = 1;
+    rect.encoding = EncRle;
+
+    // subenc 128: colour byte + run-length bytes (run = 1 + sum).
+    QByteArray inner;
+    inner.append(char(char(128)));
+    inner.append(char(0xE0)); inner.append(char(1));   // red x2
+    inner.append(char(0x03)); inner.append(char(1));   // blue x2
+
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(wrapUncompressedRle(inner), rect, &dr, &consumed,
+                            nullptr, PixelFormat::Rgb332),
+             DecodeStatus::Ok);
+    QCOMPARE(dr.image.pixel(0, 0), QRgb(0xFFFF0000));
+    QCOMPARE(dr.image.pixel(1, 0), QRgb(0xFFFF0000));
+    QCOMPARE(dr.image.pixel(2, 0), QRgb(0xFF0000FF));
+    QCOMPARE(dr.image.pixel(3, 0), QRgb(0xFF0000FF));
+}
+
+void TestKvmCodec::decodeRlePackedPalette8Bit()
+{
+    RectHeader rect;
+    rect.w = 8; rect.h = 1;
+    rect.encoding = EncRle;
+
+    // subenc 2 => 2 palette entries (1 byte each here), 1 bit per pixel.
+    QByteArray inner;
+    inner.append(char(2));
+    inner.append(char(0xE0));   // palette[0] red
+    inner.append(char(0x03));   // palette[1] blue
+    inner.append(char(0xAA));   // 10101010
+
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(wrapUncompressedRle(inner), rect, &dr, &consumed,
+                            nullptr, PixelFormat::Rgb332),
+             DecodeStatus::Ok);
+    for (int x = 0; x < 8; ++x) {
+        QCOMPARE(dr.image.pixel(x, 0),
+                 QRgb((x % 2 == 0) ? 0xFF0000FF : 0xFFFF0000));
+    }
+}
+
+void TestKvmCodec::decodeRlePaletteRle8Bit()
+{
+    RectHeader rect;
+    rect.w = 4; rect.h = 1;
+    rect.encoding = EncRle;
+
+    // subenc 130 => 2 palette entries, then index bytes; bit 7 marks a run.
+    QByteArray inner;
+    inner.append(char(char(130)));
+    inner.append(char(0xE0));   // palette[0] red
+    inner.append(char(0x03));   // palette[1] blue
+    inner.append(char(0x80));   // index 0, run flag
+    inner.append(char(1));      // run = 1 + 1 = 2 red
+    inner.append(char(0x81));   // index 1, run flag
+    inner.append(char(1));      // run = 2 blue
+
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(wrapUncompressedRle(inner), rect, &dr, &consumed,
+                            nullptr, PixelFormat::Rgb332),
+             DecodeStatus::Ok);
+    QCOMPARE(dr.image.pixel(0, 0), QRgb(0xFFFF0000));
+    QCOMPARE(dr.image.pixel(1, 0), QRgb(0xFFFF0000));
+    QCOMPARE(dr.image.pixel(2, 0), QRgb(0xFF0000FF));
+    QCOMPARE(dr.image.pixel(3, 0), QRgb(0xFF0000FF));
 }
 
 QTEST_GUILESS_MAIN(TestKvmCodec)

@@ -63,12 +63,58 @@ enum Encoding : qint32 {
 };
 
 /// Parsed ServerInit: width, height, plus the desktop name. The pixel
-/// format fields are deliberately discarded — we negotiate RGB565 below.
+/// format fields are deliberately discarded — we pin the format
+/// ourselves via `buildSetPixelFormat` (see `PixelFormat`).
 struct ServerInit {
     quint16 width  = 0;
     quint16 height = 0;
     QString name;
 };
+
+/// Wire pixel format we ask AMT for. The decoder is parameterised on
+/// this: `bytesPerPixel()` drives every payload-length calculation and
+/// palette-entry width in the RLE paths.
+///
+/// AMT's KVM display buffer is capped at `kMaxDisplayBufferBytes`; the
+/// firmware silently drops the redirection connection when
+/// `bytesPerPixel × width × height` exceeds it. 16-bit therefore tops
+/// out around 2560×1600, and anything larger — a 4K desktop most
+/// notably — must use 8-bit. See `chooseFormatFor()`.
+enum class PixelFormat {
+    Rgb565,   ///< 16 bpp, 2 bytes/pixel. Best colour, half the headroom.
+    Rgb332,   ///< 8 bpp, 1 byte/pixel. What legacy MeshCommander ships
+              ///< by default ("RLE8"), and the only way to drive 4K.
+};
+
+/// Bytes each pixel (and each RLE palette entry) occupies on the wire.
+constexpr int bytesPerPixel(PixelFormat f)
+{
+    return f == PixelFormat::Rgb565 ? 2 : 1;
+}
+
+/// Intel AMT's hard ceiling on the KVM display buffer, in bytes
+/// (1920×1200×4). Exceeding it makes the firmware hang up mid-session
+/// rather than report an error. The legacy client encodes the same
+/// constant — Commander.htm:35750, disconnect code 50002.
+constexpr qint64 kMaxDisplayBufferBytes = 9216000;
+
+/// Bytes AMT will allocate for a `w × h` desktop at format `f`.
+constexpr qint64 displayBufferBytes(PixelFormat f, int w, int h)
+{
+    return static_cast<qint64>(bytesPerPixel(f)) * w * h;
+}
+
+/// Pick the richest pixel format that keeps `w × h` inside AMT's
+/// display-buffer ceiling. Returns Rgb565 when it fits, otherwise
+/// Rgb332. Callers must still check `displayBufferBytes()` against
+/// `kMaxDisplayBufferBytes` — a desktop can be too large even for
+/// 8-bit (beyond 9,216,000 pixels), which no format can rescue.
+constexpr PixelFormat chooseFormatFor(int w, int h)
+{
+    return displayBufferBytes(PixelFormat::Rgb565, w, h) <= kMaxDisplayBufferBytes
+               ? PixelFormat::Rgb565
+               : PixelFormat::Rgb332;
+}
 
 /// Parsed FramebufferUpdate header.
 struct FrameUpdateHeader {
@@ -142,13 +188,18 @@ bool tryParseServerInit(QByteArrayView buffer, ServerInit *info, int *consumed);
 
 // --- Initial outbound configuration ---------------------------------
 
-/// Build SetPixelFormat (RFB message 0) locking the server into the
-/// little-endian RGB565 our decoder assumes. Without this, AMT firmware
-/// whose default ServerInit pixel format isn't already RGB565 — varies
-/// by firmware build and last negotiated state — sends raw bytes the
-/// decoder mis-interprets, producing a black or scrambled framebuffer.
-/// Sent immediately after ServerInit and before SetEncodings.
-QByteArray buildSetPixelFormat();
+/// Build SetPixelFormat (RFB message 0) locking the server into `f`.
+/// Without this, AMT firmware whose default ServerInit pixel format
+/// isn't already the one we decode — varies by firmware build and last
+/// negotiated state — sends raw bytes the decoder mis-interprets,
+/// producing a black or scrambled framebuffer (#115). Sent immediately
+/// after ServerInit and before SetEncodings.
+///
+/// The format is not a free choice: it decides how much display buffer
+/// AMT allocates, and asking for more than `kMaxDisplayBufferBytes`
+/// makes the firmware drop the connection (#433). Pick it with
+/// `chooseFormatFor()` rather than hard-coding.
+QByteArray buildSetPixelFormat(PixelFormat f);
 
 /// Build SetEncodings with the encodings we support. AMT requires RAW
 /// to always be present; we add RLE and DesktopSize.
@@ -203,17 +254,30 @@ enum class DecodeStatus {
 /// pixels into `out->image` and sets `*consumed` to the number of
 /// payload bytes used.
 ///
-/// Supported encodings (bpp=2 / RGB565):
+/// `format` must match what was last sent via `buildSetPixelFormat` —
+/// it sets the width of both raw pixels and RLE palette entries, so a
+/// mismatch desynchronises the stream rather than merely discolouring
+/// it.
+///
+/// Supported encodings:
 ///   - 0 (RAW)
-///   - 16 (RLE), subencodings 0, 1, 128. The uncompressed-ZLib-marker
-///     path requires no inflate state. Compressed blocks decode when a
-///     non-null `InflateStream*` is supplied.
+///   - 16 (RLE), subencodings 0, 1, 2…16, 128, 130+. The
+///     uncompressed-ZLib-marker path requires no inflate state.
+///     Compressed blocks decode when a non-null `InflateStream*` is
+///     supplied.
 ///   - 0xFFFFFF21 (DesktopSize) — returns isDesktopSize=true, no image.
 DecodeStatus tryDecodeRect(QByteArrayView payload, const RectHeader &rect,
                             DecodedRect *out, int *consumed,
-                            InflateStream *inflate = nullptr);
+                            InflateStream *inflate = nullptr,
+                            PixelFormat format = PixelFormat::Rgb565);
 
 /// Helper: convert an RGB565 u16 into a 32-bit ARGB pixel.
 quint32 rgb565ToArgb(quint16 v);
+
+/// Helper: convert an RGB332 u8 into a 32-bit ARGB pixel. Each channel
+/// is expanded to the full 0–255 range rather than left-shifted, so an
+/// all-ones component reads as pure white instead of the legacy
+/// client's slightly dim 0xE0.
+quint32 rgb332ToArgb(quint8 v);
 
 } // namespace qumesh::kvm

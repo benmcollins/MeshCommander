@@ -33,6 +33,9 @@ Item {
     signal trustedSshHostKeyPersistRequested(string fingerprint)
     signal peerCertVerifiedByPin(string fingerprint)
 
+    /// The operator asked to connect. The host gates this on user
+    /// consent when the firmware requires it (#433).
+    signal connectRequested()
     onSshConfigChanged: controller.setSshConfig(root.sshConfig || ({}))
     onVisibleChanged: if (visible) term.forceActiveFocus()
     Component.onCompleted: if (visible) term.forceActiveFocus()
@@ -239,7 +242,7 @@ Item {
                 onClicked: {
                     if (controller.state === SolController.Disconnected
                         || controller.state === SolController.Failed) {
-                        root.start();
+                        root.connectRequested();
                     } else {
                         controller.close();
                     }

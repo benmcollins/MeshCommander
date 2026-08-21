@@ -74,7 +74,6 @@ constexpr int kVersionMessageSize = 12;
 constexpr int kSecurityResultSize = 4;
 constexpr int kServerInitFixedSize = 24;
 constexpr int kRectHeaderSize = 12;
-constexpr int kBytesPerPixel = 2; // RGB565
 
 QByteArray pack16Be(quint16 v)
 {
@@ -115,6 +114,18 @@ quint32 rgb565ToArgb(quint16 v)
     const quint32 r = (v >> 8) & 0xF8;
     const quint32 g = (v >> 3) & 0xFC;
     const quint32 b = (v & 0x1F) << 3;
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
+quint32 rgb332ToArgb(quint8 v)
+{
+    // 3/3/2 bits expanded across the full 0-255 range. The legacy
+    // client simply masked (r = v & 0xE0), which caps white at 0xE0E0C0
+    // and visibly greys the desktop; scaling by 255/max is the same
+    // cost and actually reaches white.
+    const quint32 r = ((v >> 5) & 0x07) * 255u / 7u;
+    const quint32 g = ((v >> 2) & 0x07) * 255u / 7u;
+    const quint32 b = (v & 0x03) * 255u / 3u;
     return 0xFF000000u | (r << 16) | (g << 8) | b;
 }
 
@@ -177,25 +188,31 @@ bool tryParseServerInit(QByteArrayView buffer, ServerInit *info, int *consumed)
 
 // --- Initial outbound configuration ---------------------------------
 
-QByteArray buildSetPixelFormat()
+QByteArray buildSetPixelFormat(PixelFormat f)
 {
-    // RFB SetPixelFormat: 20 bytes total. Pins the server to little-endian
-    // RGB565 so the decoder's hard-coded bpp=2 / mask math is correct
-    // regardless of what the firmware advertised in ServerInit.
+    // RFB SetPixelFormat: 20 bytes total. Pins the server to the
+    // little-endian format the decoder is about to assume, regardless
+    // of what the firmware advertised in ServerInit (#115).
+    //
+    // The 8-bit variant is byte-for-byte the legacy client's "RLE8"
+    // mode (Commander.htm:35714) — that is the mode MeshCommander
+    // ships by default, and the only one that fits a 4K desktop inside
+    // AMT's display-buffer ceiling (#433).
+    const bool wide = (f == PixelFormat::Rgb565);
     QByteArray b;
     b.append(char(MsgSetPixelFormat));         // 0x00
     b.append(char(0x00));                       // padding
     b.append(char(0x00));
     b.append(char(0x00));
-    b.append(char(16));                         // bits-per-pixel
-    b.append(char(16));                         // depth
+    b.append(char(wide ? 16 : 8));              // bits-per-pixel
+    b.append(char(wide ? 16 : 8));              // depth
     b.append(char(0));                          // big-endian-flag (little)
     b.append(char(1));                          // true-colour-flag
-    b.append(pack16Be(31));                     // red-max  (0xF800 >> 11)
-    b.append(pack16Be(63));                     // green-max (0x07E0 >> 5)
-    b.append(pack16Be(31));                     // blue-max  (0x001F)
-    b.append(char(11));                         // red-shift
-    b.append(char(5));                          // green-shift
+    b.append(pack16Be(wide ? 31 : 7));          // red-max
+    b.append(pack16Be(wide ? 63 : 7));          // green-max
+    b.append(pack16Be(wide ? 31 : 3));          // blue-max
+    b.append(char(wide ? 11 : 5));              // red-shift
+    b.append(char(wide ? 5 : 2));               // green-shift
     b.append(char(0));                          // blue-shift
     b.append(char(0x00));                       // padding
     b.append(char(0x00));
@@ -318,17 +335,23 @@ QImage makeArgbImage(int w, int h, const quint32 *argb)
 }
 
 DecodeStatus decodeRaw(QByteArrayView payload, const RectHeader &rect,
-                        QImage *out, int *consumed)
+                        QImage *out, int *consumed, PixelFormat format)
 {
-    const int needed = rect.w * rect.h * kBytesPerPixel;
+    const int bpp = bytesPerPixel(format);
+    const int pixels = rect.w * rect.h;
+    const int needed = pixels * bpp;
     if (payload.size() < needed) return DecodeStatus::NeedMore;
 
-    QVector<quint32> argb(rect.w * rect.h);
+    QVector<quint32> argb(pixels);
     const unsigned char *p = reinterpret_cast<const unsigned char *>(payload.data());
-    for (int i = 0; i < rect.w * rect.h; ++i) {
-        const quint16 v = static_cast<quint16>(p[0]) | (static_cast<quint16>(p[1]) << 8);
-        argb[i] = rgb565ToArgb(v);
-        p += 2;
+    if (bpp == 2) {
+        for (int i = 0; i < pixels; ++i) {
+            const quint16 v = static_cast<quint16>(p[0]) | (static_cast<quint16>(p[1]) << 8);
+            argb[i] = rgb565ToArgb(v);
+            p += 2;
+        }
+    } else {
+        for (int i = 0; i < pixels; ++i) argb[i] = rgb332ToArgb(*p++);
     }
     *out = makeArgbImage(rect.w, rect.h, argb.constData());
     *consumed = needed;
@@ -337,8 +360,8 @@ DecodeStatus decodeRaw(QByteArrayView payload, const RectHeader &rect,
 
 /// Decode RLE-encoded tile data. Returns true on success and writes
 /// the decoded pixels into `argb`. Subencodings handled:
-///   * 0          — RAW pixels (s × RGB565).
-///   * 1          — solid colour (1 × RGB565).
+///   * 0          — RAW pixels (s × one wire pixel).
+///   * 1          — solid colour (1 × one wire pixel).
 ///   * 2 … 16     — packed palette: subenc palette entries followed by
 ///                  packed pixel indices (1 / 2 / 4 bits per pixel).
 ///   * 128        — single-colour RLE.
@@ -347,36 +370,43 @@ DecodeStatus decodeRaw(QByteArrayView payload, const RectHeader &rect,
 ///                  next byte(s) extend the run (255 = continue).
 /// `data` is the inner payload AFTER the 1-byte subencoding byte.
 bool decodeRleInner(QByteArrayView data, quint8 subenc,
-                     const RectHeader &rect, QVector<quint32> *argb)
+                     const RectHeader &rect, QVector<quint32> *argb,
+                     PixelFormat format)
 {
     argb->resize(rect.w * rect.h);
     const int s = rect.w * rect.h;
+    const int bpp = bytesPerPixel(format);
     const unsigned char *p = reinterpret_cast<const unsigned char *>(data.data());
     const unsigned char *end = p + data.size();
 
-    auto pull2 = [&](quint16 *out) -> bool {
-        if (end - p < 2) return false;
-        *out = static_cast<quint16>(p[0]) | (static_cast<quint16>(p[1]) << 8);
-        p += 2;
+    // Pull one wire pixel — 2 bytes little-endian RGB565 or 1 byte
+    // RGB332 — and expand it to ARGB. Palette entries use the same
+    // width as pixels, so this is the single place the format matters.
+    auto pullPixel = [&](quint32 *out) -> bool {
+        if (end - p < bpp) return false;
+        if (bpp == 2) {
+            *out = rgb565ToArgb(static_cast<quint16>(p[0])
+                                | (static_cast<quint16>(p[1]) << 8));
+        } else {
+            *out = rgb332ToArgb(*p);
+        }
+        p += bpp;
         return true;
     };
 
     if (subenc == 0) {
         // RAW pixels inside the RLE block (one tile).
-        if ((end - p) < s * kBytesPerPixel) return false;
+        if ((end - p) < s * bpp) return false;
         for (int i = 0; i < s; ++i) {
-            quint16 v;
-            if (!pull2(&v)) return false;
-            (*argb)[i] = rgb565ToArgb(v);
+            if (!pullPixel(&(*argb)[i])) return false;
         }
         return true;
     }
 
     if (subenc == 1) {
-        // Solid color — one RGB565 pixel applied to the whole tile.
-        quint16 v;
-        if (!pull2(&v)) return false;
-        const quint32 c = rgb565ToArgb(v);
+        // Solid color — one pixel applied to the whole tile.
+        quint32 c;
+        if (!pullPixel(&c)) return false;
         for (int i = 0; i < s; ++i) (*argb)[i] = c;
         return true;
     }
@@ -386,9 +416,7 @@ bool decodeRleInner(QByteArrayView data, quint8 subenc,
         // following bytes pack 1/2/4-bit indices MSB-first.
         QVector<quint32> palette(subenc);
         for (int i = 0; i < subenc; ++i) {
-            quint16 v;
-            if (!pull2(&v)) return false;
-            palette[i] = rgb565ToArgb(v);
+            if (!pullPixel(&palette[i])) return false;
         }
         int br, bm;
         if (subenc == 2)       { br = 1; bm = 0x01; } // 1bpp, 8 px/byte
@@ -410,9 +438,8 @@ bool decodeRleInner(QByteArrayView data, quint8 subenc,
         // bytes; 255 means continue).
         int i = 0;
         while (i < s) {
-            quint16 v;
-            if (!pull2(&v)) return false;
-            const quint32 c = rgb565ToArgb(v);
+            quint32 c;
+            if (!pullPixel(&c)) return false;
 
             int run = 1;
             for (;;) {
@@ -437,9 +464,7 @@ bool decodeRleInner(QByteArrayView data, quint8 subenc,
         const int pSize = subenc - 128;
         QVector<quint32> palette(pSize);
         for (int i = 0; i < pSize; ++i) {
-            quint16 v;
-            if (!pull2(&v)) return false;
-            palette[i] = rgb565ToArgb(v);
+            if (!pullPixel(&palette[i])) return false;
         }
 
         int i = 0;
@@ -469,7 +494,7 @@ bool decodeRleInner(QByteArrayView data, quint8 subenc,
 
 DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
                         QImage *out, int *consumed,
-                        InflateStream *inflate)
+                        InflateStream *inflate, PixelFormat format)
 {
     // Encoding layout: u32 dataLen, then dataLen bytes which begin with
     // either a "ZLib uncompressed" marker [0x00, u16 len, padding] or a
@@ -499,7 +524,7 @@ DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
         const quint8 sub = static_cast<unsigned char>(block[5]);
         QByteArrayView inner = block.sliced(6, dataLen - 6);
         QVector<quint32> argb;
-        if (!decodeRleInner(inner, sub, rect, &argb)) {
+        if (!decodeRleInner(inner, sub, rect, &argb, format)) {
             qCWarning(lcKvmCodec) << "RLE uncompressed: unsupported subencoding"
                                   << sub << "for" << rect.w << "x" << rect.h;
             return DecodeStatus::UnsupportedSubencoding;
@@ -529,7 +554,7 @@ DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
     const quint8 sub = static_cast<unsigned char>(inflated.at(0));
     QByteArrayView inner(inflated.constData() + 1, inflated.size() - 1);
     QVector<quint32> argb;
-    if (!decodeRleInner(inner, sub, rect, &argb)) {
+    if (!decodeRleInner(inner, sub, rect, &argb, format)) {
         qCWarning(lcKvmCodec) << "RLE compressed: unsupported subencoding"
                               << sub << "for" << rect.w << "x" << rect.h;
         return DecodeStatus::UnsupportedSubencoding;
@@ -543,7 +568,7 @@ DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
 
 DecodeStatus tryDecodeRect(QByteArrayView payload, const RectHeader &rect,
                             DecodedRect *out, int *consumed,
-                            InflateStream *inflate)
+                            InflateStream *inflate, PixelFormat format)
 {
     if (consumed != nullptr) *consumed = 0;
     if (out == nullptr) return DecodeStatus::Malformed;
@@ -561,13 +586,13 @@ DecodeStatus tryDecodeRect(QByteArrayView payload, const RectHeader &rect,
 
     if (rect.encoding == EncRaw) {
         int n = 0;
-        const DecodeStatus s = decodeRaw(payload, rect, &out->image, &n);
+        const DecodeStatus s = decodeRaw(payload, rect, &out->image, &n, format);
         if (s == DecodeStatus::Ok && consumed != nullptr) *consumed = n;
         return s;
     }
     if (rect.encoding == EncRle) {
         int n = 0;
-        const DecodeStatus s = decodeRle(payload, rect, &out->image, &n, inflate);
+        const DecodeStatus s = decodeRle(payload, rect, &out->image, &n, inflate, format);
         if (s == DecodeStatus::Ok && consumed != nullptr) *consumed = n;
         return s;
     }

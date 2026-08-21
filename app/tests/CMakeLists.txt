@@ -251,3 +251,30 @@ target_link_libraries(test_batchrunner PRIVATE
     qumesh_wsman
 )
 add_test(NAME test_batchrunner COMMAND test_batchrunner)
+
+# #433 — the user-consent (OptIn) state machine. Drives
+# MachineDetailsController against a scripted WSMAN endpoint to pin the
+# rule that a *granted* consent (OptInState 3 / RECEIVED) is never
+# re-requested, which is what dropped the KVM session mid-handshake.
+qt_add_executable(test_optin_statemachine
+    test_optin_statemachine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/machinedetailscontroller.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/machinedetailscontroller.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/sshtunnelhost.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/sshtunnelhost.h
+)
+target_include_directories(test_optin_statemachine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_optin_statemachine PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Network
+    Qt6::Qml
+    Qt6::Test
+    qumesh_certs
+    qumesh_redir
+    qumesh_ssh
+    qumesh_wsman
+)
+add_test(NAME test_optin_statemachine COMMAND test_optin_statemachine)
