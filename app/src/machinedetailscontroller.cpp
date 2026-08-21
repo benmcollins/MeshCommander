@@ -612,9 +612,28 @@ void MachineDetailsController::refreshOptInStatus()
                     }
                 }
             }
-            // Soft failure: older AMT firmware doesn't expose these
-            // classes. Leave the previous values in place and let the
-            // UI default to "OptIn: not detected" or similar.
+            else if (!m_optInStatusKnown) {
+                // Soft failure on the FIRST read: older AMT firmware
+                // (<= 5) doesn't expose IPS_OptInService at all, and a
+                // transport hiccup looks identical from here.
+                //
+                // Resolve to "consent not required" and mark the status
+                // known, so callers gated on `optInStatusKnown` proceed
+                // instead of waiting for an answer that will never come.
+                // The reference does the same — a non-200 on the
+                // IPS_OptInService read calls `connectDesktop(true)`,
+                // i.e. connect anyway (Commander.htm:50753). If the
+                // firmware really does want consent it enforces that
+                // itself; the cost of guessing wrong is the pre-#433
+                // behaviour, whereas guessing the other way hangs the
+                // Connect button with no error at all.
+                m_optInStatusKnown = true;
+                m_optInRequired = false;
+                emit optInStatusChanged();
+                emit optInStatusUnavailable(r.error);
+            }
+            // A later failure leaves the previously-read values alone —
+            // a blip must not downgrade a machine we know needs consent.
             decInflight();
         });
 }

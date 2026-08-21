@@ -932,6 +932,11 @@ signals:
     void systemDefenseChanged();
     void optInStatusChanged();
     void optInRoundActiveChanged();
+    /// The very first `IPS_OptInService` read failed, so the consent
+    /// policy is unknowable — most often AMT <= 5, which has no such
+    /// class. Consent is treated as not required and redirection is
+    /// allowed to proceed; the UI may note it.
+    void optInStatusUnavailable(const QString &error);
     /// Result of a `setKvmOptInPolicyEnabled` Put. `ok=false` carries
     /// the firmware-reported reason (most commonly the AMT login lacks
     /// the realm to modify the policy).

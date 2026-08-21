@@ -210,6 +210,7 @@ private slots:
     void startOptInIsNotReentrantWhileRoundIsLive();
     void repeatedStartFailuresGiveUpInsteadOfLooping();
     void rejectedCodeKeepsRoundOpen();
+    void unreadableStatusResolvesToNotRequired();
 };
 
 // The core #433 regression: once the operator's code is accepted the
@@ -375,6 +376,46 @@ void TestOptInStateMachine::rejectedCodeKeepsRoundOpen()
     QCOMPARE(amt.countOf("StartOptIn"), 1);
     QVERIFY(c.optInRoundActive());
     QVERIFY(!c.optInSatisfied());
+}
+
+
+// Firmware without IPS_OptInService (AMT <= 5), or a transport hiccup on
+// the first read, must not leave callers waiting forever for a policy
+// answer that never arrives. Gating Connect on `optInStatusKnown` made
+// that a silent hang with no error and no spinner; the reference
+// connects anyway on a failed read (Commander.htm:50753).
+void TestOptInStateMachine::unreadableStatusResolvesToNotRequired()
+{
+    // A server that accepts the connection and closes without replying
+    // stands in for "this class does not exist here".
+    QTcpServer dead;
+    QVERIFY(dead.listen(QHostAddress::LocalHost));
+    QObject::connect(&dead, &QTcpServer::newConnection, &dead, [&]() {
+        while (QTcpSocket *s = dead.nextPendingConnection()) {
+            s->close();
+            s->deleteLater();
+        }
+    });
+
+    MachineDetailsController c;
+    c.setHost(QStringLiteral("127.0.0.1"));
+    c.setUser(QStringLiteral("admin"));
+    c.setPassword(QStringLiteral("p"));
+    c.setTls(false);
+    c.setPortForTest(dead.serverPort());
+
+    QSignalSpy unavailableSpy(&c, &MachineDetailsController::optInStatusUnavailable);
+
+    QVERIFY(!c.optInStatusKnown());
+    c.refreshOptInStatus();
+
+    // The status must resolve one way or another — never stay unknown.
+    QVERIFY2(waitFor(15000, [&]() { return c.optInStatusKnown(); }),
+              "first IPS_OptInService read failed and optInStatusKnown never "
+              "became true — Connect would hang silently forever");
+    QCOMPARE(unavailableSpy.count(), 1);
+    QVERIFY2(c.optInSatisfied(),
+              "an unreadable consent policy must not block redirection");
 }
 
 QTEST_MAIN(TestOptInStateMachine)

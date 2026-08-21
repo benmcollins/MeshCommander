@@ -105,6 +105,28 @@ The matching `.deb` files are also attached to each release if you'd rather grab
 └── branding/            logo SVGs, icon builder, social preview
 ```
 
+## Reporting a bug
+
+Please include the app version, your OS, and the AMT firmware version
+from the machine's Hardware pane.
+
+If the problem involves a session — Remote Desktop, Serial Console or
+IDE Redirection — run QuMesh with logging on and attach the output. It
+records the protocol phase each step reached, which is usually the
+difference between a diagnosable report and a guess:
+
+```
+QT_LOGGING_RULES='qumesh.*=true' ./QuMesh          # macOS / Linux
+set QT_LOGGING_RULES=qumesh.*=true && QuMesh.exe   # Windows
+```
+
+For Remote Desktop issues specifically, the log lines naming the
+negotiated pixel format and the target's resolution are the useful
+ones — Intel AMT caps its KVM display buffer, so large desktops are
+driven at reduced colour depth.
+
+The log contains hostnames and usernames but never passwords.
+
 ## Contributing
 
 Workflow for any non-trivial change:
@@ -113,8 +135,8 @@ Workflow for any non-trivial change:
 2. Branch as `<issue#>-<short-desc>` (e.g. `97-ssh-tunnel`).
 3. Comment your implementation plan on the issue *before* writing code.
 4. Implement on the branch. Tests are required for new code.
-5. Open the PR; CI builds and tests on macOS + Windows.
-6. Merge once both runners are green.
+5. Open the PR; CI builds and tests on macOS, Windows, Ubuntu and Debian.
+6. Merge once every runner is green.
 
 More detail and Qt/QML conventions in [`CLAUDE.md`](CLAUDE.md).
 
