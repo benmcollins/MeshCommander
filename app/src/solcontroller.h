@@ -179,6 +179,9 @@ private:
     quint16 m_portOverride = 0;
     QString m_user;
     QString m_password;
+/// One-shot latch for the "first data" log line. The SOL byte stream
+    /// is never logged — see the note at the `SolSession::data` handler.
+    bool m_loggedFirstData = false;
     bool m_tls = false;
     QStringList m_trustedFingerprints;
     State m_state = State::Disconnected;

@@ -13,7 +13,7 @@ namespace qumesh::wsman {
 
 namespace {
 
-Q_LOGGING_CATEGORY(lcSoapEnvelope, "qumesh.wsman.soap_envelope")
+Q_LOGGING_CATEGORY(lcSoapEnvelope, "qumesh.wsman.soap_envelope", QtInfoMsg)
 
 /// Check the writer after `writeEndDocument()` and, if it has tripped,
 /// clear the partial buffer so callers see an unambiguous empty result.

@@ -17,7 +17,14 @@
 #  include <unistd.h>
 #endif
 
-Q_LOGGING_CATEGORY(lcRedirClient, "qumesh.redir.client")
+// Three-arg form on purpose: `Q_LOGGING_CATEGORY`'s default severity
+// is QtDebugMsg, so the two-arg form would ship every qCDebug below to
+// every user's stderr with no environment variable set. Qt only
+// hard-wires debug off for categories literally named "qt"/"qt.*".
+// QtInfoMsg keeps warnings and the handful of once-per-session info
+// lines on, and holds the phase-by-phase transcript behind
+// QT_LOGGING_RULES='qumesh.*=true'. See #438.
+Q_LOGGING_CATEGORY(lcRedirClient, "qumesh.redir.client", QtInfoMsg)
 
 namespace qumesh::redir {
 
@@ -51,6 +58,16 @@ const char *stateName(RedirectionClient::State s)
     case RedirectionClient::State::KvmStarting:    return "KvmStarting";
     case RedirectionClient::State::Authenticated:  return "Authenticated";
     case RedirectionClient::State::Failed:         return "Failed";
+    }
+    return "?";
+}
+
+const char *protocolName(Protocol p)
+{
+    switch (p) {
+    case Protocol::Sol:  return "SOL";
+    case Protocol::Kvm:  return "KVM";
+    case Protocol::Ider: return "IDE-R";
     }
     return "?";
 }
@@ -91,6 +108,7 @@ void RedirectionClient::connectTo(const QString &host, quint16 port)
                 return;
             }
             if (fd < 0) {
+                qCWarning(lcRedirClient) << "SSH tunnel open failed:" << error;
                 self->fail(error.isEmpty()
                                ? QStringLiteral("SSH tunnel could not be opened to %1:%2")
                                      .arg(host).arg(port)
@@ -137,6 +155,12 @@ void RedirectionClient::connectTo(const QString &host, quint16 port)
     connect(m_socket, &QAbstractSocket::errorOccurred, this,
             &RedirectionClient::handleSocketError);
 
+    // Never log m_pass. README.md draws exactly this line for users
+    // deciding whether a transcript is safe to paste publicly.
+    qCInfo(lcRedirClient) << "opening" << protocolName(m_protocol)
+                           << "redirection to" << host << "port" << port
+                           << (m_tls ? "TLS" : "plaintext") << "as user"
+                           << (m_user.isEmpty() ? QStringLiteral("(none)") : m_user);
     setState(State::Connecting);
     if (m_tls) {
         m_sslSocket->connectToHostEncrypted(host, port);
@@ -256,6 +280,12 @@ void RedirectionClient::drainInbox()
         if (m_state == State::KvmStarting && tag == 0x41) {
             if (m_inbox.size() < 8) return;
             QByteArray leftover = m_inbox.mid(8);
+            // Neither we nor the reference decode the 0x41 body; eight
+            // bytes of session-open ack is protocol metadata, and the
+            // only way anyone learns what a given firmware puts there.
+            qCDebug(lcRedirClient) << "0x41 KVM start reply" << m_inbox.left(8).toHex(' ')
+                                    << "-" << leftover.size()
+                                    << "byte(s) of RFB stream follow";
             m_inbox.clear();
             setState(State::Authenticated);
             emit authenticated();
@@ -270,7 +300,16 @@ void RedirectionClient::drainInbox()
             m_inbox.remove(0, consumed);
             m_startStatus = reply.status;
             m_oemData = reply.oemData;
+            // oemData is opaque vendor bytes — size only, never content.
+            qCDebug(lcRedirClient) << "0x11 StartSessionReply status"
+                                    << static_cast<int>(reply.status)
+                                    << describe(reply.status) << "- oemData"
+                                    << reply.oemData.size() << "bytes";
             if (reply.status != StartSessionStatus::Success) {
+                // BUSY / UNSUPPORTED reached only lastError before this;
+                // "device is busy" is a #433 failure mode.
+                qCWarning(lcRedirClient) << "device refused the redirection session:"
+                                          << describe(reply.status);
                 fail(describe(reply.status));
                 return;
             }
@@ -295,7 +334,12 @@ void RedirectionClient::drainInbox()
 
             switch (m_state) {
             case State::AuthQuerying: {
+                qCDebug(lcRedirClient) << "0x14 auth caps — basic" << reply.caps.hasBasic
+                                        << "kerberos" << reply.caps.hasKerberos
+                                        << "digest-no-qop" << reply.caps.hasDigestNoQop
+                                        << "digest-with-qop" << reply.caps.hasDigestWithQop;
                 if (!reply.caps.hasDigestWithQop) {
+                    qCWarning(lcRedirClient) << "device offers no auth type we implement";
                     fail(QStringLiteral("device does not offer DigestWithQop auth"));
                     return;
                 }
@@ -307,7 +351,21 @@ void RedirectionClient::drainInbox()
                 break;
             }
             case State::AuthChallenging: {
+                // Presence only. Logging the realm, nonce, cnonce or the
+                // computed response would turn a pasted transcript into
+                // an offline dictionary attack on the AMT password.
+                qCDebug(lcRedirClient) << "0x14 challenge status" << reply.status
+                                        << "- realm" << (reply.realm.isEmpty() ? "MISSING" : "present")
+                                        << "nonce" << (reply.nonce.isEmpty() ? "MISSING" : "present")
+                                        << "qop" << (reply.qop.isEmpty()
+                                                         ? QStringLiteral("(absent, defaulting to auth)")
+                                                         : reply.qop);
                 if (reply.status != 1 || reply.realm.isEmpty() || reply.nonce.isEmpty()) {
+                    qCWarning(lcRedirClient) << "malformed digest challenge — status"
+                                              << reply.status << "realm"
+                                              << (reply.realm.isEmpty() ? "MISSING" : "present")
+                                              << "nonce"
+                                              << (reply.nonce.isEmpty() ? "MISSING" : "present");
                     fail(QStringLiteral("authentication rejected by device"));
                     return;
                 }
@@ -328,9 +386,12 @@ void RedirectionClient::drainInbox()
             }
             case State::AuthResponding: {
                 if (reply.status != 0) {
+                    qCWarning(lcRedirClient) << "redirection auth rejected, 0x14 status"
+                                              << reply.status;
                     fail(QStringLiteral("authentication failed (status %1)").arg(reply.status));
                     return;
                 }
+                qCInfo(lcRedirClient) << "redirection auth accepted for user" << m_user;
                 // KVM needs a redir-level 0x40 → 0x41 round-trip before
                 // the firmware will push the RFB version banner. SOL and
                 // IDE-R do not — they go straight to Authenticated and
@@ -344,6 +405,10 @@ void RedirectionClient::drainInbox()
                         fail(m_socket->errorString());
                         return;
                     }
+                    // The last thing that happens before the firmware
+                    // hangs up on a consent-less KVM attempt, which is
+                    // why describeSocketFailure special-cases this state.
+                    qCDebug(lcRedirClient) << "wrote 0x40 KVM start, awaiting 0x41";
                     setState(State::KvmStarting);
                     continue;
                 }
@@ -361,12 +426,19 @@ void RedirectionClient::drainInbox()
                 return;
             }
             default:
+                qCWarning(lcRedirClient) << "unexpected 0x14 auth frame in state"
+                                          << stateName(m_state);
                 fail(QStringLiteral("unexpected 0x14 in state %1").arg(static_cast<int>(m_state)));
                 return;
             }
             continue;
         }
 
+        // Length only, never m_inbox's contents — by this point the
+        // buffer may hold application payload.
+        qCWarning(lcRedirClient) << "unexpected frame" << Qt::hex << tag << Qt::dec
+                                  << "in state" << stateName(m_state) << "- inbox"
+                                  << m_inbox.size() << "bytes";
         fail(QStringLiteral("unexpected frame 0x%1 in state %2")
                  .arg(tag, 2, 16, QLatin1Char('0'))
                  .arg(static_cast<int>(m_state)));
@@ -431,15 +503,25 @@ void RedirectionClient::handleEncrypted()
         return;
     }
     const PeerCertSummary summary = summarize(cert);
+    // Fingerprint is the identifying value and is public; never log
+    // summary.der.
+    qCInfo(lcRedirClient) << "TLS peer cert subject" << summary.subject
+                           << "issuer" << summary.issuer
+                           << "sha256" << summary.fingerprintSha256
+                           << "valid" << summary.notBefore << "-" << summary.notAfter;
     if (m_trustedFingerprints.contains(summary.fingerprintSha256)) {
         // Fingerprint pinned — proceed with the redirection selector.
         // Signal the consumer so it can surface a small "verified
         // against your pinned certificate" affordance.
+        qCInfo(lcRedirClient) << "peer cert matched a pinned fingerprint";
         emit peerCertVerifiedByPin(summary.fingerprintSha256);
         handleConnected();
         return;
     }
     // Hold the selector and ask the consumer to confirm.
+    // "It just sits there" on a TLS connect is this branch; nothing in
+    // the log distinguished it from a hung socket before.
+    qCInfo(lcRedirClient) << "peer cert not pinned — waiting for the user to decide";
     m_pendingPeerCert = summary;
     m_awaitingTrust = true;
     emit trustPromptRequired(summary);
@@ -470,6 +552,12 @@ PeerCertSummary RedirectionClient::summarize(const QSslCertificate &cert)
 void RedirectionClient::setState(State s)
 {
     if (m_state == s) return;
+    // Logged before the assignment so the line names both ends of the
+    // transition. This is the single most useful line in the file: a
+    // failure report that says which phase the session reached is
+    // triageable, one that says "the remote host closed the connection"
+    // is not (#433).
+    qCDebug(lcRedirClient) << "state" << stateName(m_state) << "->" << stateName(s);
     m_state = s;
     emit stateChanged(s);
 }
@@ -477,6 +565,11 @@ void RedirectionClient::setState(State s)
 void RedirectionClient::fail(QString error)
 {
     m_lastError = std::move(error);
+    // One line for all ~10 fail() sites, phase-tagged. The overlap with
+    // handleSocketError is deliberate: that one carries Qt's raw socket
+    // string, this one carries the reason we chose to surface.
+    qCWarning(lcRedirClient) << "session failed in state" << stateName(m_state)
+                              << ":" << m_lastError;
     // Close the transport before announcing the failure. AMT keeps the
     // redirection session allocated for as long as the TCP connection
     // is alive, and a half-open socket makes every subsequent connect

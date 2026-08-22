@@ -3,6 +3,8 @@
 
 #include "solcontroller.h"
 
+#include <QLoggingCategory>
+
 #include "asciicast_recorder.h"
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
@@ -10,6 +12,9 @@
 #include "ssh/ssh_session.h"
 #include "ssh_tunnel_opener.h"
 #include "sshtunnelhost.h"
+
+// QtInfoMsg, not the two-arg default: see redir/src/redir_client.cpp.
+Q_LOGGING_CATEGORY(lcSolController, "qumesh.app.sol", QtInfoMsg)
 
 namespace qumesh::app {
 
@@ -69,6 +74,7 @@ void SolController::setTrustedFingerprints(QStringList v)
 void SolController::setState(State s)
 {
     if (s == m_state) return;
+    qCDebug(lcSolController) << "state" << int(m_state) << "->" << int(s);
     const bool wasAwaiting = (m_state == State::AwaitingTrust);
     m_state = s;
     emit stateChanged();
@@ -146,6 +152,7 @@ void SolController::open()
         return;
     }
     m_screen->clear();
+    m_loggedFirstData = false;
 
     m_client = new RedirectionClient(this);
     m_client->setProtocol(qumesh::redir::Protocol::Sol);
@@ -204,11 +211,20 @@ void SolController::open()
         setState(State::Connected);
     });
     connect(m_session.data(), &SolSession::data, this, [this](const QByteArray &bytes) {
+        // NEVER log the bytes, and never a running count either. This
+        // stream is the serial console in both directions — a root
+        // password typed at a getty prompt lives here. One line on the
+        // first chunk is enough to prove the session is live (#438).
+        if (!m_loggedFirstData) {
+            m_loggedFirstData = true;
+            qCDebug(lcSolController) << "first SOL data received," << bytes.size() << "bytes";
+        }
         m_screen->feed(bytes);
         if (m_recorder != nullptr && m_recorder->isRecording())
             m_recorder->pushBytes(bytes);
     });
     connect(m_session.data(), &SolSession::closed, this, [this](const QString &reason) {
+        qCWarning(lcSolController) << "SOL session closed:" << reason;
         setLastError(reason);
         setState(State::Failed);
     });

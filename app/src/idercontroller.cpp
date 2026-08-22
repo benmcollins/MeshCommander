@@ -3,12 +3,18 @@
 
 #include "idercontroller.h"
 
+#include <QFileInfo>
+#include <QLoggingCategory>
+
 #include "ider/ider_session.h"
 #include "redir/redir_client.h"
 #include "redir/redir_codec.h"
 #include "ssh/ssh_session.h"
 #include "ssh_tunnel_opener.h"
 #include "sshtunnelhost.h"
+
+// QtInfoMsg, not the two-arg default: see redir/src/redir_client.cpp.
+Q_LOGGING_CATEGORY(lcIderController, "qumesh.app.ider", QtInfoMsg)
 
 namespace qumesh::app {
 
@@ -218,7 +224,16 @@ void IderController::open()
     });
 
     connect(m_session.data(), &IderSession::sessionOpened, this,
-            [this](const qumesh::ider::SessionInfo &) {
+            [this](const qumesh::ider::SessionInfo &info) {
+                // The firmware/buffer numbers are exactly the
+                // compatibility data an IDE-R support round-trip asks
+                // for, and none of it is sensitive.
+                qCInfo(lcIderController) << "IDE-R session open — protocol"
+                                          << info.major << "." << info.minor
+                                          << "firmware" << info.fwMajor << "." << info.fwMinor
+                                          << "readBuffer" << info.readBuffer
+                                          << "writeBuffer" << info.writeBuffer
+                                          << "iana" << info.iana;
                 setState(State::Running);
             });
     connect(m_session.data(), &IderSession::enabledChanged, this, [this](bool en) {

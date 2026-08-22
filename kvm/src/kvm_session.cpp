@@ -10,7 +10,7 @@
 #include <QLoggingCategory>
 #include <QMetaObject>
 
-Q_LOGGING_CATEGORY(lcKvmSession, "qumesh.kvm.session")
+Q_LOGGING_CATEGORY(lcKvmSession, "qumesh.kvm.session", QtInfoMsg)
 
 namespace qumesh::kvm {
 
@@ -26,6 +26,20 @@ bool readCompressionEnabled()
     if (!qEnvironmentVariableIsSet("QUMESH_KVM_COMPRESSION")) return true;
     const QByteArray raw = qgetenv("QUMESH_KVM_COMPRESSION").trimmed().toLower();
     return !(raw == "0" || raw == "false" || raw == "off");
+}
+
+const char *stateName(KvmSession::State s)
+{
+    switch (s) {
+    case KvmSession::State::Idle:       return "Idle";
+    case KvmSession::State::Version:    return "Version";
+    case KvmSession::State::Security:   return "Security";
+    case KvmSession::State::AuthResult: return "AuthResult";
+    case KvmSession::State::ServerInit: return "ServerInit";
+    case KvmSession::State::FrameLoop:  return "FrameLoop";
+    case KvmSession::State::Failed:     return "Failed";
+    }
+    return "?";
 }
 
 } // namespace
@@ -337,6 +351,10 @@ void KvmSession::requestFullRefresh()
 void KvmSession::setState(State s)
 {
     if (s == m_state) return;
+    // Version -> Security -> AuthResult -> ServerInit -> FrameLoop is
+    // where a KVM session dies *after* redirection already succeeded;
+    // the two qCInfo lines below only fire once ServerInit is reached.
+    qCDebug(lcKvmSession) << "state" << stateName(m_state) << "->" << stateName(s);
     m_state = s;
     emit stateChanged(s);
 }
@@ -344,6 +362,8 @@ void KvmSession::setState(State s)
 void KvmSession::fail(QString reason)
 {
     m_lastError = std::move(reason);
+    qCWarning(lcKvmSession) << "session failed in state" << stateName(m_state)
+                             << ":" << m_lastError;
     setState(State::Failed);
     emit closed(m_lastError);
 }

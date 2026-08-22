@@ -6,7 +6,7 @@
 #include <QLoggingCategory>
 #include <zlib.h>
 
-Q_LOGGING_CATEGORY(lcKvmCodec, "qumesh.kvm.codec")
+Q_LOGGING_CATEGORY(lcKvmCodec, "qumesh.kvm.codec", QtInfoMsg)
 
 namespace qumesh::kvm {
 
@@ -579,8 +579,13 @@ DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
                               << (inflateOk ? "empty" : "FAILED")
                               << "for" << rect.w << "x" << rect.h
                               << "dataLen" << dataLen
-                              << "first32" << QByteArray(block.data(),
-                                                          qMin<int>(32, block.size())).toHex();
+                              // Only the 2-byte zlib header, never the
+                              // body: `block` is compressed framebuffer
+                              // content — the remote screen — and this
+                              // line is on by default. Users paste these
+                              // transcripts into public issues (#438).
+                              << "zlibHeader" << QByteArray(block.data(),
+                                                             qMin<int>(2, block.size())).toHex(' ');
         return DecodeStatus::Malformed;
     }
     const quint8 sub = static_cast<unsigned char>(inflated.at(0));
