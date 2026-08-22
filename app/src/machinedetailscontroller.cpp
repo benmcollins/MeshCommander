@@ -618,7 +618,11 @@ void MachineDetailsController::refreshOptInStatus()
                 if (m_optInState != prevState || !wasKnown) {
                     qCDebug(lcOptIn) << "OptInState" << optInStateName(prevState)
                                       << "->" << optInStateName(m_optInState)
-                                      << "- required" << m_optInRequired
+                                      // The raw tri-state, not the flattened bool: "which
+                                      // protocols does this machine gate" is the
+                                      // question a consent report actually needs
+                                      // answering (#437).
+                                      << "- requiredRaw" << m_optInRequiredRaw
                                       << "canModifyPolicy" << m_canModifyOptInPolicy
                                       << "kvmPolicy" << m_kvmOptInPolicy
                                       << "timeout" << m_optInPolicyTimeoutSec << "s";
