@@ -255,6 +255,19 @@ struct OptInServiceResult
     /// consent has been *granted*; testing this field alone will
     /// re-request consent forever. See #433.
     bool optInRequired = false;
+    /// The raw `OptInRequired` value, whose granularity the bool above
+    /// discards. AMT defines three (the legacy client's own policy
+    /// editor enumerates exactly these — Commander.htm:1293-1295):
+    ///
+    ///     0           no consent required
+    ///     1           required for KVM only
+    ///     0xFFFFFFFF  required for every redirection operation
+    ///
+    /// Consumers deciding whether to gate a *particular* protocol must
+    /// read this, not `optInRequired` — prompting for a Serial Console
+    /// session on a KVM-only machine puts a PIN on the target's screen
+    /// that nobody needs to type. See #437.
+    quint32 optInRequiredRaw = 0;
     /// `IPS_OptInService.OptInState`: 0=NotStarted, 1=Requested,
     /// 2=Displayed (code on screen, waiting), 3=Received,
     /// 4=InSession (consent already granted).

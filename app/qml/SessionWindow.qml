@@ -52,7 +52,10 @@ AppWindow {
     function driveConsent() {
         if (root.pendingConnectTab < 0) return;
         if (!powerController.optInStatusKnown) return;
-        if (powerController.optInSatisfied) {
+        // Per-protocol, not the coarse `optInSatisfied`: a machine set
+        // to "required for KVM only" must not throw a consent PIN onto
+        // the target's screen for a Serial Console session (#437).
+        if (powerController.consentSatisfiedFor(root.pendingConnectTab)) {
             root.consentResolved();
             return;
         }

@@ -5001,10 +5001,22 @@ void getOptInStatus(WsmanClient *client,
                                            QStringLiteral("OptInState"));
             const QString canMod = findScalar(
                 soap.bodyXml, QStringLiteral("CanModifyOptInPolicy"));
-            // `OptInRequired` is an enum in newer firmware (0 / 1 / 0xFF
-            // / etc) and a bool in older. Treat any non-zero as "yes".
+            // `OptInRequired` is an enum in newer firmware (0 / 1 /
+            // 0xFFFFFFFF) and a bool in older. Keep the coarse bool for
+            // "is consent in play at all", and carry the raw value so
+            // callers can tell KVM-only from always (#437).
             partial->optInRequired = !req.isEmpty() && req != QStringLiteral("0")
                                      && req.toLower() != QStringLiteral("false");
+            if (req.toLower() == QStringLiteral("true")) {
+                // Older firmware's bool form: the only redirection it
+                // gated was KVM, so map it onto that.
+                partial->optInRequiredRaw = 1;
+            } else {
+                bool okNum = false;
+                const quint32 raw = req.toUInt(&okNum);
+                partial->optInRequiredRaw = okNum ? raw
+                                                  : (partial->optInRequired ? 0xFFFFFFFFu : 0u);
+            }
             partial->optInState = st.toInt();
             partial->canModifyOptInPolicy = canMod.toLower() == QStringLiteral("true")
                                             || canMod == QStringLiteral("1");

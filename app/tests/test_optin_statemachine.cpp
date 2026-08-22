@@ -35,7 +35,8 @@ class FakeAmt : public QObject
     Q_OBJECT
 public:
     int optInState = 0;        ///< 0 NotStarted .. 4 InSession
-    int optInRequired = 1;     ///< non-zero => consent policy is on
+    /// Raw `OptInRequired`: 0 = none, 1 = KVM only, 4294967295 = all.
+    quint32 optInRequired = 1;
     quint32 sendCodeReturnValue = 0;
     quint32 startOptInReturnValue = 0;
     QStringList calls;         ///< method names, in order
@@ -211,6 +212,10 @@ private slots:
     void repeatedStartFailuresGiveUpInsteadOfLooping();
     void rejectedCodeKeepsRoundOpen();
     void unreadableStatusResolvesToNotRequired();
+    // #437 — OptInRequired is a tri-state, not a bool.
+    void kvmOnlyPolicyDoesNotGateSolOrIder();
+    void alwaysRequiredPolicyGatesEveryProtocol();
+    void noPolicyGatesNothing();
 };
 
 // The core #433 regression: once the operator's code is accepted the
@@ -416,6 +421,92 @@ void TestOptInStateMachine::unreadableStatusResolvesToNotRequired()
     QCOMPARE(unavailableSpy.count(), 1);
     QVERIFY2(c.optInSatisfied(),
               "an unreadable consent policy must not block redirection");
+}
+
+
+// --- #437: OptInRequired granularity ---------------------------------
+//
+// AMT's OptInRequired is a tri-state (0 / 1 = KVM only / 0xFFFFFFFF =
+// all). Flattening it to a bool made a KVM-only machine demand a
+// consent PIN for Serial Console sessions that need none — a
+// regression the #433 consent gating made reachable, since SOL and
+// IDE-R now route through the same gate.
+
+void TestOptInStateMachine::kvmOnlyPolicyDoesNotGateSolOrIder()
+{
+    FakeAmt amt;
+    amt.optInRequired = 1;      // KVM only
+    amt.optInState = 0;         // nothing granted
+    QVERIFY(amt.listen());
+
+    MachineDetailsController c;
+    aim(c, amt);
+    c.refreshOptInStatus();
+    QVERIFY(waitFor(5000, [&]() { return c.optInStatusKnown(); }));
+
+    QVERIFY2(c.consentRequiredFor(MachineDetailsController::Kvm),
+              "KVM must still be gated under a KVM-only policy");
+    QVERIFY2(!c.consentRequiredFor(MachineDetailsController::Sol),
+              "Serial Console must NOT be gated under a KVM-only policy");
+    QVERIFY2(!c.consentRequiredFor(MachineDetailsController::Ider),
+              "IDE-R must NOT be gated under a KVM-only policy");
+
+    // ...and therefore SOL/IDE-R may connect immediately while KVM waits.
+    QVERIFY(!c.consentSatisfiedFor(MachineDetailsController::Kvm));
+    QVERIFY(c.consentSatisfiedFor(MachineDetailsController::Sol));
+    QVERIFY(c.consentSatisfiedFor(MachineDetailsController::Ider));
+}
+
+void TestOptInStateMachine::alwaysRequiredPolicyGatesEveryProtocol()
+{
+    FakeAmt amt;
+    amt.optInRequired = 4294967295u;   // 0xFFFFFFFF — always required
+    amt.optInState = 0;
+    QVERIFY(amt.listen());
+
+    MachineDetailsController c;
+    aim(c, amt);
+    c.refreshOptInStatus();
+    QVERIFY(waitFor(5000, [&]() { return c.optInStatusKnown(); }));
+
+    for (const int p : {int(MachineDetailsController::Sol),
+                        int(MachineDetailsController::Kvm),
+                        int(MachineDetailsController::Ider)}) {
+        QVERIFY2(c.consentRequiredFor(p),
+                  qPrintable(QStringLiteral("protocol %1 must be gated when "
+                                            "consent is always required").arg(p)));
+        QVERIFY(!c.consentSatisfiedFor(p));
+    }
+
+    // A granted code satisfies all three at once.
+    amt.optInState = 3;   // RECEIVED
+    c.refreshOptInStatus();
+    QVERIFY(waitFor(5000, [&]() { return c.optInState() == 3; }));
+    for (const int p : {int(MachineDetailsController::Sol),
+                        int(MachineDetailsController::Kvm),
+                        int(MachineDetailsController::Ider)}) {
+        QVERIFY(c.consentSatisfiedFor(p));
+    }
+}
+
+void TestOptInStateMachine::noPolicyGatesNothing()
+{
+    FakeAmt amt;
+    amt.optInRequired = 0;
+    amt.optInState = 0;
+    QVERIFY(amt.listen());
+
+    MachineDetailsController c;
+    aim(c, amt);
+    c.refreshOptInStatus();
+    QVERIFY(waitFor(5000, [&]() { return c.optInStatusKnown(); }));
+
+    for (const int p : {int(MachineDetailsController::Sol),
+                        int(MachineDetailsController::Kvm),
+                        int(MachineDetailsController::Ider)}) {
+        QVERIFY(!c.consentRequiredFor(p));
+        QVERIFY(c.consentSatisfiedFor(p));
+    }
 }
 
 QTEST_MAIN(TestOptInStateMachine)
