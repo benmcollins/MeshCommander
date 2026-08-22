@@ -98,6 +98,10 @@ private slots:
     void decodeRleSingleColorRun8Bit();
     void decodeRlePackedPalette8Bit();
     void decodeRlePaletteRle8Bit();
+    // #436 — dataLen sanity bound.
+    void decodeRleRejectsOversizedDataLen();
+    void decodeRleAcceptsLargestHonestBlock();
+    void decodeRleHugeDataLenDoesNotStallOnNeedMore();
 };
 
 void TestKvmCodec::rgb565ToArgbBoundaries()
@@ -784,6 +788,102 @@ void TestKvmCodec::decodeRlePaletteRle8Bit()
     QCOMPARE(dr.image.pixel(1, 0), QRgb(0xFFFF0000));
     QCOMPARE(dr.image.pixel(2, 0), QRgb(0xFF0000FF));
     QCOMPARE(dr.image.pixel(3, 0), QRgb(0xFF0000FF));
+}
+
+
+// --- #436: dataLen sanity bound --------------------------------------
+
+void TestKvmCodec::decodeRleRejectsOversizedDataLen()
+{
+    RectHeader rect;
+    rect.w = 64; rect.h = 64;
+    rect.encoding = EncRle;
+
+    // A 64x64 tile cannot honestly need 1 MB. Before the bound this
+    // returned NeedMore and the session waited for bytes that were
+    // never coming.
+    QByteArray payload = be32(1024 * 1024);
+    payload.append(QByteArray(64, '\0'));
+
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(payload, rect, &dr, &consumed, nullptr,
+                            PixelFormat::Rgb565),
+             DecodeStatus::Malformed);
+}
+
+void TestKvmCodec::decodeRleAcceptsLargestHonestBlock()
+{
+    // The pathological-but-legal case the ceiling must not reject:
+    // subencoding 128 where every run is a single pixel, so the block
+    // carries colour + run-length for all w*h pixels.
+    RectHeader rect;
+    rect.w = 8; rect.h = 8;
+    rect.encoding = EncRle;
+
+    QByteArray inner;
+    inner.append(char(char(128)));
+    for (int i = 0; i < 64; ++i) {
+        inner.append(le16(quint16(i % 2 ? 0xF800 : 0x001F)));
+        inner.append(char(0));   // delta 0 => run of exactly 1
+    }
+
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(wrapUncompressedRle(inner), rect, &dr, &consumed,
+                            nullptr, PixelFormat::Rgb565),
+             DecodeStatus::Ok);
+    QCOMPARE(dr.image.pixel(0, 0), QRgb(0xFF0000F8));
+    QCOMPARE(dr.image.pixel(1, 0), QRgb(0xFFF80000));
+
+    // And the 8-bit equivalent, whose ceiling is correspondingly lower
+    // but must still admit its own worst case.
+    QByteArray inner8;
+    inner8.append(char(char(128)));
+    for (int i = 0; i < 64; ++i) {
+        inner8.append(char(i % 2 ? 0xE0 : 0x03));
+        inner8.append(char(0));
+    }
+    DecodedRect dr8;
+    QCOMPARE(tryDecodeRect(wrapUncompressedRle(inner8), rect, &dr8, &consumed,
+                            nullptr, PixelFormat::Rgb332),
+             DecodeStatus::Ok);
+}
+
+void TestKvmCodec::decodeRleHugeDataLenDoesNotStallOnNeedMore()
+{
+    RectHeader rect;
+    rect.w = 64; rect.h = 64;
+    rect.encoding = EncRle;
+
+    // dataLen near INT_MAX: `4 + dataLen` used to be evaluated in int
+    // and overflow. Whatever the arithmetic does, the answer must be a
+    // terminal Malformed — never NeedMore, which would stall the frame
+    // loop permanently.
+    for (const qint32 len : {qint32(0x7FFFFFFF), qint32(0x7FFFFFFC),
+                             qint32(0x40000000), qint32(0x00FFFFFF)}) {
+        QByteArray payload = be32(static_cast<quint32>(len));
+        payload.append(QByteArray(32, '\0'));
+
+        DecodedRect dr;
+        int consumed = -1;
+        const DecodeStatus st = tryDecodeRect(payload, rect, &dr, &consumed,
+                                               nullptr, PixelFormat::Rgb565);
+        QVERIFY2(st == DecodeStatus::Malformed,
+                  qPrintable(QStringLiteral("dataLen 0x%1 gave status %2, "
+                                            "expected Malformed")
+                                 .arg(len, 0, 16)
+                                 .arg(static_cast<int>(st))));
+    }
+
+    // A negative-looking length (high bit set) is equally terminal.
+    QByteArray neg = be32(0xFFFFFFFFu);
+    neg.append(QByteArray(32, '\0'));
+    DecodedRect dr;
+    int consumed = -1;
+    QCOMPARE(tryDecodeRect(neg, rect, &dr, &consumed, nullptr,
+                            PixelFormat::Rgb565),
+             DecodeStatus::Malformed);
 }
 
 QTEST_GUILESS_MAIN(TestKvmCodec)

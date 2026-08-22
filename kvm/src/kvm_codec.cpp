@@ -505,9 +505,41 @@ DecodeStatus decodeRle(QByteArrayView payload, const RectHeader &rect,
                           | (static_cast<qint32>(static_cast<unsigned char>(payload[1])) << 16)
                           | (static_cast<qint32>(static_cast<unsigned char>(payload[2])) << 8)
                           | static_cast<qint32>(static_cast<unsigned char>(payload[3]));
-    if (dataLen < 0) return DecodeStatus::Malformed;
-    if (payload.size() < 4 + dataLen) return DecodeStatus::NeedMore;
     if (dataLen < 1) return DecodeStatus::Malformed;
+
+    // Bound `dataLen` before believing it. Without a ceiling, a stream
+    // desync that yields a huge length parks the decoder on NeedMore
+    // forever: `stepFrameLoop` returns with `m_pendingRects` still
+    // positive, so it never sends another FramebufferUpdateRequest and
+    // the picture freezes with no error at all. Better to fail loudly.
+    // Same reasoning as the ServerCutText cap in `kvm_session.cpp`
+    // (see #271); this is #436.
+    //
+    // The ceiling is derived rather than fixed, because a legitimate
+    // block scales with the rect. Worst case for an honest block:
+    //   * inner payload — 1 subencoding byte, up to 127 palette
+    //     entries, and at most (bpp + 1) bytes per pixel, since
+    //     subencoding 128 degenerates to colour + run-length for every
+    //     single pixel when no two neighbours match;
+    //   * framing — either the 5-byte uncompressed-ZLib marker, or a
+    //     deflate stream, which on incompressible input falls back to
+    //     stored blocks costing ~5 bytes per 64 KB plus a header.
+    // A 1 KB floor plus a 1/1024 proportional term covers both.
+    const qint64 pixels = qint64(rect.w) * qint64(rect.h);
+    const qint64 maxInner = 1 + pixels * (bytesPerPixel(format) + 1) + 127 * 2;
+    const qint64 maxBlock = maxInner + maxInner / 1024 + 1024;
+    if (qint64(dataLen) > maxBlock) {
+        qCWarning(lcKvmCodec) << "RLE dataLen" << dataLen << "exceeds the"
+                              << maxBlock << "byte ceiling for a"
+                              << rect.w << "x" << rect.h << "rect —"
+                              << "treating the stream as desynchronised";
+        return DecodeStatus::Malformed;
+    }
+
+    // Widen before comparing: `payload.size()` is qsizetype but
+    // `dataLen` is qint32, so `4 + dataLen` would be evaluated in int
+    // and overflow for a length near INT_MAX.
+    if (payload.size() < qsizetype(4) + qsizetype(dataLen)) return DecodeStatus::NeedMore;
 
     const QByteArrayView block = payload.sliced(4, dataLen);
 
