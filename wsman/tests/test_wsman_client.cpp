@@ -10,6 +10,7 @@
 #include <QObject>
 #include <QSignalSpy>
 #include <QTcpServer>
+#include <QTcpSocket>
 #include <QtTest>
 
 using namespace qumesh::wsman;
@@ -19,6 +20,10 @@ class TestWsmanClient : public QObject
     Q_OBJECT
 private slots:
     void initTestCase();
+    // #435 — digest 401 retry cap + timeout on every path.
+    void digestRetryIsCappedOnPersistent401();
+    void staleNonceAllowsOneExtraRetry();
+    void cachedChallengePathIsStillTimedOut();
     void identifyRoundTripsAgainstMockServer();
     void getPowerStateRoundTripsAgainstMockServer();
     void httpErrorPropagates();
@@ -2802,6 +2807,223 @@ void TestWsmanClient::addRemoteAccessPolicyRuleEncodesPeriodicEnvelope()
                  .arg(iTrigger).arg(iTunnel).arg(iExt)
                  .arg(iMpServer).arg(iInternalMps)));
 }
+
+// --- #435: digest 401 retry is bounded, and every path is timed ------
+
+namespace {
+
+/// Raw TCP endpoint that speaks just enough HTTP to exercise the
+/// Digest dance. Counts connections so a test can prove the client
+/// stopped retrying rather than merely that it eventually gave up.
+class DigestFake : public QObject
+{
+    Q_OBJECT
+public:
+    /// Number of 401s to issue before switching to `finalBody`. Set
+    /// huge to model a device that will never accept the credentials.
+    int challengesToIssue = 999;
+    /// Mark the Nth challenge (1-based) `stale=true`.
+    int staleOnChallenge = -1;
+    /// When true, accept the connection and never write a byte —
+    /// models a wedged ME. Applied once `challengesToIssue` is spent.
+    bool goSilentWhenDone = false;
+    QByteArray finalBody;
+
+    int connections = 0;      ///< TCP connections accepted.
+    int challengesSent = 0;
+
+    bool listen()
+    {
+        connect(&m_server, &QTcpServer::newConnection, this, &DigestFake::onConnection);
+        return m_server.listen(QHostAddress::LocalHost);
+    }
+    [[nodiscard]] quint16 port() const { return m_server.serverPort(); }
+
+    ~DigestFake() override
+    {
+        // Members unwind in reverse declaration order, so `m_buf` is
+        // gone by the time `m_server` tears down its child sockets —
+        // and their `disconnected` handler reaches straight back into
+        // it. Drop the handlers first. Only bites when a socket is
+        // still open at teardown, which `goSilentWhenDone` guarantees.
+        m_server.close();
+        const auto socks = m_buf.keys();
+        for (QTcpSocket *sock : socks) sock->disconnect(this);
+        m_buf.clear();
+    }
+
+private slots:
+    void onConnection()
+    {
+        while (QTcpSocket *sock = m_server.nextPendingConnection()) {
+            ++connections;
+            connect(sock, &QTcpSocket::readyRead, this, [this, sock]() {
+                m_buf[sock].append(sock->readAll());
+                serve(sock);
+            });
+            connect(sock, &QTcpSocket::disconnected, this, [this, sock]() {
+                m_buf.remove(sock);
+                sock->deleteLater();
+            });
+        }
+    }
+
+private:
+    void serve(QTcpSocket *sock)
+    {
+        QByteArray &buf = m_buf[sock];
+        const int headerEnd = buf.indexOf("\r\n\r\n");
+        if (headerEnd < 0) return;
+        int contentLength = 0;
+        for (const QByteArray &line : buf.left(headerEnd).split('\n')) {
+            const QByteArray l = line.trimmed().toLower();
+            if (l.startsWith("content-length:"))
+                contentLength = l.mid(15).trimmed().toInt();
+        }
+        if (buf.size() < headerEnd + 4 + contentLength) return;
+        buf.remove(0, headerEnd + 4 + contentLength);
+
+        if (challengesSent < challengesToIssue) {
+            ++challengesSent;
+            QByteArray chal = "HTTP/1.1 401 Unauthorized\r\n";
+            chal += "WWW-Authenticate: Digest realm=\"Digest:AB\", "
+                    "nonce=\"deadbeef\", qop=\"auth\"";
+            if (challengesSent == staleOnChallenge) chal += ", stale=true";
+            chal += "\r\n";
+            chal += "Content-Length: 0\r\n";
+            chal += "Connection: close\r\n\r\n";
+            sock->write(chal);
+            sock->flush();
+            sock->disconnectFromHost();
+            return;
+        }
+
+        if (goSilentWhenDone) return;   // accepted, never answered
+
+        QByteArray out = "HTTP/1.1 200 OK\r\n";
+        out += "Content-Type: application/soap+xml\r\n";
+        out += "Content-Length: " + QByteArray::number(finalBody.size()) + "\r\n";
+        out += "Connection: close\r\n\r\n";
+        out += finalBody;
+        sock->write(out);
+        sock->flush();
+        sock->disconnectFromHost();
+    }
+
+    QTcpServer m_server;
+    QHash<QTcpSocket *, QByteArray> m_buf;
+};
+
+} // namespace
+
+void TestWsmanClient::digestRetryIsCappedOnPersistent401()
+{
+    // A device that will never accept these credentials. Before #435
+    // this looped connect -> 401 -> connect indefinitely, one fresh TCP
+    // connection per bounce, bounded only by the transfer timeout.
+    DigestFake fake;
+    fake.challengesToIssue = 999;
+    QVERIFY(fake.listen());
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(fake.port()));
+    client.setCredentials(QStringLiteral("admin"), QStringLiteral("wrong"));
+    client.setTransferTimeoutMs(10000);   // must NOT be what stops us
+
+    IdentifyResult result;
+    QEventLoop loop;
+    identify(&client, [&](IdentifyResult r) { result = r; loop.quit(); });
+    QTimer::singleShot(8000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(!result.ok, "a permanently-rejected credential must not report success");
+    QVERIFY2(!result.error.isEmpty(), "the failure must carry a reason");
+    QVERIFY2(!result.error.contains(QStringLiteral("timed out")),
+              qPrintable(QStringLiteral("gave up via the timeout rather than the "
+                                        "retry cap: %1").arg(result.error)));
+    // One unauthed attempt + exactly one retry.
+    QCOMPARE(fake.connections, 2);
+    QCOMPARE(fake.challengesSent, 2);
+}
+
+void TestWsmanClient::staleNonceAllowsOneExtraRetry()
+{
+    // A stale nonce invalidates an attempt through no fault of the
+    // credentials, so it earns one more try — but only one.
+    DigestFake fake;
+    fake.challengesToIssue = 2;
+    fake.staleOnChallenge = 2;
+    fake.finalBody = QByteArray(kIdentifyResponse);
+    QVERIFY(fake.listen());
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(fake.port()));
+    client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
+    client.setTransferTimeoutMs(10000);
+
+    IdentifyResult result;
+    QEventLoop loop;
+    identify(&client, [&](IdentifyResult r) { result = r; loop.quit(); });
+    QTimer::singleShot(8000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(fake.connections, 3);   // unauthed + retry + stale retry
+}
+
+void TestWsmanClient::cachedChallengePathIsStillTimedOut()
+{
+    // The subtle half of #435. `sendEnvelope`'s `startNow` skips
+    // `startTransport` once a challenge is cached and calls
+    // `retryWithDigest` directly — which used to be the only place the
+    // timeout was NOT armed. A device that then went quiet left the
+    // reply hanging forever: no `finished()`, so a controller's
+    // `decInflight()` never ran and the UI stayed "busy" permanently.
+    DigestFake fake;
+    fake.challengesToIssue = 1;
+    fake.finalBody = QByteArray(kIdentifyResponse);
+    QVERIFY(fake.listen());
+
+    WsmanClient client;
+    client.setEndpoint(endpointFor(fake.port()));
+    client.setCredentials(QStringLiteral("admin"), QStringLiteral("p"));
+    client.setTransferTimeoutMs(1500);
+
+    // Request 1 completes the 401 dance, leaving a cached challenge.
+    {
+        IdentifyResult first;
+        QEventLoop loop;
+        identify(&client, [&](IdentifyResult r) { first = r; loop.quit(); });
+        QTimer::singleShot(8000, &loop, &QEventLoop::quit);
+        loop.exec();
+        QVERIFY2(first.ok, qPrintable(first.error));
+    }
+
+    // Request 2 therefore starts pre-authed. Now the device goes quiet.
+    fake.goSilentWhenDone = true;
+
+    bool callbackRan = false;
+    IdentifyResult second;
+    QEventLoop loop2;
+    identify(&client, [&](IdentifyResult r) {
+        callbackRan = true;
+        second = r;
+        loop2.quit();
+    });
+    // Generous relative to the 1.5s transfer timeout: if the timeout is
+    // armed the callback lands quickly; if it isn't, this expires and
+    // callbackRan stays false.
+    QTimer::singleShot(8000, &loop2, &QEventLoop::quit);
+    loop2.exec();
+
+    QVERIFY2(callbackRan,
+              "the pre-authed request never completed — no timeout was armed on "
+              "the cached-challenge path, so the caller waits forever");
+    QVERIFY(!second.ok);
+    QVERIFY2(second.error.contains(QStringLiteral("timed out")),
+              qPrintable(second.error));
+}
+
 
 QTEST_GUILESS_MAIN(TestWsmanClient)
 #include "test_wsman_client.moc"

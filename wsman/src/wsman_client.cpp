@@ -121,6 +121,12 @@ struct WsmanReply::Private
     QByteArray responseBuffer;
     QHash<QByteArray, QByteArray> responseHeaders;
 
+    /// Digest 401 retries already spent on THIS reply. A persistent
+    /// 401 — a wrong password is the realistic trigger — would
+    /// otherwise loop connect → 401 → connect forever, one fresh TCP
+    /// connection per bounce. See #435.
+    int digestRetries = 0;
+
     enum State {
         Idle,
         Connecting,
@@ -410,6 +416,40 @@ void closeOrphanFd(qintptr fd)
 #endif
 }
 
+/// Arm the per-reply transfer timeout, once. Idempotent: the guard
+/// means whichever of `startTransport` / `retryWithDigest` runs first
+/// creates the timer and later calls are no-ops, so the timeout bounds
+/// the whole reply — retries included — rather than being restarted by
+/// each attempt.
+///
+/// This must be called from BOTH entry points. `sendEnvelope`'s
+/// `startNow` skips `startTransport` entirely when a Digest challenge
+/// is already cached, so before #435 every request after the client's
+/// first 401 ran with no timeout armed at all: on a stall the reply
+/// never emitted `finished()`, the caller's callback never ran, and a
+/// controller's `decInflight()` was never reached — a permanent "busy"
+/// in the UI.
+void armTimeout(WsmanReply *reply, WsmanClient::Private &cd,
+                WsmanReply::Private &rd)
+{
+    // Armed before the socket is opened so it covers the async
+    // socket-open window too — a stalled tunnel open would otherwise
+    // sit forever.
+    if (rd.timeoutTimer != nullptr || cd.timeoutMs <= 0) return;
+    rd.timeoutTimer = new QTimer(reply);
+    rd.timeoutTimer->setSingleShot(true);
+    rd.timeoutTimer->setInterval(cd.timeoutMs);
+    QObject::connect(rd.timeoutTimer, &QTimer::timeout, reply, [reply, &rd]() {
+        if (rd.finished) return;
+        rd.errorString = QStringLiteral("Request timed out");
+        rd.state = WsmanReply::Private::Failed;
+        if (rd.socket != nullptr) rd.socket->abort();
+        rd.finished = true;
+        emit reply->finished();
+    });
+    rd.timeoutTimer->start();
+}
+
 /// Open or adopt the socket the reply will use. Sets `Connecting` or
 /// `TlsHandshaking` and connects all the socket signals. With an async
 /// socket factory the function returns immediately; the remainder of
@@ -417,24 +457,7 @@ void closeOrphanFd(qintptr fd)
 void startTransport(WsmanReply *reply, WsmanClient *client,
                     WsmanClient::Private &cd, WsmanReply::Private &rd)
 {
-    // Start the timeout timer first so it covers the async socket-open
-    // window too. Previously the timer was only armed after the
-    // (synchronous) factory returned, so a stalled tunnel open could
-    // sit forever.
-    if (rd.timeoutTimer == nullptr && cd.timeoutMs > 0) {
-        rd.timeoutTimer = new QTimer(reply);
-        rd.timeoutTimer->setSingleShot(true);
-        rd.timeoutTimer->setInterval(cd.timeoutMs);
-        QObject::connect(rd.timeoutTimer, &QTimer::timeout, reply, [reply, &rd]() {
-            if (rd.finished) return;
-            rd.errorString = QStringLiteral("Request timed out");
-            rd.state = WsmanReply::Private::Failed;
-            if (rd.socket != nullptr) rd.socket->abort();
-            rd.finished = true;
-            emit reply->finished();
-        });
-        rd.timeoutTimer->start();
-    }
+    armTimeout(reply, cd, rd);
 
     const bool tls = cd.endpoint.scheme().compare(
         QStringLiteral("https"), Qt::CaseInsensitive) == 0;
@@ -564,6 +587,7 @@ void finishReply(WsmanReply *reply, WsmanReply::Private &rd, const QString &err)
 void retryWithDigest(WsmanReply *reply, WsmanClient *client,
                      WsmanClient::Private &cd, WsmanReply::Private &rd)
 {
+    armTimeout(reply, cd, rd);
     if (rd.socket != nullptr) {
         rd.socket->disconnectFromHost();
         rd.socket->deleteLater();
@@ -740,6 +764,27 @@ void readMore(WsmanReply *reply, WsmanClient *client,
                 finishReply(reply, rd, QStringLiteral("Unsupported auth challenge"));
                 return;
             }
+
+            // Cap the retries. One is the normal case: an unauthed
+            // request draws a challenge and the retry carries the
+            // response. A second is legitimate only when the server
+            // says the nonce went stale — that invalidates the first
+            // attempt through no fault of the credentials. Anything
+            // beyond that is a password the device will never accept,
+            // and retrying just opens another TCP connection (every
+            // attempt is a fresh socket: we send `Connection: close`).
+            // The reference caps at 3 with a 500 ms backoff and is
+            // single-flight by construction; we don't need the backoff
+            // because we stop rather than sleep. See #435.
+            const bool stale = params.value("stale").toLower() == "true";
+            const int allowed = stale ? 2 : 1;
+            if (rd.digestRetries >= allowed) {
+                finishReply(reply, rd,
+                            QStringLiteral("Authentication failed — Intel AMT "
+                                           "rejected the credentials"));
+                return;
+            }
+            ++rd.digestRetries;
             retryWithDigest(reply, client, cd, rd);
             return;
         }
