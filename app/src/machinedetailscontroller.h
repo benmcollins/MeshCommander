@@ -263,6 +263,15 @@ class MachineDetailsController : public QObject
                    NOTIFY optInStatusChanged)
 
 public:
+    /// The three redirection protocols, numbered to match the session
+    /// window's tab order so QML can pass a tab index straight through.
+    enum RedirProtocol {
+        Sol  = 0,
+        Kvm  = 1,
+        Ider = 2,
+    };
+    Q_ENUM(RedirProtocol)
+
     explicit MachineDetailsController(QObject *parent = nullptr);
     ~MachineDetailsController() override;
 
@@ -781,6 +790,20 @@ public:
     /// Clear the consecutive-failure counter so a fresh user-initiated
     /// attempt is allowed after `optInGaveUp`.
     Q_INVOKABLE void resetOptInAttempts();
+    /// Does `protocol` need user consent on this machine?
+    ///
+    /// AMT's `OptInRequired` is a tri-state, not a bool: `1` gates KVM
+    /// alone, `0xFFFFFFFF` gates everything. Asking the coarse
+    /// `optInRequired` instead puts a consent PIN on the target's
+    /// screen for Serial Console sessions that don't need one (#437).
+    /// The reference applies the same asymmetry — any non-zero for the
+    /// desktop path (Commander.htm:48442), only `0xFFFFFFFF` elsewhere
+    /// (Commander.htm:50760).
+    Q_INVOKABLE bool consentRequiredFor(int protocol) const;
+    /// True when `protocol` may proceed: either it needs no consent, or
+    /// the firmware has already accepted a code. See `optInSatisfied`
+    /// for why states 3 and 4 both count.
+    Q_INVOKABLE bool consentSatisfiedFor(int protocol) const;
     /// Stop the consent poll timer. Called when the session window
     /// closes so an abandoned round doesn't keep polling the ME.
     Q_INVOKABLE void stopOptInPollingNow() { stopOptInPolling(); }
@@ -1135,6 +1158,7 @@ private:
     QVariantMap  m_systemDefense;
 
     bool m_optInRequired = false;
+    quint32 m_optInRequiredRaw = 0;   ///< See `consentRequiredFor`.
     int m_optInState = 0;
     bool m_canModifyOptInPolicy = false;
     bool m_kvmOptInPolicy = false;

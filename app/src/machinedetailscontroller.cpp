@@ -580,6 +580,7 @@ void MachineDetailsController::refreshOptInStatus()
                 m_optInStatusKnown = true;
                 const int prevState = m_optInState;
                 m_optInRequired         = r.optInRequired;
+                m_optInRequiredRaw      = r.optInRequiredRaw;
                 m_optInState            = r.optInState;
                 m_canModifyOptInPolicy  = r.canModifyOptInPolicy;
                 m_kvmOptInPolicy        = r.kvmOptInPolicy;
@@ -782,6 +783,28 @@ void MachineDetailsController::cancelOptIn()
             m_optInState = 0;
             emit optInStatusChanged();
         });
+}
+
+bool MachineDetailsController::consentRequiredFor(int protocol) const
+{
+    switch (m_optInRequiredRaw) {
+    case 0:
+        return false;
+    case 1:
+        // KVM only. SOL and IDE-R proceed without a prompt.
+        return protocol == Kvm;
+    default:
+        // 0xFFFFFFFF, and anything else non-zero we don't recognise —
+        // err toward asking, since a spurious prompt is recoverable and
+        // an unprompted session just gets refused by the firmware.
+        return true;
+    }
+}
+
+bool MachineDetailsController::consentSatisfiedFor(int protocol) const
+{
+    if (!consentRequiredFor(protocol)) return true;
+    return m_optInState == 3 || m_optInState == 4;
 }
 
 void MachineDetailsController::setOptInRoundActive(bool v)
