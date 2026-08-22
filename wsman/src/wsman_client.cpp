@@ -740,6 +740,7 @@ void readMore(WsmanReply *reply, WsmanClient *client,
                 return;
             }
             const auto params = parseDigestChallenge(wwwAuth);
+            const QByteArray previousNonce = cd.digestNonce;
             cd.digestRealm = params.value("realm");
             cd.digestNonce = params.value("nonce");
             // AMT sometimes advertises `qop="auth,auth-int"`. We have
@@ -759,7 +760,16 @@ void readMore(WsmanReply *reply, WsmanClient *client,
             cd.digestAlgorithm = params.value("algorithm");
             cd.digestOpaque = params.value("opaque");
             cd.haveDigestChallenge = !cd.digestRealm.isEmpty() && !cd.digestNonce.isEmpty();
-            cd.nc = 0;
+            // Rewind the counter only when the nonce is genuinely
+            // replaced. `nc` must be unique and strictly increasing for
+            // the lifetime of a given nonce, so resetting on *every*
+            // 401 meant two replies racing against the same rotated
+            // nonce could both send nc=00000001 — a duplicate, which is
+            // exactly what a server's replay check rejects. Requests
+            // are unserialized on the direct transport
+            // (`setSerializeRequests(false)`), so that race is
+            // reachable rather than theoretical.
+            if (cd.digestNonce != previousNonce) cd.nc = 0;
             if (!cd.haveDigestChallenge) {
                 finishReply(reply, rd, QStringLiteral("Unsupported auth challenge"));
                 return;
