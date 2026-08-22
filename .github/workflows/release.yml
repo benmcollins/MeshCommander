@@ -52,7 +52,10 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.8.0'
+          # Keep in lockstep with ci.yml — 6.8.x can't link on macOS
+          # since Apple dropped AGL from the macOS 26 SDK, and the 6.8
+          # LTS series has no public patch with the fix (QTBUG-137687).
+          version: '6.9.3'
           host: ${{ matrix.qt_host }}
           target: desktop
           arch: ${{ matrix.qt_arch }}
