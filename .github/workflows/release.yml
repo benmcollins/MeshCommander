@@ -646,7 +646,7 @@ jobs:
           path: appcast/
         continue-on-error: true
 
-      - name: Render release notes (Markdown → HTML)
+      - name: Resolve release notes
         # Source precedence: `app/release-notes/<TAG>.md` (e.g.
         # v1.1.3.md), else a bare `<VERSION>.md` (e.g. 1.1.3.md), else
         # the git tag annotation. The tag annotation is engineering-
@@ -657,6 +657,37 @@ jobs:
         # a missing notes file — but the warning makes the omission
         # visible in the run log so it can be addressed next time.
         #
+        # Resolved once, here, into $NOTES_MD_FILE, which both the
+        # appcast renderer below and the GitHub Release body read.
+        # Those two used to disagree: the appcast carried these notes
+        # while the Releases page got install boilerplate and no
+        # description of the release at all (#443). Resolving in one
+        # place is what stops them drifting apart again.
+        run: |
+          TAG="${GITHUB_REF##*/}"
+          VERSION="${TAG#v}"
+          NOTES_MD_FILE="$RUNNER_TEMP/release-notes.md"
+
+          if [ -f "app/release-notes/${TAG}.md" ]; then
+            cp "app/release-notes/${TAG}.md" "$NOTES_MD_FILE"
+            echo "Using app/release-notes/${TAG}.md as release notes."
+          elif [ -f "app/release-notes/${VERSION}.md" ]; then
+            cp "app/release-notes/${VERSION}.md" "$NOTES_MD_FILE"
+            echo "Using app/release-notes/${VERSION}.md as release notes."
+          else
+            git tag -l --format='%(contents)' "$TAG" > "$NOTES_MD_FILE"
+            echo "::warning::No app/release-notes/${TAG}.md or ${VERSION}.md found; falling back to git tag annotation."
+          fi
+
+          if [ ! -s "$NOTES_MD_FILE" ]; then
+            printf 'QuMesh %s\n' "$TAG" > "$NOTES_MD_FILE"
+          fi
+
+          echo "NOTES_MD_FILE=$NOTES_MD_FILE" >> "$GITHUB_ENV"
+          echo "--- Resolved release notes ---"
+          cat "$NOTES_MD_FILE"
+
+      - name: Render release notes (Markdown → HTML)
         # Substitutes `__NOTES_HTML_PLACEHOLDER__` (emitted by the
         # per-OS sign steps) with a real <description> block carrying
         # the rendered HTML inside CDATA. Sparkle's description view
@@ -664,22 +695,7 @@ jobs:
         # fenced code, links, emphasis) renders.
         if: hashFiles('appcast/item-macos.xml') != '' || hashFiles('appcast/item-windows.xml') != ''
         run: |
-          TAG="${GITHUB_REF##*/}"
-          VERSION="${TAG#v}"
-          NOTES_MD=""
-          if [ -f "app/release-notes/${TAG}.md" ]; then
-            NOTES_MD=$(cat "app/release-notes/${TAG}.md")
-            echo "Using app/release-notes/${TAG}.md as release notes."
-          elif [ -f "app/release-notes/${VERSION}.md" ]; then
-            NOTES_MD=$(cat "app/release-notes/${VERSION}.md")
-            echo "Using app/release-notes/${VERSION}.md as release notes."
-          else
-            NOTES_MD=$(git tag -l --format='%(contents)' "$TAG")
-            echo "::warning::No app/release-notes/${TAG}.md or ${VERSION}.md found; falling back to git tag annotation."
-          fi
-          if [ -z "$NOTES_MD" ]; then NOTES_MD="QuMesh $TAG"; fi
-
-          NOTES_HTML=$(printf '%s\n' "$NOTES_MD" | pandoc -f gfm -t html)
+          NOTES_HTML=$(pandoc -f gfm -t html < "$NOTES_MD_FILE")
 
           for fragment in appcast/item-macos.xml appcast/item-windows.xml; do
             if [ -f "$fragment" ]; then
@@ -769,41 +785,28 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The install text is derived from whether the signing
+          # secrets are provisioned, never hardcoded — see the comment
+          # in release-body.sh for why that is accurate by
+          # construction, and #443 for what hardcoding it cost.
+          MAC_NOTARIZED: ${{ secrets.MAC_NOTARIZE_APPLE_ID != '' }}
+          WIN_SIGNED: ${{ secrets.WIN_SIGN_THUMBPRINT != '' }}
         run: |
           TAG="${GITHUB_REF##*/}"
           NOTES_FILE=$(mktemp)
-          cat > "$NOTES_FILE" <<EOF
-          QuMesh $TAG
-          ============
 
-          Native Qt6 console for Intel AMT (vPro) devices.
+          # `gh release view` with no argument resolves the latest
+          # release, which is still the previous one — ours is created
+          # at the bottom of this step. `git describe` is not an
+          # option: this job checks out at depth 1 with no tag history.
+          PREV_TAG=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
 
-          - **macOS** — drag QuMesh.app from the .dmg to Applications.
-            On first launch Gatekeeper will warn that the bundle is
-            unsigned; right-click → Open to bypass.
-          - **Windows** — run the .exe installer. SmartScreen will warn
-            that the publisher is unverified; click "More info" →
-            "Run anyway".
-          - **Linux (Debian 13 / Ubuntu 26.04, amd64 or arm64)** — preferred
-            path is the APT repo so apt handles upgrades. The snippet picks
-            the right suite (\`ubuntu26.04\` / \`debian13\`) from
-            \`/etc/os-release\`:
+          TAG="$TAG" PREV_TAG="$PREV_TAG" \
+            .github/scripts/release-body.sh > "$NOTES_FILE"
 
-                . /etc/os-release
-                SUITE="\${ID}\${VERSION_ID}"
+          echo "--- Release body ---"
+          cat "$NOTES_FILE"
 
-                curl -fsSL https://benmcollins.github.io/QuMesh/apt-pub.asc | \\
-                    sudo tee /etc/apt/keyrings/qumesh.asc > /dev/null
-                echo "deb [signed-by=/etc/apt/keyrings/qumesh.asc] \\
-                    https://benmcollins.github.io/QuMesh \$SUITE main" | \\
-                    sudo tee /etc/apt/sources.list.d/qumesh.list
-                sudo apt update && sudo apt install qumesh
-
-            Or grab the matching \`.deb\` below and \`sudo apt install ./qumesh_*.deb\`.
-
-          See [the changelog](https://github.com/${{ github.repository }}/compare/...$TAG)
-          for what changed.
-          EOF
           gh release create "$TAG" \
             --title "QuMesh $TAG" \
             --notes-file "$NOTES_FILE" \

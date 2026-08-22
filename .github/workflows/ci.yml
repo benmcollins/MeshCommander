@@ -227,3 +227,21 @@ jobs:
           # Log the resolved deps so the run output makes the Qt-via-
           # shlibdeps wiring auditable at a glance.
           dpkg-deb -f "$DEB" Depends
+
+  release-body:
+    # release.yml only fires on `v*.*.*` tags, so nothing in CI ever
+    # exercised the text it publishes. That is how every release from
+    # v1.1.0 to v1.4.1 came to tell macOS users to right-click → Open
+    # past a Gatekeeper prompt that a signed, notarized bundle never
+    # raises (#443). This job runs the release-body assembly on every
+    # PR instead.
+    name: Release body
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test release-body.sh
+        run: .github/scripts/test-release-body.sh
+
+      - name: Shellcheck the release scripts
+        run: shellcheck .github/scripts/release-body.sh .github/scripts/test-release-body.sh
