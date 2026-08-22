@@ -278,3 +278,42 @@ target_link_libraries(test_optin_statemachine PRIVATE
     qumesh_wsman
 )
 add_test(NAME test_optin_statemachine COMMAND test_optin_statemachine)
+
+# #438 — the redaction guard. README promises users their log carries no
+# passwords and invites them to paste it publicly; this asserts that
+# holds by capturing everything the logging system emits with all
+# categories forced on.
+qt_add_executable(test_log_redaction
+    test_log_redaction.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/machinedetailscontroller.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/machinedetailscontroller.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/kvmcontroller.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/kvmcontroller.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/kvmframebuffer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/kvmframebuffer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/solcontroller.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/solcontroller.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/mjpeg_mov_recorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/mjpeg_mov_recorder.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/asciicast_recorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/asciicast_recorder.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ssh_tunnel_opener.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/sshtunnelhost.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/sshtunnelhost.h
+)
+target_include_directories(test_log_redaction PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_log_redaction PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Network
+    Qt6::Qml
+    Qt6::Test
+    qumesh_certs
+    qumesh_kvm
+    qumesh_redir
+    qumesh_ssh
+    qumesh_terminal
+    qumesh_wsman
+)
+add_test(NAME test_log_redaction COMMAND test_log_redaction)

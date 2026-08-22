@@ -125,7 +125,11 @@ negotiated pixel format and the target's resolution are the useful
 ones — Intel AMT caps its KVM display buffer, so large desktops are
 driven at reduced colour depth.
 
-The log contains hostnames and usernames but never passwords.
+What the log records: hostnames, usernames, certificate fingerprints,
+and the protocol phase each step reached. What it never records: your
+AMT or SSH passwords, digest nonces and responses, user-consent codes,
+and the contents of the serial console, remote desktop, or redirected
+disk image.
 
 ## Contributing
 

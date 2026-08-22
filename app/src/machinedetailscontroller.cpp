@@ -4,6 +4,7 @@
 #include "machinedetailscontroller.h"
 
 #include <QDateTime>
+#include <QLoggingCategory>
 #include <QFile>
 #include <QTimer>
 #include <QUrl>
@@ -17,7 +18,29 @@
 #include "ssh/ssh_tunnel.h"
 #include "ssh_tunnel_opener.h"
 
+// Named for the feature rather than the file: this translation unit is
+// >4000 lines covering dozens of unrelated WSMAN concerns, and a
+// per-file category would become a dumping ground. QtInfoMsg for the
+// same reason as redir/src/redir_client.cpp.
+Q_LOGGING_CATEGORY(lcOptIn, "qumesh.app.optin", QtInfoMsg)
+
 namespace qumesh::app {
+
+namespace {
+
+const char *optInStateName(int s)
+{
+    switch (s) {
+    case 0: return "NotStarted";
+    case 1: return "Requested";
+    case 2: return "Displayed";
+    case 3: return "Received";
+    case 4: return "InSession";
+    }
+    return "?";
+}
+
+} // namespace
 
 MachineDetailsController::MachineDetailsController(QObject *parent)
     : QObject(parent), m_client(new qumesh::wsman::WsmanClient(this))
@@ -577,6 +600,7 @@ void MachineDetailsController::refreshOptInStatus()
         [this](qumesh::wsman::OptInServiceResult r) {
             m_optInStatusInFlight = false;
             if (r.ok) {
+                const bool wasKnown = m_optInStatusKnown;
                 m_optInStatusKnown = true;
                 const int prevState = m_optInState;
                 m_optInRequired         = r.optInRequired;
@@ -588,6 +612,17 @@ void MachineDetailsController::refreshOptInStatus()
                 m_kvmIs5900PortEnabled  = r.is5900PortEnabled;
                 m_kvmSessionTimeoutMinutes = r.sessionTimeoutMinutes;
                 m_kvmGreyscaleRequested = r.greyscalePixelFormatRequested;
+                // Guarded on change: startOptInPolling runs this every
+                // 500 ms, so an unconditional line would be a firehose.
+                // One line per real transition is the whole diagnostic.
+                if (m_optInState != prevState || !wasKnown) {
+                    qCDebug(lcOptIn) << "OptInState" << optInStateName(prevState)
+                                      << "->" << optInStateName(m_optInState)
+                                      << "- required" << m_optInRequired
+                                      << "canModifyPolicy" << m_canModifyOptInPolicy
+                                      << "kvmPolicy" << m_kvmOptInPolicy
+                                      << "timeout" << m_optInPolicyTimeoutSec << "s";
+                }
                 emit optInStatusChanged();
                 // Drive the polling state machine. See #171: while
                 // we're between StartOptIn and SendOptInCode, watch
@@ -614,6 +649,8 @@ void MachineDetailsController::refreshOptInStatus()
                 }
             }
             else if (!m_optInStatusKnown) {
+                qCWarning(lcOptIn) << "IPS_OptInService unreadable (" << r.error
+                                    << ") — treating consent as not required";
                 // Soft failure on the FIRST read: older AMT firmware
                 // (<= 5) doesn't expose IPS_OptInService at all, and a
                 // transport hiccup looks identical from here.
@@ -660,6 +697,10 @@ void MachineDetailsController::setKvmOptInPolicyEnabled(bool enabled)
 
 void MachineDetailsController::setKvmSettings(const QVariantMap &fields)
 {
+    // Keys only. `fields["rfbPassword"]` is the RFB/VNC password being
+    // written to the firmware; "which knobs did the app try to change"
+    // is all a diagnosis needs.
+    qCInfo(lcOptIn) << "KVM settings patch, fields:" << fields.keys();
     setLastError({});
     qumesh::wsman::KvmSettingsPatch patch;
     if (fields.contains(QStringLiteral("optInPolicy"))) {
@@ -716,14 +757,28 @@ void MachineDetailsController::startOptIn()
     // startOptIn is a closed cycle: every round puts a fresh code on
     // the target's screen and opens more WSMAN connections, and the ME
     // stops answering long before the operator can type anything (#433).
-    if (m_optInRoundActive) return;
-    if (m_optInFailures >= kMaxOptInFailures) return;
+    if (m_optInRoundActive) {
+        // Both early-outs are #433's own fix, and are now the likeliest
+        // cause of "the consent dialog never appeared". A path that
+        // returns without doing anything and leaves no trace is exactly
+        // what generates a maintainer round-trip.
+        qCDebug(lcOptIn) << "StartOptIn skipped: a consent round is already outstanding";
+        return;
+    }
+    if (m_optInFailures >= kMaxOptInFailures) {
+        qCWarning(lcOptIn) << "StartOptIn refused: gave up after" << m_optInFailures
+                            << "consecutive failures";
+        return;
+    }
+    qCInfo(lcOptIn) << "StartOptIn invoked";
     setOptInRoundActive(true);
     incInflight();
     qumesh::wsman::startOptIn(m_client,
         [this](qumesh::wsman::InvokeResult r) {
             decInflight();
             if (r.ok) {
+                qCInfo(lcOptIn) << "StartOptIn accepted — a code is on the "
+                                    "target's screen; polling for the result";
                 m_optInFailures = 0;
                 emit optInStarted(true, QString());
                 startOptInPolling();
@@ -732,6 +787,7 @@ void MachineDetailsController::startOptIn()
                 // this path is what closed the retry loop.
                 return;
             }
+            qCWarning(lcOptIn) << "StartOptIn failed:" << r.error;
             setOptInRoundActive(false);
             ++m_optInFailures;
             emit optInStarted(false, r.error);
@@ -745,6 +801,10 @@ void MachineDetailsController::startOptIn()
 
 void MachineDetailsController::sendOptInCode(int code)
 {
+    // `code` is the one-time consent PIN displayed on the target's
+    // screen — a live authorisation secret for the duration of the
+    // round. It must never reach a log line users paste publicly.
+    qCInfo(lcOptIn) << "SendOptInCode invoked (code redacted)";
     incInflight();
     qumesh::wsman::sendOptInCode(m_client, static_cast<quint32>(code),
         [this](qumesh::wsman::InvokeResult r) {
@@ -754,6 +814,7 @@ void MachineDetailsController::sendOptInCode(int code)
                 // stay latched and let the operator retype. Re-opening
                 // the modal here would wipe the error and restart the
                 // countdown from the full timeout.
+                qCWarning(lcOptIn) << "consent code rejected:" << r.error;
                 emit optInCodeResult(false, r.error);
                 emit optInCodeRejected(r.error);
                 return;
@@ -761,6 +822,7 @@ void MachineDetailsController::sendOptInCode(int code)
             // Accepted. AMT is now at RECEIVED(3) and stays there until
             // a redirection session actually starts — it does NOT reach
             // IN_SESSION(4) on its own, so nothing further is pending.
+            qCInfo(lcOptIn) << "consent code accepted — OptInState now Received(3)";
             stopOptInPolling();
             m_optInFailures = 0;
             setOptInRoundActive(false);
@@ -772,6 +834,7 @@ void MachineDetailsController::sendOptInCode(int code)
 
 void MachineDetailsController::cancelOptIn()
 {
+    qCInfo(lcOptIn) << "CancelOptIn invoked";
     stopOptInPolling();
     setOptInRoundActive(false);
     incInflight();

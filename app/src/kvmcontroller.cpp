@@ -13,9 +13,34 @@
 #include "ssh_tunnel_opener.h"
 #include "sshtunnelhost.h"
 
+#include <QLoggingCategory>
+
 #include <algorithm>
 
+// QtInfoMsg, not the two-arg default: see the note in
+// redir/src/redir_client.cpp. Category scheme is
+// `qumesh.<module>.<unit>`, matching qumesh.redir.client et al.
+Q_LOGGING_CATEGORY(lcKvmController, "qumesh.app.kvm", QtInfoMsg)
+
 namespace qumesh::app {
+
+namespace {
+
+const char *stateName(KvmController::State s)
+{
+    switch (s) {
+    case KvmController::State::Disconnected:   return "Disconnected";
+    case KvmController::State::Connecting:     return "Connecting";
+    case KvmController::State::Authenticating: return "Authenticating";
+    case KvmController::State::AwaitingTrust:  return "AwaitingTrust";
+    case KvmController::State::Negotiating:    return "Negotiating";
+    case KvmController::State::Connected:      return "Connected";
+    case KvmController::State::Failed:         return "Failed";
+    }
+    return "?";
+}
+
+} // namespace
 
 using qumesh::kvm::KvmSession;
 using qumesh::redir::RedirectionClient;
@@ -75,6 +100,11 @@ void KvmController::setTrustedFingerprints(QStringList v)
 void KvmController::setState(State s)
 {
     if (s == m_state) return;
+    // Coarser than RedirectionClient's own transitions and NOT
+    // redundant with them: this is what QML binds to, so "the button
+    // stayed on Connecting" is answered here. AwaitingTrust in
+    // particular has no counterpart on the client side.
+    qCDebug(lcKvmController) << "state" << stateName(m_state) << "->" << stateName(s);
     const bool wasAwaiting = (m_state == State::AwaitingTrust);
     m_state = s;
     emit stateChanged();
@@ -150,6 +180,7 @@ std::optional<qumesh::kvm::PixelFormat> KvmController::preferredPixelFormat() co
 void KvmController::open()
 {
     if (m_sshHost != nullptr && m_sshHost->isEnabled() && !m_sshHost->isConnected()) {
+        qCDebug(lcKvmController) << "open deferred — SSH tunnel still connecting";
         m_openDeferred = true;
         setLastError({});
         setState(State::Connecting);
@@ -158,6 +189,7 @@ void KvmController::open()
     m_openDeferred = false;
     teardown();
     if (m_host.isEmpty()) {
+        qCWarning(lcKvmController) << "open refused: no host set";
         setLastError(tr("host is empty"));
         setState(State::Failed);
         return;
@@ -217,11 +249,13 @@ void KvmController::open()
 
     connect(m_client.data(), &RedirectionClient::failed, this,
             [this](const QString &reason) {
+                qCWarning(lcKvmController) << "redirection failed:" << reason;
                 setLastError(reason);
                 setState(State::Failed);
             });
 
     connect(m_client.data(), &RedirectionClient::remoteClosed, this, [this]() {
+        qCDebug(lcKvmController) << "peer closed the stream cleanly";
         // A clean peer close after authentication is the end of the
         // session, not a fault. Only call it a failure if the KVM layer
         // hasn't already recorded a more specific reason.
@@ -252,6 +286,7 @@ void KvmController::open()
             });
     connect(m_session.data(), &KvmSession::closed, this,
             [this](const QString &reason) {
+                qCWarning(lcKvmController) << "KVM session closed:" << reason;
                 setLastError(reason);
                 setState(State::Failed);
                 // Drop the transport so the firmware releases the KVM
@@ -266,6 +301,13 @@ void KvmController::open()
     // Tests can override via setPortForTest(); production always derives.
     const quint16 port = m_portOverride != 0 ? m_portOverride
                                               : (m_tls ? 16995 : 16994);
+    // colourDepthMode is the #433 knob — a forced 16-bit on an
+    // oversized desktop is rejected at ServerInit. m_password never
+    // appears here or anywhere else in this file.
+    qCInfo(lcKvmController) << "KVM open" << m_host << "port" << port
+                             << (m_tls ? "TLS" : "plaintext") << "user" << m_user
+                             << "ssh-tunnel" << (m_sshSession != nullptr)
+                             << "colourDepthMode" << m_colorDepthMode;
     m_client->connectTo(m_host, port);
 }
 
